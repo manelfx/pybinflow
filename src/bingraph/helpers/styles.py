@@ -15,14 +15,14 @@ STYLE_CLASSIC = {
 
 STYLE_THICK = {
     'COLOR_SCHEME': {
-        'EDGECOLOR_CONDITIONAL_TRUE'  : {'color': 'green', 'width': '2'},
-        'EDGECOLOR_CONDITIONAL_FALSE' : {'color': 'red', 'width': '2'},
-        'EDGECOLOR_UNCONDITIONAL'     : {'color': 'blue', 'width': '2'},
-        'EDGECOLOR_NEXT'              : {'color': 'blue', 'style': 'dashed', 'width': '2'},
-        'EDGECOLOR_CALL'              : {'color': 'black', 'width': '2'},
-        'EDGECOLOR_RET'               : {'color': 'gray', 'width': '2'},
-        'EDGECOLOR_FAKE_RET'          : {'color': 'gray', 'style' :'dashed', 'width': '2'},
-        'EDGECOLOR_UNKNOWN'           : {'color': 'orange', 'width': '2'}
+        'EDGECOLOR_CONDITIONAL_TRUE'  : {'color': 'green', 'penwidth': '2'},
+        'EDGECOLOR_CONDITIONAL_FALSE' : {'color': 'red', 'penwidth': '2'},
+        'EDGECOLOR_UNCONDITIONAL'     : {'color': 'blue', 'penwidth': '2'},
+        'EDGECOLOR_NEXT'              : {'color': 'blue', 'style': 'dashed', 'penwidth': '2'},
+        'EDGECOLOR_CALL'              : {'color': 'black', 'penwidth': '2'},
+        'EDGECOLOR_RET'               : {'color': 'gray', 'penwidth': '2'},
+        'EDGECOLOR_FAKE_RET'          : {'color': 'gray', 'style' :'dashed', 'penwidth': '2'},
+        'EDGECOLOR_UNKNOWN'           : {'color': 'orange', 'penwidth': '2'}
     }
 }
 
@@ -85,8 +85,8 @@ class Style:
         
     def make_edge(self, edge: Any, edge_type: str) -> None:
         edge_attrs = self.style['COLOR_SCHEME']['EDGECOLOR_' + edge_type.upper()]
-        for k,v in edge_attrs.items():
-            setattr(edge, k, '"'+v+'"')
+        for k, v in edge_attrs.items():
+            edge.pydot.set(k, v)
 
 _style = Style(STYLE_CLASSIC)
 

@@ -1,5 +1,5 @@
-# pybinflow
-pybinflow
+# pybingraph
+pybingraph
 
 Binary inspection API + UI using **angr**. Provides:
 
@@ -31,7 +31,7 @@ uv sync
 ## Run the API
 
 ```bash
-uv run binflow-api --root ./playground/angr-binaries
+uv run bingraph-api --root ./playground/angr-binaries
 ```
 
 Then open:

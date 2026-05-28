@@ -22,9 +22,6 @@
         background: #f6f6f6;
         text-align: left;
       }
-      .demangled {
-        display: none;
-      }
       .controls {
         margin-bottom: 16px;
       }
@@ -33,17 +30,14 @@
   <body>
     <h2>Symbol table</h2>
     <p>File: <strong>{{ filepath }}</strong></p>
-    <div class="controls">
-      <button onclick="toggleNames()">Toggle mangled/demangled</button>
-    </div>
     <table>
       <thead>
         <tr>
           <th>Address</th>
           <th>Name</th>
-          <th>Origin</th>
+          <th>Size</th>
           <th>Import</th>
-          <th>Export</th>
+          <th>Origin</th>
         </tr>
       </thead>
       <tbody>
@@ -51,27 +45,18 @@
         <tr>
           <td>0x{{ "%x" | format(sym.addr) }}</td>
           <td>
-            <a href="/cfg?filepath={{ filepath }}&function=0x{{ "%x" | format(sym.addr) }}">
-              <span class="mangled">{{ sym.mangled_name }}</span>
-              <span class="demangled">{{ sym.demangled_name }}</span>
-            </a>
+            {% if not sym.is_import and sym.addr != 0 and sym.size != 0 %}
+              <a href="/cfg?filepath={{ filepath }}&function=0x{{ "%x" | format(sym.addr) }}">{{ sym.name }}</a>
+            {% else %}
+              {{ sym.name }}
+            {% endif %}
           </td>
-          <td>{{ sym.origin }}</td>
+          <td>{{ sym.size }}</td>
           <td>{{ sym.is_import }}</td>
-          <td>{{ sym.is_export }}</td>
+          <td>{{ sym.origin }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-    <script>
-      function toggleNames() {
-        document.querySelectorAll(".mangled").forEach((el) => {
-          el.style.display = el.style.display === "none" ? "inline" : "none";
-        });
-        document.querySelectorAll(".demangled").forEach((el) => {
-          el.style.display = el.style.display === "none" ? "inline" : "none";
-        });
-      }
-    </script>
   </body>
 </html>

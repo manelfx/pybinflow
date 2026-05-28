@@ -1,6 +1,8 @@
 
 from typing import Callable, Any, Set
 from angr import Project
+from loguru import logger
+
 from .vis import Transformer, Graph
 
 
@@ -11,11 +13,24 @@ class FilterNodes(Transformer):
         graph.filter_nodes(self.node_filter)
 
 
+class RemoveNodes(Transformer):
+
+    # condition under what a node will be removed
+    condition: Callable[[Any], bool]
+
+    def transform(self, graph: Graph) -> None:
+        # grab which nodes and edges will be preserved
+        graph.nodes = [n for n in graph.nodes if not self.condition(n)]
+        graph.edges = [e for e in graph.edges if not self.condition(e.src) and not self.condition(e.dst)]
+
+
 class RemovePathTerminator(Transformer):
     def transform(self, graph: Graph) -> None:
+        assert False     # TODO: Check behavior
+
         remove = []
         for n in graph.nodes:
-            if hasattr(n.obj, 'is_simprocedure') and n.obj.is_simprocedure and n.obj.simprocedure_name == 'PathTerminator':
+            if n.obj.is_simprocedure and n.obj.simprocedure_name == 'PathTerminator':
                 remove.append(n)
         for r in remove:
             graph.remove_node(r)
@@ -23,6 +38,8 @@ class RemovePathTerminator(Transformer):
 
 class RemoveSimProcedures(Transformer):
     def transform(self, graph: Graph) -> None:
+        assert False     # TODO: Check behavior
+
         remove = []
         for n in graph.nodes:
             if n.obj.is_simprocedure:
@@ -49,9 +66,12 @@ class RemoveImports(Transformer):
         for _ in project.loader.main_object.imports.values():
             if _.resolvedby is not None:
                 eaddrs.append(_.value)
+        logger.info(f"OBJ simbols: {eaddrs}")
         return set(eaddrs)
 
     def transform(self, graph: Graph) -> None:
+        assert False     # TODO: Check behavior
+
         remove = set()
         eaddrs = self.import_addrs(graph.cfg.project)
         for n in graph.nodes:

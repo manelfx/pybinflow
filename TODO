@@ -1,0 +1,113 @@
+=== Check assembly code why doesn’t show “nice” (func names, etc.) ===
+
+
+=== Render CGs (based on CFGFast) ===
+
+What Does the Call Graph Look Like Natively?
+Because it's a NetworkX graph, you can interact with it using all standard NetworkX syntax.
+Nodes: The nodes are integers representing the starting memory addresses of functions.
+Edges: An edge from Addr_A to Addr_B means that Function A contains a call to Function B.
+
+Here is how you can inspect it in your code:
+
+cfg = project.analyses.CFGFast()
+# 1. Access it directly from the CFG wrapper shortcut:
+callgraph = cfg.callgraph
+# 2. Access it from the central Knowledge Base:
+callgraph = project.kb.functions.callgraph
+# Print all function calls in the binary
+for caller_addr, callee_addr in callgraph.edges():
+    caller_name = project.kb.functions[caller_addr].name
+    callee_name = project.kb.functions[callee_addr].name
+    print(f"Function {caller_name} calls {callee_name}")
+
+=== Render DDG for basic block (based on CFGEmulated) ===
+
+By default, angr calculates its Data Dependency Graph (DDG) at the VEX IR statement level, not the raw assembly instruction level. However, because every VEX statement is tied back to the assembly instruction that generated it, you can easily map those dependencies back to the basic block's assembly instructions.
+
+Here is a practical guide on how a DDG works in angr and how to scope it down to analyze a single basic block.
+
+Step 1: Generate the DDG for the Function
+The DDG analysis requires an emulated context to trace how data moves through registers and memory. Because of this, you must feed it a CFGEmulated object, not a CFGFast object.
+
+# 1. Generate the required Emulated CFG
+cfg = project.analyses.CFGEmulated(keep_state=True)
+
+# 2. Run the Data Dependency Graph analysis
+ddg = project.analyses.DDG(cfg)
+Step 2: How DDG Nodes Work
+The nodes inside ddg.graph are ProgramPoint objects. A data dependency edge exists between two program points if data written by one is read by the other.
+
+To filter these down to your specific basic block, you look at the ProgramPoint attributes:
+
+block_addr: The starting address of the basic block it belongs to.
+stmt_idx: The index of the VEX IR statement.
+ins_addr: The memory address of the actual assembly instruction!
+
+Step 3: Getting Instruction-Level Dependencies for Your Block
+To look at how assembly instructions within a single basic block depend on each other, you can iterate through the DDG edges, filtering for edges where both the source and destination reside inside your target block's address range.
+
+Here is a complete recipe to extract that data:
+
+target_block_addr = 0x401122  # Replace with your block's address
+
+# Grab the block to know its size bounds
+block = project.factory.block(target_block_addr)
+block_end = target_block_addr + block.size
+
+print(f"--- Data Dependencies inside Block {hex(target_block_addr)} ---")
+
+# Iterate through all data dependency edges in the entire program
+for src_pp, dst_pp in ddg.graph.edges():
+    
+    # Filter: Ensure both source and destination are inside our target basic block
+    if (src_pp.ins_addr and dst_pp.ins_addr and 
+        target_block_addr <= src_pp.ins_addr < block_end and 
+        target_block_addr <= dst_pp.ins_addr < block_end):
+        
+        # Get the edge data to see what kind of dependency it is (Register vs Memory)
+        edge_data = ddg.graph.get_edge_data(src_pp, dst_pp)
+        dep_type = edge_data.get('type', 'Unknown')
+        data_location = edge_data.get('location', '')
+
+        print(f"Instruction {hex(src_pp.ins_addr)} -> Influences -> Instruction {hex(dst_pp.ins_addr)}")
+        print(f"  └─ Type: {dep_type} via {data_location}")
+
+What kind of dependencies will you see?
+When you run this on a block, angr will expose two main types of dependencies via the edge data:
+
+Register Dependencies: For example, instruction 1 writes a value to RAX, and instruction 2 immediately reads from RAX.
+
+Memory Dependencies: Instruction 1 stores a value onto the stack ([RBP - 0x8]), and a later instruction pops that same stack memory address back into a register.
+
+=== CFG with (fast) CFGFast or with CFGEmulated?
+
+- Comments only populated with CFGFast
+- CFGFast is "slow" (if speeding up is not possible, see previous TODO)
+
+=== Fix functions with fall-through to next function
+
+Some BBs end with unconditional jumps (e.g., memset_sse2)
+http://127.0.0.1:8000/cfg?filepath=tests/i386/bronze_ropchain&function=0x805ec40
+
+=== Fix wrong dissasembly
+
+Wrong disassembly? Looks like CFGFast doesn't do well, but CFGEmulated looks good
+http://127.0.0.1:8000/cfg?filepath=tests/x86_64/static&function=0x43d3a0
+We might end up 1) CFGemulated for drawing CFG, 2) CFGFast for getting comments
+-> Test suite comparing fast vs emulated (w/o comments)
+
+=== Test suite
+
+Test suite for correctness (we should never fail!)
+
+=== Agentic Setup
+
+Setup .clinerules, look at:
+- https://github.com/cline/clinerules/blob/main/.clinerules/uv-python-usage-guide.md
+- Existing conversation in Gemini
+- Github search on existing python rules: https://github.com/search?q=loguru+python+clinerules&type=code
+
+=== Check CFGEmulated
+
+keep_state=True fails in some situations

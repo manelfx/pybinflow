@@ -1,9 +1,30 @@
 from __future__ import annotations
-
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
+from time import perf_counter
+from typing import Any, Callable
 
+from loguru import logger
 import cxxfilt
+
+
+MODULE_NAME = "bingraph"
+
+
+def time_it(func: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(func)  # Preserves the original function's name and docstring
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        start_time = perf_counter()  # Highest resolution clock available
+
+        result = func(*args, **kwargs)   # Execute the actual function
+
+        end_time = perf_counter()
+        execution_time = end_time - start_time
+
+        # Log the result
+        logger.info(f"Function '{func.__name__}' executed in {execution_time:.4f} seconds")
+        return result
+    return wrapper
 
 
 def resolve_under_root(root: Path, relpath: str) -> Path:

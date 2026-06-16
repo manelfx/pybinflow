@@ -8,7 +8,7 @@ from angr import Project
 from angr.analyses.cfg import CFGBase
 from loguru import logger
 
-#from bingraph.helpers import serialize_function, serialize_function_summary
+from bingraph.helpers import get_settings  #, serialize_function, serialize_function_summary
 from . import get_cfg
 from .annotators import ColorSimprocedures, CommentsDataRef, ColorEdgesVex
 from .contents import NodeHead, NodeAsm
@@ -27,7 +27,7 @@ def plot_cfg(cfg: CFGBase,
 
     annotators = []
     annotators.append(ColorSimprocedures())
-    if comments and cfg.sort == 'fast':
+    if comments:
         annotators.append(CommentsDataRef())
     annotators.append(ColorEdgesVex())
 
@@ -66,6 +66,7 @@ def render_cfg(project: Project, func_addr: int, cfg_mode: str, format: str = "s
     """
     # extract nexworkx digraph for the function
     cfg = get_cfg(project, func_addr, cfg_mode)
+    settings = get_settings()
 
     # check if function is found in CFG
     function = cfg.functions.get(func_addr)
@@ -83,7 +84,7 @@ def render_cfg(project: Project, func_addr: int, cfg_mode: str, format: str = "s
             str(output_base),
             func_addr=func_addr,
             format=format,
-            comments=True
+            comments=settings.comments
         )
         output_path = output_base.with_suffix(f".{format}")
         output = output_path.read_text(encoding="utf-8")

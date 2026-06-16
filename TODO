@@ -83,7 +83,8 @@ Memory Dependencies: Instruction 1 stores a value onto the stack ([RBP - 0x8]), 
 === CFG with (fast) CFGFast or with CFGEmulated?
 
 - Comments only populated with CFGFast
-- CFGFast is "slow" (if speeding up is not possible, see previous TODO)
+- CFGFast is "slow" for whole program.
+- We might end up 1) CFGemulated for drawing CFG, 2) CFGFast for getting comments
 
 === Fix functions with fall-through to next function
 

@@ -7,7 +7,7 @@ from angr.analyses import CFGFast, CFGEmulated
 from angr.analyses.cfg import CFGBase
 from loguru import logger
 
-from bingraph.helpers import time_it
+from bingraph.helpers import time_it, get_settings
 from .symbols import list_function_symbols
 
 
@@ -90,7 +90,7 @@ def _get_emu_cfg(project: Project, func_addr: int) -> CFGEmulated:
     return project.analyses.CFGEmulated(kb=kb,
                                         starts=[func_addr],
                                         call_depth=0,
-                                        #keep_state=True,
+                                        keep_state=get_settings().keep_state,
                                         normalize=True)
 
 

@@ -15,8 +15,8 @@ class CFGSource(Source):
 
         # traverse angr nodes
         for n in obj.nodes():
-            # consider only edges of given function, if provided
-            if self.func_addr and n.function_address != self.func_addr:
+            # consider only nodes of given function (if provided) and simbolic procedures
+            if not n.is_simprocedure and (self.func_addr and n.function_address != self.func_addr):
                 continue
 
             if n in lookup:
@@ -37,6 +37,3 @@ class CFGSource(Source):
             graph.add_edge(Edge(lookup[src], lookup[dst], data))
 
         return graph
-
-
-# NOTE: add call graph (CG) source view as well

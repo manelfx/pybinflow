@@ -28,7 +28,6 @@ def create_app() -> FastAPI:
         """
         def get_route_handler(self) -> Callable:
             original_handler = super().get_route_handler()
-            settings = get_settings()
 
             async def custom_route_handler(request: Request) -> Response:
                 try:

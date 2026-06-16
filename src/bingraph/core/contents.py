@@ -11,11 +11,11 @@ class NodeHead(Content):
         node = n.obj
         attributes=[]
         if node.is_simprocedure:
-            attributes.append("SIMP")
+            attributes.append(" SIMP")
         if node.is_syscall:
-            attributes.append("SYSC")
+            attributes.append(" SYSC")
         if node.no_ret:
-            attributes.append("NORET")
+            attributes.append(" NORET")
 
         n.content[self.name] = {
             'data': [{

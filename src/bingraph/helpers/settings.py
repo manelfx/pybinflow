@@ -18,12 +18,15 @@ class GlobalSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".bingraphenv",
         cli_parse_args=True,       # automatic parsing of CLI options
+        cli_implicit_flags=True,   # allows using "--no-x" bool flag modes
         alias_generator=lambda field_name: field_name.replace("_", "-")
                                    # swap underscores for dashes across all fields
     )
 
     root: Path = Field(..., env="BINGRAPH_ROOT", description="The root directory for binaries")
     cfg_mode: Literal["fast", "emulated"] = Field("fast", description="CFG reconstruction mode")
+    comments: CliImplicitFlag[bool] = Field(True, description="Appends comments to instructions when available")
+    keep_state: CliImplicitFlag[bool] = Field(False, description="Accurate CFG reconstruction on emulated mode")
 
     log_level: str = Field("INFO", description="Flag to define level for logging messages")  # type: ignore
     debug: CliImplicitFlag[bool] = Field(False, description="Flag to enable debug mode")
@@ -63,7 +66,7 @@ class ClientSettings(BaseModel):
     payload: str | None = Field(None, description="JSON Payload data")
 
     filepath: str = Field(..., description="Path to target binary (relative to root directory for binaries)")
-    function: str | None = Field(None, description="Function address (in 0x format)")
+    function: str | None = Field(None, description="Function address (in int or 0x hex format)")
     format: str = Field("dot", description="Output format for graphs")
 
     def cli_cmd(self) -> None:

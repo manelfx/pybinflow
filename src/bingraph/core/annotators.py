@@ -36,7 +36,7 @@ class CommentsAnnotator(ContentAnnotator):
         for k in content['data']:
             ins = k['_ins']
             if ins.address in comments_by_addr:
-                k['comment'] = {'content': "; " + "\n".join(comments_by_addr[ins.address])}
+                k['comment'] = {'content': " ; " + "\n".join(comments_by_addr[ins.address])}
                 k['comment']['color'] = 'gray'
                 k['comment']['align'] = 'LEFT'
 
@@ -141,8 +141,12 @@ class CommentsDataRef(CommentsAnnotator):
 
         xrefs = kb_xrefs.get_xrefs_by_ins_addr_region(block_start, block_end)
         if not xrefs:
-            xrefs = list(getattr(node.obj, "accessed_data_references", []))
-        logger.info(f"Found {len(xrefs)} reference(s) in block {hex(block_start)}-{hex(block_end)}")
+            # Do not use "accessed_data_refernces" sice CFGFast is required
+            # e.g., xrefs = list(getattr(node.obj, "accessed_data_references", []))
+            for instr_addr in node.obj.instruction_addrs:
+                xrefs.update(kb_xrefs.get_xrefs_by_ins_addr(instr_addr))
+        if len(xrefs):
+            logger.info(f"Found {len(xrefs)} reference(s) in block {hex(block_start)}-{hex(block_end)}")
 
         for xref in xrefs:
             comment = self._format_xref_comment(node, xref)

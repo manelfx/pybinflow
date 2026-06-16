@@ -16,14 +16,15 @@ class GlobalSettings(BaseSettings):
     Also, CLI arguments are implicitly parsed, as well as env variables.
     """
     model_config = SettingsConfigDict(
+        env_prefix="BINGRAPH_",
         env_file=".bingraphenv",
+        env_nested_delimiter="__", # for parsing from env (e.g., BINGRAPH_SERVER__HOST)
         cli_parse_args=True,       # automatic parsing of CLI options
         cli_implicit_flags=True,   # allows using "--no-x" bool flag modes
-        alias_generator=lambda field_name: field_name.replace("_", "-")
-                                   # swap underscores for dashes across all fields
+        cli_kebab_case=True,       # CLI options should be shown as kebab-case
     )
 
-    root: Path = Field(..., env="BINGRAPH_ROOT", description="The root directory for binaries")
+    root: Path = Field(..., description="The root directory for binaries")
     cfg_mode: Literal["fast", "emulated"] = Field("fast", description="CFG reconstruction mode")
     comments: CliImplicitFlag[bool] = Field(True, description="Appends comments to instructions when available")
     keep_state: CliImplicitFlag[bool] = Field(False, description="Accurate CFG reconstruction on emulated mode")
@@ -53,8 +54,8 @@ class GlobalSettings(BaseSettings):
 class ServerSettings(BaseModel):
     """Server mode settings."""
 
-    host: str = Field("127.0.0.1", env="BINGRAPH_HOST", description="The host IP address for the server")
-    port: int = Field(8000, env="BINGRAPH_PORT", description="The port number to run the server")
+    host: str = Field("127.0.0.1", description="The host IP address for the server")
+    port: int = Field(8000, description="The port number to run the server")
 
     def cli_cmd(self) -> None:
         pass

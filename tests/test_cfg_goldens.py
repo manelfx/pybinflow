@@ -48,7 +48,9 @@ How this module works:
 Useful environment variables:
    - `BINGRAPH_GOLDEN_MODE=compare|promote`
    - `BINGRAPH_GOLDEN_CONFIGS=name1,name2,...` to run only selected configs
-   - `BINGRAPH_GOLDEN_LIMIT=<N>` to limit the CSV rows during local smoke tests
+   - `BINGRAPH_GOLDEN_MIN_BBS=<N>` to test only rows with at least `N` BBs
+     (defaults to `10`)
+   - `BINGRAPH_GOLDEN_LIMIT=<N>` to limit the filtered rows during local smoke tests
 """
 
 from __future__ import annotations
@@ -82,6 +84,7 @@ GOLDENS_ROOT = TESTS_DIR / "goldens"
 MODE_ENV = "BINGRAPH_GOLDEN_MODE"
 CONFIGS_ENV = "BINGRAPH_GOLDEN_CONFIGS"
 LIMIT_ENV = "BINGRAPH_GOLDEN_LIMIT"
+MIN_BBS_ENV = "BINGRAPH_GOLDEN_MIN_BBS"
 
 
 @dataclass(frozen=True)
@@ -134,18 +137,36 @@ class ConfigRunState:
 def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
     """Yield normalized CSV rows for parametrized golden tests."""
 
-    # Convert CSV rows into the small payload each parametrized test needs.
+    min_bbs = _env_min_bbs()
+    yielded = 0
+
+    # Only non-duplicate rows take part in the golden suite. Apply the BB-count
+    # filter before the optional smoke-test limit so the limit reflects the
+    # exact number of collected test rows, not raw CSV line numbers.
     with CSV_PATH.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for index, row in enumerate(reader, start=1):
+            if _csv_bool(row["duplicate"]):
+                continue
+            if int(row["num_bbs"]) < min_bbs:
+                continue
+
+            yielded += 1
             yield {
                 "index": index,
                 "filepath": row["filepath"],
                 "function_name": row["funcname"],
                 "function_addr": row["funcaddr"],
+                "num_bbs": int(row["num_bbs"]),
             }
-            if limit is not None and index >= limit:
+            if limit is not None and yielded >= limit:
                 return
+
+
+def _csv_bool(value: str) -> bool:
+    """Parse a lowercase CSV boolean field into a Python bool."""
+
+    return value.strip().lower() == "true"
 
 
 def _sanitize_filename(value: str, max_length: int = 80) -> str:
@@ -199,6 +220,7 @@ def _summary_payload(
         "format": "raw",
         "artifact_extension": ".dot",
         "limit": limit,
+        "min_bbs": _env_min_bbs(),
     }
 
 
@@ -300,6 +322,15 @@ def _env_limit() -> int | None:
     if raw_limit is None or raw_limit == "":
         return None
     return int(raw_limit)
+
+
+def _env_min_bbs() -> int:
+    """Read the minimum BB threshold applied before test parametrization."""
+
+    raw_value = os.getenv(MIN_BBS_ENV)
+    if raw_value is None or raw_value == "":
+        return 10
+    return int(raw_value)
 
 
 def _golden_mode() -> str:

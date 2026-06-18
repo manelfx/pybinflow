@@ -6,30 +6,22 @@ Typical usage:
     uv run python scripts/export_playground_functions_csv.py \
       --output tests/playground_functions.csv
 
-By default the exporter applies two deduplication stages while streaming rows:
-    (fileformat, funcsize, function_md5)
-    (fileformat, funcsize, basic_block_size_fingerprint)
+The exporter writes one row for every candidate function that can be read from
+the supported playground binaries. In addition to the base function identity,
+each row stores metadata that makes offline corpus analysis easier:
 
-This keeps one representative row for functions that look structurally identical
-across multiple binaries, and then further collapses rows that keep the same
-file format, function size, and lightweight basic-block-size fingerprint. We
-intentionally do not require the same function name in the second pass: for
-golden CFG testing we care more about deduplicating similar control-flow shapes
-than about preserving distinct symbol names that still draw the same graph. The
-basic-block stage uses a lightweight intra-function block traversal instead of
-full CFG recovery, so it can catch some near-duplicates that differ in raw
-bytes while keeping similar local block structure.
+    filepath,fileformat,funcname,funcaddr,funcsize,checksum,num_bbs,duplicate
 
-If you want the full non-deduplicated corpus, disable that behavior with:
-    uv run python scripts/export_playground_functions_csv.py \
-      --no-deduplicate \
-      --output tests/playground_functions.csv
+Where:
+    checksum  = last 5 hex characters of the function MD5
+    num_bbs   = lightweight basic-block count used by the BB dedup heuristic
+    duplicate = whether the row would be dropped by the raw-first, BB-second
+                dedup strategy used to shrink the golden-test corpus
 
-The script writes a CSV with these columns:
-    filepath,fileformat,funcname,funcaddr,funcsize
-
-It also prints a short report to stderr with row counts and, when deduplication
-is enabled, the number of collapsed duplicate groups.
+The exporter still computes duplicate information in streaming order, but it no
+longer drops duplicate rows from the CSV. That way the committed corpus keeps
+all candidates while still recording which entries are interesting enough for
+CFG regression tests.
 """
 
 from __future__ import annotations
@@ -42,6 +34,7 @@ import re
 import subprocess
 import sys
 from collections import Counter, deque
+from dataclasses import dataclass
 from itertools import groupby
 from pathlib import Path
 from typing import Iterable
@@ -55,16 +48,27 @@ from loguru import logger
 stdlib_logging.getLogger("angr").setLevel(stdlib_logging.CRITICAL)
 stdlib_logging.getLogger("cle").setLevel(stdlib_logging.CRITICAL)
 
-RawRow = tuple[str, str, str, str, int, str]
-Row = tuple[str, str, str, str, int, str, tuple[int, ...] | None]
+
+@dataclass(frozen=True)
+class CorpusRow:
+    filepath: str
+    fileformat: str
+    funcname: str
+    funcaddr: str
+    funcsize: int
+    checksum: str
+    num_bbs: int
+    duplicate: bool
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse the small CLI surface used by this exporter."""
+
     parser = argparse.ArgumentParser(
         description=(
             "Traverse a playground directory, find binaries via 'objdump -f', "
             "extract file-owned function symbols via angr/CLE, and write CSV rows "
-            "(filepath,fileformat,funcname,funcaddr,funcsize)."
+            "with duplicate-analysis metadata."
         )
     )
     parser.add_argument(
@@ -78,25 +82,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("playground_functions.csv"),
         help="Output CSV path (default: ./playground_functions.csv)",
-    )
-    parser.add_argument(
-        "--deduplicate",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "Keep only one row per (fileformat, funcsize, function_md5) tuple. "
-            "Enabled by default; use --no-deduplicate to keep the full corpus."
-        ),
-    )
-    parser.add_argument(
-        "--basic-block-deduplicate",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help=(
-            "After raw-byte deduplication, also collapse rows by "
-            "(fileformat, funcsize, basic_block_size_fingerprint). "
-            "Enabled by default; use --no-basic-block-deduplicate to disable it."
-        ),
     )
     return parser.parse_args()
 
@@ -122,7 +107,7 @@ def get_file_format(path: Path) -> str | None:
 
 
 def load_project(path: Path):
-    """Load a binary with angr/CLE, returning ``None`` when the file is unsupported."""
+    """Load a binary with angr/CLE, returning ``None`` when unsupported."""
 
     try:
         return Project(
@@ -144,8 +129,7 @@ def build_basic_block_size_fingerprint(project: Project, func_addr: int, func_si
     sorted by block address.
     """
 
-    if func_size <= 0:
-        return ()
+    assert func_size > 0, "Function size must be positive before BB fingerprinting."
 
     func_end = func_addr + func_size
     visited: set[int] = set()
@@ -158,19 +142,23 @@ def build_basic_block_size_fingerprint(project: Project, func_addr: int, func_si
             continue
         visited.add(addr)
 
-        # Never decode past the symbol boundary, even if the lifted block would
-        # otherwise continue into the next function.
-        remaining_size = func_end - addr
-        if remaining_size <= 0:
-            continue
         try:
-            block = project.factory.block(addr, size=remaining_size)
+            # Ask angr for the natural block boundary at this address. Passing a
+            # synthetic size here can swallow multiple real blocks, padding, or
+            # even neighboring stubs, which inflates the BB count.
+            block = project.factory.block(addr)
         except Exception:
             continue
         if block.size <= 0:
             continue
 
-        blocks.append((block.addr, block.size))
+        # Keep the traversal fenced to the inferred function range even if the
+        # natural block would otherwise run past the end.
+        effective_size = min(block.size, func_end - block.addr)
+        if effective_size <= 0:
+            continue
+
+        blocks.append((block.addr, effective_size))
         try:
             block_vex = block.vex
         except Exception:
@@ -192,9 +180,15 @@ def build_basic_block_size_fingerprint(project: Project, func_addr: int, func_si
         # calls, since VEX constant jump targets do not include it.
         jumpkind = getattr(block_vex, "jumpkind", "")
         if jumpkind in {"Ijk_Boring", "Ijk_Call"}:
-            fallthrough = block.addr + block.size
+            fallthrough = block.addr + effective_size
             if func_addr <= fallthrough < func_end:
                 queue.append(fallthrough)
+
+    if not blocks:
+        # Keep the corpus self-contained: every exported function should have a
+        # positive BB count, even if the lightweight traversal could not expand
+        # any block successfully.
+        return (func_size,)
 
     return tuple(size for _, size in sorted(blocks))
 
@@ -205,7 +199,6 @@ def _normalize_vex_target(target: object) -> int | None:
     if isinstance(target, int):
         return target
 
-    # Some architectures expose pyvex Const objects instead of Python ints.
     value = getattr(target, "value", None)
     if isinstance(value, int):
         return value
@@ -216,9 +209,8 @@ def _normalize_vex_target(target: object) -> int | None:
 def list_file_owned_functions(project: Project) -> list[tuple[str, str, int, str]]:
     """List non-import functions with raw-byte hashes.
 
-    The exporter always computes raw-byte checksums first. Keep this collection
-    step cheap so the caller can cheaply reject byte-for-byte duplicates before
-    paying for any CFG-shaped fingerprinting.
+    Keep this collection step focused on symbol ownership and raw bytes. The
+    caller is responsible for attaching BB metadata and duplicate markers.
     """
 
     main_object = project.loader.main_object
@@ -229,17 +221,26 @@ def list_file_owned_functions(project: Project) -> list[tuple[str, str, int, str
         if symbol.is_function and symbol.name
     ]
 
-    # CLE can expose duplicate symbols at the same address/name pair. Sort first
-    # so we can collapse those duplicates deterministically.
+    # CLE can expose duplicate symbols at the same address/name pair. Sort
+    # first so we can collapse those duplicates deterministically.
     entries = sorted(entries, key=lambda item: (item[1], item[0]))
     entries = [next(group) for _, group in groupby(entries, key=lambda item: (item[1], item[0]))]
 
-    # Like the app's symbol listing, infer missing sizes from the next symbol
-    # when the symbol table recorded size zero.
+    # Like the app's symbol listing, infer missing sizes when the symbol table
+    # recorded size zero. Cap the inferred extent to the earliest of:
+    # - the next symbol address
+    # - the end of the containing section
+    # This avoids size-zero symbols like `_init` accidentally absorbing PLT or
+    # neighboring sections just because the next function symbol happens later.
     for idx in range(len(entries) - 1):
         name, addr, relative_addr, size, is_import = entries[idx]
         if size == 0:
-            entries[idx] = (name, addr, relative_addr, entries[idx + 1][1] - addr, is_import)
+            inferred_size = entries[idx + 1][1] - addr
+            section = main_object.find_section_containing(addr)
+            if section is not None:
+                section_end = section.vaddr + section.memsize
+                inferred_size = min(inferred_size, section_end - addr)
+            entries[idx] = (name, addr, relative_addr, inferred_size, is_import)
 
     filtered: list[tuple[str, str, int, str]] = []
     for name, addr, relative_addr, size, is_import in entries:
@@ -259,38 +260,35 @@ def list_file_owned_functions(project: Project) -> list[tuple[str, str, int, str
 def iter_files(root: Path) -> Iterable[Path]:
     """Yield every regular file below the selected playground root."""
 
-    for p in root.rglob("*"):
-        if any(part.startswith(".git") for part in p.parts):
+    for path in root.rglob("*"):
+        if any(part.startswith(".git") for part in path.parts):
             continue
-        if p.is_file():
-            yield p
+        if path.is_file():
+            yield path
 
 
 def collect_rows(
     *,
     root: Path,
-    deduplicate: bool,
-    basic_block_deduplicate: bool,
-) -> tuple[list[Row], int, int, int, int, Counter[tuple[str, int, str]] | None, Counter[tuple[str, int, tuple[int, ...] | None]] | None]:
-    """Collect output rows while applying deduplication inline during traversal.
+) -> tuple[list[CorpusRow], int, int, int, Counter[tuple[str, int, str]], Counter[tuple[str, int, tuple[int, ...]]]]:
+    """Collect every candidate row while computing duplicate metadata inline.
 
-    This keeps project locality high: once a binary is loaded, we immediately
-    decide whether each candidate survives raw-byte deduplication and, if
-    needed, BB-fingerprint deduplication, instead of revisiting survivors in a
-    later pass.
+    We still apply the same logical dedup order as before:
+    1. raw-byte deduplication by (fileformat, funcsize, md5)
+    2. BB-shape deduplication by (fileformat, funcsize, bb_fingerprint)
+
+    The difference is that every candidate row is emitted, and duplicate rows
+    are now marked in metadata instead of being dropped from the CSV.
     """
 
-    rows: list[Row] = []
+    rows: list[CorpusRow] = []
     files_seen = 0
     binaries_seen = 0
-    rows_before_dedup = 0
-    rows_after_raw_dedup = 0
+    candidate_rows = 0
     raw_seen: set[tuple[str, int, str]] = set()
-    bb_seen: set[tuple[str, int, tuple[int, ...] | None]] = set()
-    raw_duplicate_counts: Counter[tuple[str, int, str]] | None = Counter() if deduplicate else None
-    bb_duplicate_counts: Counter[tuple[str, int, tuple[int, ...] | None]] | None = (
-        Counter() if deduplicate and basic_block_deduplicate else None
-    )
+    bb_seen: set[tuple[str, int, tuple[int, ...]]] = set()
+    raw_duplicate_counts: Counter[tuple[str, int, str]] = Counter()
+    bb_duplicate_counts: Counter[tuple[str, int, tuple[int, ...]]] = Counter()
 
     for path in iter_files(root):
         files_seen += 1
@@ -305,105 +303,86 @@ def collect_rows(
 
         # Process each function while the owning binary is still hot in memory.
         for funcname, funcaddr, funcsize, checksum in list_file_owned_functions(project):
-            rows_before_dedup += 1
-            row: RawRow = (relpath, fileformat, funcname, funcaddr, funcsize, checksum)
-
-            if not deduplicate:
-                rows.append((*row, None))
-                continue
-
-            raw_key = (fileformat, funcsize, checksum)
-            assert raw_duplicate_counts is not None
-            raw_duplicate_counts[raw_key] += 1
-            if raw_key in raw_seen:
-                continue
-            raw_seen.add(raw_key)
-            rows_after_raw_dedup += 1
-
-            if not basic_block_deduplicate:
-                rows.append((*row, None))
-                continue
-
-            # Only pay the BB fingerprint cost for rows that already survived
-            # the stricter raw-byte deduplication pass.
+            candidate_rows += 1
             block_fingerprint = build_basic_block_size_fingerprint(project, int(funcaddr, 16), funcsize)
+            num_bbs = len(block_fingerprint)
+            raw_key = (fileformat, funcsize, checksum)
             bb_key = (fileformat, funcsize, block_fingerprint)
-            assert bb_duplicate_counts is not None
-            bb_duplicate_counts[bb_key] += 1
-            if bb_key in bb_seen:
-                continue
-            bb_seen.add(bb_key)
-            rows.append((*row, block_fingerprint))
 
-    if not deduplicate:
-        rows_after_raw_dedup = rows_before_dedup
+            raw_duplicate_counts[raw_key] += 1
+            is_raw_duplicate = raw_key in raw_seen
+            if not is_raw_duplicate:
+                raw_seen.add(raw_key)
 
-    return (
-        rows,
-        files_seen,
-        binaries_seen,
-        rows_before_dedup,
-        rows_after_raw_dedup,
-        raw_duplicate_counts,
-        bb_duplicate_counts,
-    )
+            # Only the first raw survivor participates in BB deduplication, but
+            # every row still records its BB count in the output corpus.
+            is_bb_duplicate = False
+            if not is_raw_duplicate:
+                bb_duplicate_counts[bb_key] += 1
+                is_bb_duplicate = bb_key in bb_seen
+                if not is_bb_duplicate:
+                    bb_seen.add(bb_key)
+
+            rows.append(
+                CorpusRow(
+                    filepath=relpath,
+                    fileformat=fileformat,
+                    funcname=funcname,
+                    funcaddr=funcaddr,
+                    funcsize=funcsize,
+                    checksum=checksum[-5:],
+                    num_bbs=num_bbs,
+                    duplicate=is_raw_duplicate or is_bb_duplicate,
+                )
+            )
+
+    return rows, files_seen, binaries_seen, candidate_rows, raw_duplicate_counts, bb_duplicate_counts
 
 
 def log_report(
     *,
     files_seen: int,
     binaries_seen: int,
-    rows_before_dedup: int,
-    rows_after_raw_dedup: int,
     rows_written: int,
-    deduplicate: bool,
-    duplicate_counts: Counter[tuple[str, int, str]] | None,
-    basic_block_deduplicate: bool,
-    basic_block_duplicate_counts: Counter[tuple[str, int, tuple[int, ...] | None]] | None,
+    raw_duplicate_counts: Counter[tuple[str, int, str]],
+    bb_duplicate_counts: Counter[tuple[str, int, tuple[int, ...]]],
+    duplicate_rows: int,
     output: Path,
 ) -> None:
     """Write a compact export report to stderr."""
 
     logger.info(f"files scanned: {files_seen}")
     logger.info(f"binary-like files accepted: {binaries_seen}")
-    logger.info(f"rows before deduplication: {rows_before_dedup}")
-    logger.info(f"rows written: {rows_written}")
+    logger.info(f"candidate rows written: {rows_written}")
     logger.info(f"output: {output}")
 
-    if not deduplicate or duplicate_counts is None:
-        return
+    raw_duplicate_groups = sum(1 for count in raw_duplicate_counts.values() if count > 1)
+    bb_duplicate_groups = sum(1 for count in bb_duplicate_counts.values() if count > 1)
+    raw_duplicate_rows = sum(count - 1 for count in raw_duplicate_counts.values() if count > 1)
+    bb_duplicate_rows = sum(count - 1 for count in bb_duplicate_counts.values() if count > 1)
+    unique_rows = rows_written - duplicate_rows
 
-    duplicate_groups = sum(1 for count in duplicate_counts.values() if count > 1)
-    duplicate_rows_removed = rows_before_dedup - rows_written
-    logger.info("deduplication enabled: yes")
-    logger.info(f"duplicate groups collapsed: {duplicate_groups}")
-    logger.info(f"rows removed by raw-byte deduplication: {rows_before_dedup - rows_after_raw_dedup}")
+    logger.info(f"rows marked duplicate: {duplicate_rows}")
+    logger.info(f"rows marked unique: {unique_rows}")
+    logger.info(f"raw-byte duplicate groups: {raw_duplicate_groups}")
+    logger.info(f"rows flagged by raw-byte deduplication: {raw_duplicate_rows}")
+    logger.info(f"basic-block duplicate groups: {bb_duplicate_groups}")
+    logger.info(f"rows flagged by basic-block deduplication: {bb_duplicate_rows}")
 
-    most_common_duplicates = [
-        (key, count) for key, count in duplicate_counts.most_common(10) if count > 1
+    most_common_raw = [
+        (key, count) for key, count in raw_duplicate_counts.most_common(10) if count > 1
     ]
-    if most_common_duplicates:
-        logger.info("top duplicate groups:")
-        for (fileformat, funcsize, _checksum), count in most_common_duplicates:
+    if most_common_raw:
+        logger.info("top raw-byte duplicate groups:")
+        for (fileformat, funcsize, _checksum), count in most_common_raw:
             logger.info(f"  count={count} fileformat={fileformat} funcsize={funcsize}")
 
-    if not basic_block_deduplicate or basic_block_duplicate_counts is None:
-        logger.info(f"rows removed by total deduplication: {duplicate_rows_removed}")
-        return
-
-    bb_duplicate_groups = sum(1 for count in basic_block_duplicate_counts.values() if count > 1)
-    bb_rows_removed = rows_after_raw_dedup - rows_written
-    logger.info("basic-block deduplication enabled: yes")
-    logger.info(f"basic-block duplicate groups collapsed: {bb_duplicate_groups}")
-    logger.info(f"rows removed by basic-block deduplication: {bb_rows_removed}")
-    logger.info(f"rows removed by total deduplication: {duplicate_rows_removed}")
-
-    most_common_bb_duplicates = [
-        (key, count) for key, count in basic_block_duplicate_counts.most_common(10) if count > 1
+    most_common_bb = [
+        (key, count) for key, count in bb_duplicate_counts.most_common(10) if count > 1
     ]
-    if most_common_bb_duplicates:
+    if most_common_bb:
         logger.info("top basic-block duplicate groups:")
-        for (fileformat, funcsize, block_fingerprint), count in most_common_bb_duplicates:
+        for (fileformat, funcsize, block_fingerprint), count in most_common_bb:
             logger.info(
                 f"  count={count} fileformat={fileformat} funcsize={funcsize} "
                 f"block_sizes={block_fingerprint}"
@@ -428,39 +407,46 @@ def main() -> int:
         print("error: 'objdump' command not found in PATH", file=sys.stderr)
         return 1
 
-    (
-        rows,
-        files_seen,
-        binaries_seen,
-        rows_before_dedup,
-        rows_after_raw_dedup,
-        duplicate_counts,
-        basic_block_duplicate_counts,
-    ) = collect_rows(
-        root=root,
-        deduplicate=args.deduplicate,
-        basic_block_deduplicate=args.basic_block_deduplicate,
+    rows, files_seen, binaries_seen, _candidate_rows, raw_duplicate_counts, bb_duplicate_counts = collect_rows(
+        root=root
     )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    with args.output.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["filepath", "fileformat", "funcname", "funcaddr", "funcsize"])
+    with args.output.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "filepath",
+                "fileformat",
+                "funcname",
+                "funcaddr",
+                "funcsize",
+                "checksum",
+                "num_bbs",
+                "duplicate",
+            ]
+        )
         writer.writerows(
-            (filepath, fileformat, funcname, funcaddr, funcsize)
-            for filepath, fileformat, funcname, funcaddr, funcsize, _checksum, _block_fingerprint in rows
+            [
+                row.filepath,
+                row.fileformat,
+                row.funcname,
+                row.funcaddr,
+                row.funcsize,
+                row.checksum,
+                row.num_bbs,
+                str(row.duplicate).lower(),
+            ]
+            for row in rows
         )
 
     log_report(
         files_seen=files_seen,
         binaries_seen=binaries_seen,
-        rows_before_dedup=rows_before_dedup,
-        rows_after_raw_dedup=rows_after_raw_dedup,
         rows_written=len(rows),
-        deduplicate=args.deduplicate,
-        duplicate_counts=duplicate_counts,
-        basic_block_deduplicate=args.basic_block_deduplicate,
-        basic_block_duplicate_counts=basic_block_duplicate_counts,
+        raw_duplicate_counts=raw_duplicate_counts,
+        bb_duplicate_counts=bb_duplicate_counts,
+        duplicate_rows=sum(1 for row in rows if row.duplicate),
         output=args.output,
     )
     print(f"wrote {len(rows)} rows to {args.output}")

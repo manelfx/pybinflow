@@ -77,7 +77,7 @@ from bingraph.helpers import settings as settings_module
 TESTS_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = TESTS_DIR.parent
 CSV_PATH = TESTS_DIR / "playground_functions.csv"
-PLAYGROUND_ROOT = PROJECT_ROOT / "playground" / "angr-binaries"
+PLAYGROUND_ROOT = PROJECT_ROOT / "angr-binaries" / "tests"
 SUMMARY_NAME = "summary.json"
 ACTUAL_ROOT = TESTS_DIR / "_actual"
 GOLDENS_ROOT = TESTS_DIR / "goldens"

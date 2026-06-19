@@ -74,8 +74,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path("playground/angr-binaries"),
-        help="Playground root directory (default: ./playground/angr-binaries)",
+        default=Path("angr-binaries/tests"),
+        help="Playground root directory (default: ./angr-binaries/tests)",
     )
     parser.add_argument(
         "--output",

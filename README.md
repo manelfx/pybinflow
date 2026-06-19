@@ -31,7 +31,7 @@ uv sync
 ## Run the API
 
 ```bash
-uv run bingraph-api --root ./playground/angr-binaries
+uv run bingraph-api --root ./angr-binaries/tests
 ```
 
 Then open:
@@ -41,7 +41,7 @@ Then open:
 Example (once playground exists):
 
 ```
-http://127.0.0.1:8000/symtab?filepath=tests/x86_64/fauxware
+http://127.0.0.1:8000/symtab?filepath=x86_64/fauxware
 ```
 
 ## Tests

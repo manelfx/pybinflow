@@ -1,7 +1,7 @@
 from __future__ import annotations
 from http import HTTPStatus
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Generic, TypeVar
 import sys
 
 from angr import Project
@@ -9,12 +9,22 @@ from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from starlette.requests import Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from loguru import logger
 
 from bingraph.helpers import get_settings, resolve_under_root, MODULE_NAME
 from bingraph.core import load_project, list_function_symbols, render_cfg, FunctionSymbol
+
+
+ItemT = TypeVar("ItemT")
+
+
+class ItemsList(BaseModel, Generic[ItemT]):
+    """Generic API wrapper for responses that expose a list of items."""
+
+    items: list[ItemT]
 
 
 def create_app() -> FastAPI:
@@ -119,10 +129,10 @@ def create_app() -> FastAPI:
             {"symbols": _get_symbols(filepath), "filepath": filepath},
         )
 
-    @app.get("/api/symtab", response_model=list[FunctionSymbol])
-    def api_symtab(request: Request, filepath: str = Query(...)) -> list[FunctionSymbol]:
+    @app.get("/api/symtab", response_model=ItemsList[FunctionSymbol])
+    def api_symtab(request: Request, filepath: str = Query(...)) -> ItemsList[FunctionSymbol]:
 
-        return _get_symbols(filepath)
+        return ItemsList(items=_get_symbols(filepath))
 
     # Control flow graph endpoints #############################################
 

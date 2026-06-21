@@ -69,7 +69,7 @@ def _get_fast_cfg(project: Project, func_addr: int) -> CFGFast:
                                     normalize=True,
                                     force_smart_scan=True,
                                     resolve_indirect_jumps=True,
-                                    data_references=True)
+                                    data_references=get_settings().comments)
 
 
 @lru_cache

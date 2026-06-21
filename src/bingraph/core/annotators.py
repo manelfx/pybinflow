@@ -209,7 +209,7 @@ class ColorEdgesVex(EdgeAnnotator):
                     style.make_edge(edge, 'UNKNOWN')
             else:
                 logger.warning(f"Unexpected {jk} type for edge"
-                               f" {source_node.addr:#x} -> {edge.dst.obj.addr:#x}")
+                               f" {edge.src.obj.addr:#x} -> {edge.dst.obj.addr:#x}")
                 style.make_edge(edge, 'UNKNOWN')
         else:
             style.make_edge(edge, 'UNKNOWN')

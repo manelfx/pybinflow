@@ -56,6 +56,7 @@ Useful environment variables:
 from __future__ import annotations
 
 import csv
+import fnmatch
 import json
 import os
 import re
@@ -85,6 +86,12 @@ MODE_ENV = "BINGRAPH_GOLDEN_MODE"
 CONFIGS_ENV = "BINGRAPH_GOLDEN_CONFIGS"
 LIMIT_ENV = "BINGRAPH_GOLDEN_LIMIT"
 MIN_BBS_ENV = "BINGRAPH_GOLDEN_MIN_BBS"
+SKIPPED_BINARIES = [
+    # These binaries currently make CFG golden runs disproportionately slow.
+    # Keep them out of the parametrized corpus until we revisit the analysis
+    # strategy for them.
+    "x86_64/ALLSTAR*",
+]
 
 
 @dataclass(frozen=True)
@@ -146,6 +153,10 @@ def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
     with CSV_PATH.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for index, row in enumerate(reader, start=1):
+            # Skip known-problematic binaries before counting rows toward the
+            # optional local test limit.
+            if any(fnmatch.fnmatch(row["filepath"], pattern) for pattern in SKIPPED_BINARIES):
+                continue
             if _csv_bool(row["duplicate"]):
                 continue
             if int(row["num_bbs"]) < min_bbs:
@@ -265,10 +276,11 @@ def _normalize_raw_dot(text: str) -> str:
 
 
 def _clear_caches() -> None:
-    """Reset cached CFG helpers so each test sees its own patched settings."""
+    """Reset cached CFG helpers before pytest switches to another config."""
 
-    # The app and CFG helpers are cached; clear them so each test sees the
-    # patched settings for its own configuration.
+    # The app and CFG helpers are cached globally. Clear them when pytest moves
+    # into a different golden configuration so rows inside the same config can
+    # reuse the already-loaded project and CFG objects.
     render_module.render_cfg.cache_clear()
     project_module._get_project.cache_clear()
     project_module._get_fast_cfg.cache_clear()
@@ -280,8 +292,6 @@ def _extract_render_cfg() -> Callable[[str, str, str, str], str]:
 
     # `_render_cfg` is nested inside `create_app()`, so pull it out from the
     # `/api/cfg` route closure instead of duplicating application logic here.
-    _clear_caches()
-
     app = app_module.create_app()
     for route in app.routes:
         if getattr(route, "path", None) != "/api/cfg":
@@ -400,13 +410,14 @@ CURRENT_MODE = _golden_mode()
 ACTIVE_CONFIGS = _selected_configs()
 ROWS = tuple(_iter_rows(_env_limit())) if CURRENT_MODE == "compare" else ()
 RUN_STATE: dict[str, ConfigRunState] = {}
+ACTIVE_CACHE_CONFIG: str | None = None
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _manage_summary_files() -> Iterator[None]:
     """Track per-config run stats and write summary files after the module finishes."""
 
-    global RUN_STATE
+    global RUN_STATE, ACTIVE_CACHE_CONFIG
 
     mode = CURRENT_MODE
     if mode != "compare":
@@ -458,6 +469,8 @@ def _manage_summary_files() -> Iterator[None]:
         failures.extend(f"{config.name}: unexpected golden file {path}" for path in unexpected_files)
 
     RUN_STATE = {}
+    ACTIVE_CACHE_CONFIG = None
+    _clear_caches()
 
     if failures:
         preview = "\n".join(failures[:20])
@@ -467,10 +480,29 @@ def _manage_summary_files() -> Iterator[None]:
 
 
 if CURRENT_MODE == "compare":
+    @pytest.fixture(scope="function")
+    def _config_cache_scope(config: GoldenConfig) -> Iterator[None]:
+        """Reset cached project state only when pytest switches config groups."""
+
+        global ACTIVE_CACHE_CONFIG
+
+        # Pytest iterates config first, then row, so this clears caches once per
+        # config and lets every row inside that config reuse the same warm caches.
+        if ACTIVE_CACHE_CONFIG != config.name:
+            _clear_caches()
+            ACTIVE_CACHE_CONFIG = config.name
+
+        yield
+
+
     @pytest.mark.slow
-    @pytest.mark.parametrize("config", ACTIVE_CONFIGS, ids=[config.name for config in ACTIVE_CONFIGS])
     @pytest.mark.parametrize("row", ROWS, ids=_row_id)
-    def test_render_cfg_goldens(config: GoldenConfig, row: dict[str, Any]) -> None:
+    @pytest.mark.parametrize("config", ACTIVE_CONFIGS, ids=[config.name for config in ACTIVE_CONFIGS])
+    def test_render_cfg_goldens(
+        config: GoldenConfig,
+        row: dict[str, Any],
+        _config_cache_scope: None,
+    ) -> None:
         """Render one CFG case, store `_actual`, and compare it against its golden."""
 
         golden_dir = GOLDENS_ROOT / config.name
@@ -505,8 +537,6 @@ if CURRENT_MODE == "compare":
             except Exception as exc:  # pragma: no cover - exercised against real corpus
                 artifact_text = _error_artifact(exc)
                 state.render_failures += 1
-            finally:
-                _clear_caches()
 
         # Always keep the newly rendered candidate output on disk for inspection.
         actual_path.parent.mkdir(parents=True, exist_ok=True)

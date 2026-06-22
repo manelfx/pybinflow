@@ -49,6 +49,14 @@ stdlib_logging.getLogger("angr").setLevel(stdlib_logging.CRITICAL)
 stdlib_logging.getLogger("cle").setLevel(stdlib_logging.CRITICAL)
 
 
+# Skip legacy or unsupported format families directly from the `objdump -f`
+# string before paying the cost of loading them with angr/CLE.
+SKIPPED_FILEFORMAT_SUFFIXES = [
+    "-unknown",
+    "-m68k",
+]
+
+
 @dataclass(frozen=True)
 class CorpusRow:
     filepath: str
@@ -104,6 +112,12 @@ def get_file_format(path: Path) -> str | None:
         if match:
             return match.group(1).strip()
     return None
+
+
+def should_skip_file_format(fileformat: str) -> bool:
+    """Return True when an objdump-reported file format is intentionally skipped."""
+
+    return any(fileformat.endswith(suffix) for suffix in SKIPPED_FILEFORMAT_SUFFIXES)
 
 
 def load_project(path: Path):
@@ -294,6 +308,9 @@ def collect_rows(
         files_seen += 1
         fileformat = get_file_format(path)
         if not fileformat:
+            continue
+        if should_skip_file_format(fileformat):
+            logger.info(f"skipping file format by suffix: {path} ({fileformat})")
             continue
         project = load_project(path)
         if project is None:

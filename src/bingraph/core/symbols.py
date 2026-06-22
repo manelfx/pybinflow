@@ -65,12 +65,20 @@ def list_function_symbols(project: Project) -> list[FunctionSymbol]:
     # remove duplicaties (it happens sometimes the CLE loader duplicate symbols)
     symbols = [next(group) for _, group in groupby(symbols, key=lambda s: (s.addr, s.name))]
 
-    # also for CLE symbols, size it is often not defined, so do it based on next symbol address 
-    # FIXME: last element is not fixed,
-    # to do so we should gather all elements first, fix size, then filter only functions
-    for idx in range(len(symbols) - 1):
-        if symbols[idx].size == 0:
-            symbols[idx].size = symbols[idx + 1].addr - symbols[idx].addr
+    # CLE often leaves function sizes unset, so infer them from the next symbol
+    # address before dropping unresolved zero-sized entries from the final list.
+    for idx, symbol in enumerate(symbols):
+        if symbol.size != 0:
+            continue
+
+        next_addr = next(
+            (candidate.addr for candidate in symbols[idx + 1:] if candidate.addr > symbol.addr),
+            None,
+        )
+        if next_addr is not None:
+            symbol.size = next_addr - symbol.addr
+
+    symbols = [symbol for symbol in symbols if symbol.size > 0]
 
     logger.info(f"Obtained {len(symbols)} symbols")
     return symbols

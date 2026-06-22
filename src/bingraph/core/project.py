@@ -14,11 +14,11 @@ from .symbols import list_function_symbols
 @lru_cache
 def _get_project(spath: str, mtime: float) -> Project:
     """
-    Returns an angr project from a (maybe cathed) image.
+    Return an angr project from a cached binary image.
     
     Args:
         spath (str): The file path of the binary to analyze.
-        mtime (float): Binary modification time -- note this is not used but still cached,
+        mtime (float): Binary modification time -- note this is not used but is still cached,
             so updated binaries are not incorrectly cached.
 
     Returns:
@@ -52,24 +52,71 @@ def _get_fast_cfg(project: Project, func_addr: int) -> CFGFast:
     Returns:
         CFGFast: The fast control flow graph of the project.
     """
-    # find the function in binary symbols to figure out function boundaries
+    # Find the function symbol first so we can bound CFGFast to its address range.
     function = next((sym for sym in list_function_symbols(project) if sym.addr == func_addr), None)
     if not function:
         raise KeyError(f"Function {func_addr:#x} not found binary")
     regions = [(func_addr, func_addr + function.size)]
     logger.info(f"Region for CFG reconstruct will be {[(hex(a), hex(b)) for a, b in regions]}") 
 
-    # create clean knowledge base object, so project is not pulluted with this analysis
-    kb = KnowledgeBase(project)
+    def _should_retry_cfgfast_with_safer_settings(exc: Exception) -> bool:
+        """
+        Return True when CFGFast should be retried with safer bounded settings.
 
-    # get CFG, on a defined region (function), with smart analysis
-    return project.analyses.CFGFast(kb=kb,
-                                    function_starts=[func_addr],
-                                    regions=regions,
-                                    normalize=True,
-                                    force_smart_scan=True,
-                                    resolve_indirect_jumps=True,
-                                    data_references=get_settings().comments)
+        We have seen two angr failure modes on our region-bounded CFGFast runs:
+
+        1. Smart-scan post-processing can dereference a `None` block
+           (`AttributeError: 'NoneType' object has no attribute 'addr'`).
+        2. Data-reference collection can fail inside Clinic/StackPointerTracker
+           with a `KeyError(<callee-addr>)` when the bounded knowledge base does
+           not contain metadata for out-of-region callees.
+
+        In both cases we retry once with `force_smart_scan=False`, which also
+        disables `data_references` in `build_cfg()`. That keeps the analysis
+        bounded to the target function while avoiding the fragile angr paths.
+        """
+        if isinstance(exc, AttributeError):
+            return "'NoneType' object has no attribute 'addr'" in str(exc)
+
+        return isinstance(exc, KeyError)
+
+
+    # Create a fresh knowledge base so this analysis does not pollute the project state.
+    def build_cfg(*, force_smart_scan: bool) -> CFGFast:
+        kb = KnowledgeBase(project)
+        return project.analyses.CFGFast(
+            kb=kb,
+            # we already know the exact entry point we want
+            function_starts=[func_addr],
+            # big performance win, do not analyze the full binary
+            regions=regions,
+            # avoid extra function discovery heuristics, already gave the function start explicitly
+            eh_frame=False,
+            exceptions=False,
+            force_complete_scan=False,
+            function_prologues=False,
+            start_at_entry=False,
+            symbols=False,
+            # Enable smarter basic-block discovery, but keep it constrained to the
+            # requested function region.
+            data_references=force_smart_scan,
+            force_smart_scan=force_smart_scan,
+            resolve_indirect_jumps=True,
+            # stable, clean function graphs for rendering
+            normalize=True
+        )
+
+    # Prefer the smarter region-bounded scan, but retry without it for the
+    # specific angr post-processing crash pattern we observed in the golden corpus.
+    try:
+        return build_cfg(force_smart_scan=True)
+    except Exception as exc:
+        if not _should_retry_cfgfast_with_safer_settings(exc):
+            raise
+        logger.warning(
+            f"Retrying CFGFast with safer settings for {func_addr:#x} after angr crash: {exc}"
+        )
+        return build_cfg(force_smart_scan=False)
 
 
 @lru_cache
@@ -84,7 +131,7 @@ def _get_emu_cfg(project: Project, func_addr: int) -> CFGEmulated:
     Returns:
         CFGEmulated: The emulated control flow graph of the project.
     """
-    # create clean knowledge base object, so project is not pulluted with this analysis
+    # Create a fresh knowledge base so this analysis does not pollute the project state.
     kb = KnowledgeBase(project)
 
     return project.analyses.CFGEmulated(kb=kb,

@@ -1,4 +1,5 @@
 from .vis import Content, Node
+from archinfo.archerror import ArchError
 from loguru import logger
 
 
@@ -70,6 +71,9 @@ class NodeAsm(Content):
             # FIXME -- pp writes "call <fn>" instead of "call <addr>"
             #print(n.obj.block.pp())
             insns = n.obj.block.capstone.insns
+        except ArchError as e:
+            logger.error(str(e))
+            insns = []
         except Exception as e:
             logger.exception(e)
             insns = []

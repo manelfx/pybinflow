@@ -85,6 +85,44 @@ Memory Dependencies: Instruction 1 stores a value onto the stack ([RBP - 0x8]), 
 Some BBs end with unconditional jumps (e.g., memset_sse2)
 http://127.0.0.1:8000/cfg?filepath=i386/bronze_ropchain&function=0x805ec40
 
+=== Revisit unresolved indirect jumps
+
+Some functions in the corpus contain CFG nodes that end at simprocedure
+`UnresolvableJumpTarget`. This is not tied to one architecture only. Current
+test outputs show such cases across at least:
+
+- `riscv`
+- `mips64`
+- `armhf`
+- `armel`
+- `s390x`
+- `ppc64el`
+- `i386`
+- `mipsel`
+- `x86_64`
+
+Example:
+
+- `i386/bronze_ropchain`, function `__memset_sse2` at `0x805ec40`
+
+Findings so far:
+
+- Enabling fallback to `CFGEmulated` when `UnresolvableJumpTarget` is present
+  does not reliably improve the resulting CFG.
+- Trying stronger angr options such as `cross_references=True` or
+  `force_complete_scan=True` did not help on `__memset_sse2`.
+- The problematic x86 example is a PIC jump-table dispatch
+  (`get_pc_thunk.bx` + table lookup + `jmp *%ebx`), but similar unresolved
+  patterns appear on many other architectures.
+
+Current conclusion:
+
+- A custom angr indirect-jump resolver is probably not the best next
+  investment, because the issue appears to be cross-architecture and would
+  likely duplicate a large part of CFG recovery logic.
+- It is more promising to keep unresolved indirect jumps as a known anomaly
+  class and address them later in the custom CFG fallback builder.
+
 === Last-resort CFG fallback for NoDecode / AVX-512
 
 When angr-based CFG recovery still fails because VEX cannot decode one or more

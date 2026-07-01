@@ -164,26 +164,71 @@ def _instruction_count(node) -> int:
         return 0
 
 
+def _has_decoding_coverage_mismatch(node) -> bool:
+    """Return True when decoded instructions do not cover the full node span."""
+
+    if node.size == 0:
+        logger.warning(
+            f"CFG anomaly for function {node.function_address:#x}: zero_sized_block at "
+            f"{node.addr:#x}: node size is zero"
+        )
+        return True
+
+    try:
+        insns = list(node.block.capstone.insns)
+    except (AttributeError, KeyError) as exc:
+        logger.warning(
+            f"Unable to inspect decoded coverage for CFG node at {node.addr:#x}: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        insns = []
+
+    expected_addr = node.addr
+
+    # A well-formed node should decode contiguously from its start address all
+    # the way to `node.addr + node.size`. If angr splits the node at the wrong
+    # address, capstone still decodes instructions, but the decoded span will
+    # show holes or end before the node boundary.
+    for insn in insns:
+        if insn.address != expected_addr:
+            logger.warning(
+                f"CFG anomaly for function {node.function_address:#x}: malformed_block at "
+                f"{node.addr:#x}: decoded instruction starts at {insn.address:#x} "
+                f"instead of expected {expected_addr:#x}"
+            )
+            return True
+        expected_addr += insn.size
+
+    node_end = node.addr + node.size
+    if expected_addr != node_end:
+        logger.warning(
+            f"CFG anomaly for function {node.function_address:#x}: malformed_block at "
+            f"{node.addr:#x}: decoded instructions end at {expected_addr:#x}, "
+            f"but node size extends to {node_end:#x}"
+        )
+        return True
+
+    return False
+
+
 def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
     """Return True when the CFG contains true decoding/lifting failures."""
 
     for node in _iter_function_nodes(cfg, func_addr):
-        insn_count = _instruction_count(node)
-
-        # Empty blocks belong to the "weird graph" bucket and are the ones we
-        # want CFGEmulated to try fixing. Skip them here so non-empty NoDecode
-        # blocks remain the signal for a likely real lifting limitation.
-        if insn_count == 0:
+        # Let the weird-graph pass own malformed node boundaries or undecodable
+        # capstone streams. Decode gaps are reserved for nodes that look
+        # structurally fine but still lift to Ijk_NoDecode in VEX.
+        if _has_decoding_coverage_mismatch(node):
             continue
 
         try:
             jumpkind = node.block.vex.jumpkind
         except AttributeError as exc:
             logger.warning(
-                f"CFG anomaly for function {func_addr:#x}: decode_gap at {node.addr:#x}: "
-                f"lifting the node raised {type(exc).__name__}: {exc}"
+                f"Unable to inspect jumpkind for CFG node at {node.addr:#x}: "
+                f"{type(exc).__name__}: {exc}"
             )
-            return True
+            continue
         if jumpkind == "Ijk_NoDecode":
             logger.warning(
                 f"CFG anomaly for function {func_addr:#x}: decode_gap at {node.addr:#x}: "
@@ -198,17 +243,23 @@ def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
     """Return True when the CFG shows malformed structure without a decode gap."""
 
     for node in _iter_function_nodes(cfg, func_addr):
-        insn_count = _instruction_count(node)
+        # Disabled for now: unresolved jump-table style indirect jumps are a
+        # useful anomaly signal, but CFGEmulated does not currently improve
+        # those cases reliably enough to justify an automatic fallback.
+        #
+        # for succ in cfg.graph.successors(node):
+        #     if succ.is_simprocedure and succ.simprocedure_name == "UnresolvableJumpTarget":
+        #         logger.warning(
+        #             f"CFG anomaly for function {func_addr:#x}: "
+        #             f"unresolvable_indirect_jump at {node.addr:#x}: "
+        #             "node flows to UnresolvableJumpTarget"
+        #         )
+        #         return True
 
-        # Distinguish empty blocks from true decoding failures. These are the
-        # malformed CFG nodes we observed CFGEmulated helping with. Do not touch
-        # `node.block.vex` here: some of these nodes raise translation errors
-        # precisely because the block boundary is already wrong.
-        if insn_count == 0:
-            logger.warning(
-                f"CFG anomaly for function {func_addr:#x}: empty_block at "
-                f"{node.addr:#x}: node has no decoded instructions"
-            )
+        # These malformed CFG nodes are structurally wrong but do not
+        # necessarily indicate a real decoding/lifting limitation. CFGEmulated
+        # has been able to recover some of them in our corpus.
+        if _has_decoding_coverage_mismatch(node):
             return True
 
     return False

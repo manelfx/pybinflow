@@ -80,35 +80,100 @@ Register Dependencies: For example, instruction 1 writes a value to RAX, and ins
 
 Memory Dependencies: Instruction 1 stores a value onto the stack ([RBP - 0x8]), and a later instruction pops that same stack memory address back into a register.
 
-=== CFG with (fast) CFGFast or with CFGEmulated?
-
-- Comments only populated with CFGFast
-- CFGFast is "slow" for whole program.
-- We might end up 1) CFGemulated for drawing CFG, 2) CFGFast for getting comments
-
 === Fix functions with fall-through to next function
 
 Some BBs end with unconditional jumps (e.g., memset_sse2)
-http://127.0.0.1:8000/cfg?filepath=tests/i386/bronze_ropchain&function=0x805ec40
+http://127.0.0.1:8000/cfg?filepath=i386/bronze_ropchain&function=0x805ec40
 
-=== Fix wrong dissasembly
+=== Last-resort CFG fallback for NoDecode / AVX-512
 
-Wrong disassembly? Looks like CFGFast doesn't do well, but CFGEmulated looks good
-http://127.0.0.1:8000/cfg?filepath=tests/x86_64/static&function=0x43d3a0
-We might end up 1) CFGemulated for drawing CFG, 2) CFGFast for getting comments
--> Test suite comparing fast vs emulated (w/o comments)
+When angr-based CFG recovery still fails because VEX cannot decode one or more
+instructions (for example some AVX-512 `zmm` instructions), add a final
+fallback that builds our own CFG directly from capstone-disassembled bytes.
 
-=== Test suite
+Sketch:
 
-Test suite for correctness (we should never fail!)
+- Detect that the angr CFG is incomplete because of `Ijk_NoDecode` or other
+  decode failures.
+- Keep the function range bounded by symbol address + size.
+- Starting from the entry block, decode instructions with capstone only.
+- Create BB boundaries at:
+  - function entry
+  - direct branch targets inside the function range
+  - fallthrough after conditional branches and calls
+- Stop a BB on:
+  - conditional jump
+  - unconditional jump
+  - return
+  - decode failure
+- Add edges only when justified by the last decoded instruction:
+  - conditional jump target + fallthrough
+  - unconditional jump target
+  - call fallthrough
+  - straight-line fallthrough
 
-=== Agentic Setup
+Goal:
 
-Setup .clinerules, look at:
-- https://github.com/cline/clinerules/blob/main/.clinerules/uv-python-usage-guide.md
-- Existing conversation in Gemini
-- Github search on existing python rules: https://github.com/search?q=loguru+python+clinerules&type=code
+- Produce a conservative CFG that is structurally sane even when VEX cannot
+  lift the full function.
+- Prefer missing edges over malformed BBs or edges that contradict the decoded
+  instructions.
 
-=== Check CFGEmulated
+=== Investigate CFGEmulated 0x0 nodes in _int_malloc
 
-keep_state=True fails in some situations
+Observed on:
+
+- `x86_64/langdetect_clang`, function `_int_malloc` at `0x41b300`
+
+Current status:
+
+- Only reproduced in `cfg_mode_stateless` / `cfg_mode_stateful` test outputs.
+- `cfg_mode_none` does not show the issue.
+- It is the only known current CFG in the generated corpus with nodes at
+  address `0x0`.
+- The CFG also contains multiple distinct nodes with the same basic-block
+  address (for example repeated nodes at `0x41b300`), which is another clear
+  sign that this graph is malformed.
+- Filtering `PathTerminator` nodes removed the fake `0x4` node, but not the
+  remaining `0x0` node.
+
+Open questions:
+
+- Why does CFGEmulated introduce a node labeled `_nl_current_LC_CTYPE` at
+  address `0x0` for this function?
+- Why does the direct CLI inspection not make this node obvious while the
+  persisted golden-test artifact does?
+- Is this node a real angr CFG node that should be filtered, or is it exposing
+  a deeper CFG construction issue specific to this function?
+
+=== Detect duplicate-address CFG nodes
+
+We should investigate whether a CFG containing multiple distinct nodes with the
+same basic-block address should always be considered malformed.
+
+Questions to answer:
+
+- Should this be part of the runtime "weird graph" checks in `project.py`?
+- Or should we only detect/report it in the test suite as an additional CFG
+  quality validation?
+- Are there any legitimate angr CFG situations where repeated node addresses
+  are expected, or is this always a sign of a broken graph?
+
+=== Investigate remaining comment nondeterminism
+
+`cfg_mode_none` and `cfg_mode_none.bak` are structurally identical, but there
+are still a couple of label-only diffs. That suggests some remaining comment or
+annotation nondeterminism.
+
+Functions currently showing those diffs:
+
+- `mipsel,darpa_ping,0x4047c0,__schedule_exit`
+- `mipsel,jumptable_0,0x40bcdc,log_request`
+
+Questions:
+
+- Are comments/xrefs still being emitted in a nondeterministic order somewhere?
+- Does building other CFGs beforehand mutate knowledge-base state in a way that
+  changes later comments?
+- Are these differences specific to comments, or do they come from another kind
+  of label annotation?

@@ -144,30 +144,16 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             raise ValueError("Invalid function address") from exc
 
-    def _render_cfg(filepath: str, function: str, cfg_mode: str, format: str = "svg") -> str:
+    def _render_cfg(filepath: str, function: str, format: str = "svg") -> str:
         func_addr = _resolve_faddr(function)
         project = _get_project(filepath)
-        return render_cfg(project, func_addr, cfg_mode, format)
+        return render_cfg(project, func_addr, format)
 
     @app.get("/cfg")
     def cfg(request: Request, filepath: str = Query(...), function: str = Query(...)) -> Response:
-        """Endpoint to return the fast CFG of a specified function as an SVG image."""
+        """Endpoint to return the CFG of a specified function as an SVG image."""
 
-        svg = _render_cfg(filepath, function, cfg_mode=settings.cfg_mode)
-        return Response(content=svg, media_type="image/svg+xml")
-
-    @app.get("/cfgfast")
-    def cfgfast(request: Request, filepath: str = Query(...), function: str = Query(...)) -> Response:
-        """Endpoint to return the fast CFG of a specified function as an SVG image."""
-
-        svg = _render_cfg(filepath, function, cfg_mode="fast")
-        return Response(content=svg, media_type="image/svg+xml")
-
-    @app.get("/cfgemu")
-    def cfgemu(request: Request, filepath: str = Query(...), function: str = Query(...)) -> Response:
-        """Endpoint to return the emulated CFG of a specified function as an SVG image."""
-
-        svg = _render_cfg(filepath, function, cfg_mode="emulated")
+        svg = _render_cfg(filepath, function)
         return Response(content=svg, media_type="image/svg+xml")
 
     @app.get("/api/cfg", response_model=dict[str, str])
@@ -175,9 +161,9 @@ def create_app() -> FastAPI:
                 filepath: str = Query(...),
                 function: str = Query(...),
                 format: str = Query(...)) -> dict[str, str]:
-        """Endpoint to return the fast CFG of a specified function as an SVG image."""
+        """Endpoint to return the CFG of a specified function."""
 
-        cfg = _render_cfg(filepath, function, cfg_mode=settings.cfg_mode, format=format)
+        cfg = _render_cfg(filepath, function, format=format)
         return {"graph": cfg}
 
     return app

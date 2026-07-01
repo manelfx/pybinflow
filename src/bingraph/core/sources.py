@@ -15,8 +15,13 @@ class CFGSource(Source):
 
         # traverse angr nodes
         for n in obj.nodes():
-            # consider only nodes of given function (if provided) and simbolic procedures
-            if not n.is_simprocedure and (self.func_addr and n.function_address != self.func_addr):
+            # consider only:
+            # - nodes of given function (if provided)
+            # - simbolic procedures (except PathTerminators)
+            if n.is_simprocedure:
+                if n.simprocedure_name == 'PathTerminator':
+                    continue
+            elif self.func_addr and n.function_address != self.func_addr:
                 continue
 
             if n in lookup:

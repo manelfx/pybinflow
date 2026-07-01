@@ -71,7 +71,7 @@ class NodeAsm(Content):
             # FIXME -- pp writes "call <fn>" instead of "call <addr>"
             #print(n.obj.block.pp())
             insns = n.obj.block.capstone.insns
-        except ArchError as e:
+        except (ArchError, KeyError) as e:
             logger.error(str(e))
             insns = []
         except Exception as e:

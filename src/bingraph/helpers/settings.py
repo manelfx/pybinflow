@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
-
 from loguru import logger
 from pydantic import Field, field_validator, BaseModel
 from pydantic_settings import BaseSettings, CliImplicitFlag, SettingsConfigDict, CliSubCommand, CliApp
@@ -25,9 +24,11 @@ class GlobalSettings(BaseSettings):
     )
 
     root: Path = Field(..., description="The root directory for binaries")
-    cfg_mode: Literal["fast", "emulated"] = Field("fast", description="CFG reconstruction mode")
+    cfg_mode: Literal["none", "stateless", "stateful", "custom"] = Field(
+        "stateless",
+        description="CFG reconstruction mode and fallback strategy",
+    )
     comments: CliImplicitFlag[bool] = Field(True, description="Appends comments to instructions when available")
-    keep_state: CliImplicitFlag[bool] = Field(False, description="Accurate CFG reconstruction on emulated mode")
 
     log_level: str = Field("INFO", description="Flag to define level for logging messages")  # type: ignore
     debug: CliImplicitFlag[bool] = Field(False, description="Flag to enable debug mode")

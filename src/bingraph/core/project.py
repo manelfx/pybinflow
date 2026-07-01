@@ -1,6 +1,7 @@
 from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from angr import Project, KnowledgeBase
 from angr.analyses import CFGFast, CFGEmulated
@@ -40,13 +41,13 @@ def load_project(path: Path) -> Project:
     return _get_project(str(path), path.stat().st_mtime)
 
 
-@lru_cache
-def _get_fast_cfg(project: Project, func_addr: int) -> CFGFast:
+def _get_fast_cfg(project: Project, kb: KnowledgeBase, func_addr: int) -> CFGFast:
     """
     Build or retrieve the fast control flow graph (CFGFast) for the given project.
 
     Args:
         project (Project): The angr project for which to build the fast CFG.
+        kb (KnowledgeBase): Shared knowledge base reused across CFG strategies.
         func_addr (int): Address of the target function.
 
     Returns:
@@ -83,7 +84,6 @@ def _get_fast_cfg(project: Project, func_addr: int) -> CFGFast:
 
     # Create a fresh knowledge base so this analysis does not pollute the project state.
     def build_cfg(*, force_smart_scan: bool) -> CFGFast:
-        kb = KnowledgeBase(project)
         return project.analyses.CFGFast(
             kb=kb,
             # we already know the exact entry point we want
@@ -119,30 +119,152 @@ def _get_fast_cfg(project: Project, func_addr: int) -> CFGFast:
         return build_cfg(force_smart_scan=False)
 
 
-@lru_cache
-def _get_emu_cfg(project: Project, func_addr: int) -> CFGEmulated:
+def _get_emu_cfg(project: Project, kb: KnowledgeBase, func_addr: int, keep_state: bool) -> CFGEmulated:
     """
     Build or retrieve the emulated control flow graph (CFGEmulated) for a given function.
 
     Args:
         project (Project): The angr project for which to build the emulated CFG.
+        kb (KnowledgeBase): Shared knowledge base reused across CFG strategies.
         func_addr (int): Address of the target function.
+        keep_state (bool): Whether to retain full symbolic state during emulation.
 
     Returns:
         CFGEmulated: The emulated control flow graph of the project.
     """
-    # Create a fresh knowledge base so this analysis does not pollute the project state.
-    kb = KnowledgeBase(project)
-
     return project.analyses.CFGEmulated(kb=kb,
                                         starts=[func_addr],
                                         call_depth=0,
-                                        keep_state=get_settings().keep_state,
+                                        keep_state=keep_state,
                                         normalize=True)
 
 
-@time_it
-def get_cfg(project: Project, func_addr: int, cfg_mode: str) -> CFGBase:
+def _iter_function_nodes(cfg: CFGBase, func_addr: int):
+    """Yield non-simprocedure CFG nodes that belong to the requested function."""
 
-    logger.info(f"Getting {cfg_mode} CFG for function {func_addr:#x}")
-    return {"fast": _get_fast_cfg, "emulated": _get_emu_cfg}[cfg_mode](project, func_addr)
+    for node in cfg.graph.nodes():
+        if node.function_address != func_addr or node.is_simprocedure:
+            continue
+        yield node
+
+
+def _instruction_count(node) -> int:
+    """Return the number of decoded instructions in a CFG node block."""
+
+    # Use capstone-level decoding here instead of VEX lifting so we can tell
+    # whether a block is effectively empty without triggering the exact lift
+    # failures we are trying to classify.
+    try:
+        return len(node.block.capstone.insns)
+    except (AttributeError, KeyError) as exc:
+        logger.warning(
+            f"Unable to count instructions for CFG node at {node.addr:#x}: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        return 0
+
+
+def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
+    """Return True when the CFG contains true decoding/lifting failures."""
+
+    for node in _iter_function_nodes(cfg, func_addr):
+        insn_count = _instruction_count(node)
+
+        # Empty blocks belong to the "weird graph" bucket and are the ones we
+        # want CFGEmulated to try fixing. Skip them here so non-empty NoDecode
+        # blocks remain the signal for a likely real lifting limitation.
+        if insn_count == 0:
+            continue
+
+        try:
+            jumpkind = node.block.vex.jumpkind
+        except AttributeError as exc:
+            logger.warning(
+                f"CFG anomaly for function {func_addr:#x}: decode_gap at {node.addr:#x}: "
+                f"lifting the node raised {type(exc).__name__}: {exc}"
+            )
+            return True
+        if jumpkind == "Ijk_NoDecode":
+            logger.warning(
+                f"CFG anomaly for function {func_addr:#x}: decode_gap at {node.addr:#x}: "
+                "node ended with Ijk_NoDecode, which points to a lifting/decoding failure"
+            )
+            return True
+
+    return False
+
+
+def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
+    """Return True when the CFG shows malformed structure without a decode gap."""
+
+    for node in _iter_function_nodes(cfg, func_addr):
+        insn_count = _instruction_count(node)
+
+        # Distinguish empty blocks from true decoding failures. These are the
+        # malformed CFG nodes we observed CFGEmulated helping with. Do not touch
+        # `node.block.vex` here: some of these nodes raise translation errors
+        # precisely because the block boundary is already wrong.
+        if insn_count == 0:
+            logger.warning(
+                f"CFG anomaly for function {func_addr:#x}: empty_block at "
+                f"{node.addr:#x}: node has no decoded instructions"
+            )
+            return True
+
+    return False
+
+
+def _log_post_fallback_status(cfg: CFGBase, func_addr: int, cfg_label: str) -> None:
+    """Log whether fallback CFG recomputation cleared the known anomalies."""
+
+    has_weird_graph = _has_weird_graph(cfg, func_addr)
+    has_decode_gap = _has_decode_gap(cfg, func_addr)
+    if not has_weird_graph and not has_decode_gap:
+        logger.info(f"{cfg_label} for function {func_addr:#x} no longer shows known CFG anomalies")
+    else:
+        logger.warning(f"{cfg_label} for function {func_addr:#x} still shows CFG anomalies")
+
+
+@lru_cache
+@time_it
+def get_cfg(project: Project, func_addr: int) -> CFGBase:
+    """Return the CFG for one function according to the configured fallback mode."""
+
+    cfg_mode: Literal["none", "stateless", "stateful", "custom"] = get_settings().cfg_mode
+    logger.info(f"Getting CFG for function {func_addr:#x} with mode '{cfg_mode}'")
+    # Keep one KB per high-level CFG request so a fallback CFGEmulated run can
+    # reuse the metadata already discovered by CFGFast, especially comments and
+    # related knowledge attached during the fast analysis.
+    kb = KnowledgeBase(project)
+
+    fast_cfg = _get_fast_cfg(project, kb, func_addr)
+    has_decode_gap = _has_decode_gap(fast_cfg, func_addr)
+    has_weird_graph = _has_weird_graph(fast_cfg, func_addr)
+
+    if cfg_mode == "none":
+        return fast_cfg
+
+    if cfg_mode == "custom":
+        if has_decode_gap:
+            raise AssertionError("custom CFG fallback is not implemented yet")
+        return fast_cfg
+
+    if has_decode_gap:
+        logger.warning(
+            f"CFGFast hit a decoding/lifting gap for {func_addr:#x}. "
+            "CFGEmulated is not selected for this anomaly class because it still "
+            "depends on VEX. A custom non-pyvex fallback is required."
+        )
+        return fast_cfg
+
+    if has_weird_graph:
+        keep_state = cfg_mode == "stateful"
+        logger.warning(
+            f"CFGFast produced a weird graph for {func_addr:#x}; "
+            f"retrying with CFGEmulated(keep_state={keep_state})"
+        )
+        emu_cfg = _get_emu_cfg(project, kb, func_addr, keep_state)
+        _log_post_fallback_status(emu_cfg, func_addr, "CFGEmulated result")
+        return emu_cfg
+
+    return fast_cfg

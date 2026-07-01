@@ -5,7 +5,7 @@ How this module works:
 
 1. Test matrix
    Pytest parametrizes over every row in `playground_functions.csv` and the four
-   supported rendering configurations. That means the full suite collects
+   supported CFG-mode configurations. That means the full suite collects
    `4 x N` tests, where `N` is the number of CSV rows.
 
 2. Fresh render output
@@ -60,6 +60,7 @@ import fnmatch
 import json
 import os
 import re
+import traceback
 from dataclasses import asdict, dataclass
 import shutil
 from pathlib import Path
@@ -98,33 +99,15 @@ SKIPPED_BINARIES = [
 class GoldenConfig:
     name: str
     cfg_mode: str
-    comments: bool = True
-    keep_state: bool = False
-
-
-@dataclass
-class StubSettings:
-    root: Path
-    cfg_mode: str
-    comments: bool
-    keep_state: bool
-    debug: bool = False
-    client: Any = None
-    server: Any = None
-    log_level: str = "ERROR"
-
-    def model_dump(self) -> dict[str, Any]:
-        data = asdict(self)
-        data["root"] = str(self.root)
-        return data
 
 
 CONFIGS = [
-    # Four supported regression configurations requested by the test design.
-    GoldenConfig(name="fast_comments_true", cfg_mode="fast", comments=True, keep_state=False),
-    GoldenConfig(name="fast_comments_false", cfg_mode="fast", comments=False, keep_state=False),
-    GoldenConfig(name="emulated_keep_state_true", cfg_mode="emulated", comments=True, keep_state=True),
-    GoldenConfig(name="emulated_keep_state_false", cfg_mode="emulated", comments=True, keep_state=False),
+    # Compare the runtime CFG selection modes while inheriting the rest of the
+    # application defaults from the real Settings model.
+    GoldenConfig(name="cfg_mode_none", cfg_mode="none"),
+    GoldenConfig(name="cfg_mode_stateless", cfg_mode="stateless"),
+    GoldenConfig(name="cfg_mode_stateful", cfg_mode="stateful"),
+    GoldenConfig(name="cfg_mode_custom", cfg_mode="custom"),
 ]
 
 
@@ -244,7 +227,10 @@ def _serialize_summary(payload: dict[str, Any]) -> str:
 def _error_artifact(exc: Exception) -> str:
     """Convert a render exception into a persisted pseudo-artifact."""
 
-    return f"# render-error\n{type(exc).__name__}: {exc}\n"
+    # Persist the full traceback alongside the exception summary so a failed run
+    # can be debugged directly from the generated artifact without reproducing it.
+    traceback_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    return f"# render-error\n{type(exc).__name__}: {exc}\n\n{traceback_text}"
 
 
 def _is_error_artifact(text: str) -> bool:
@@ -283,11 +269,10 @@ def _clear_caches() -> None:
     # reuse the already-loaded project and CFG objects.
     render_module.render_cfg.cache_clear()
     project_module._get_project.cache_clear()
-    project_module._get_fast_cfg.cache_clear()
-    project_module._get_emu_cfg.cache_clear()
+    project_module.get_cfg.cache_clear()
 
 
-def _extract_render_cfg() -> Callable[[str, str, str, str], str]:
+def _extract_render_cfg() -> Callable[[str, str, str], str]:
     """Extract the nested `_render_cfg` callable from the real FastAPI app."""
 
     # `_render_cfg` is nested inside `create_app()`, so pull it out from the
@@ -406,6 +391,20 @@ def _copy_tree_contents(src_dir: Path, dst_dir: Path) -> None:
     _prune_stale_files(dst_dir, expected_files)
 
 
+def _build_test_settings(config: GoldenConfig) -> settings_module.Settings:
+    """Build mocked settings from the real Settings model and its defaults."""
+
+    # Reuse the production settings model so test defaults track the real app
+    # defaults automatically. We only override the fields that must differ for
+    # the golden-suite environment.
+    return settings_module.Settings.model_construct(
+        root=PLAYGROUND_ROOT,
+        cfg_mode=config.cfg_mode,
+        server=None,
+        client=None,
+    )
+
+
 CURRENT_MODE = _golden_mode()
 ACTIVE_CONFIGS = _selected_configs()
 ROWS = tuple(_iter_rows(_env_limit())) if CURRENT_MODE == "compare" else ()
@@ -509,12 +508,7 @@ if CURRENT_MODE == "compare":
         actual_dir = ACTUAL_ROOT / config.name
 
         # Build the runtime settings object that the real app code will consult.
-        settings = StubSettings(
-            root=PLAYGROUND_ROOT,
-            cfg_mode=config.cfg_mode,
-            comments=config.comments,
-            keep_state=config.keep_state,
-        )
+        settings = _build_test_settings(config)
         artifact_relpath = _artifact_relative_path(row)
         golden_path = golden_dir / artifact_relpath
         actual_path = actual_dir / artifact_relpath
@@ -531,7 +525,7 @@ if CURRENT_MODE == "compare":
                 patch.object(project_module, "get_settings", return_value=settings):
             render_cfg = _extract_render_cfg()
             try:
-                artifact_text = render_cfg(row["filepath"], row["function_addr"], config.cfg_mode, "raw")
+                artifact_text = render_cfg(row["filepath"], row["function_addr"], "raw")
                 artifact_text = _normalize_raw_dot(artifact_text)
                 state.render_successes += 1
             except Exception as exc:  # pragma: no cover - exercised against real corpus

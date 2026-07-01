@@ -148,7 +148,19 @@ class CommentsDataRef(CommentsAnnotator):
         if len(xrefs):
             logger.info(f"Found {len(xrefs)} reference(s) in block {hex(block_start)}-{hex(block_end)}")
 
-        for xref in xrefs:
+        def _xref_sort_key(xref):
+            md = getattr(xref, "memory_data", None)
+            return (
+                getattr(xref, "ins_addr", -1),
+                getattr(xref, "dst", -1),
+                getattr(md, "addr", -1) if md is not None else -1,
+                str(getattr(md, "sort", "")) if md is not None else "",
+            )
+
+        # Keep comment emission deterministic across runs. angr xref iteration
+        # order is not stable enough for golden-file tests when an instruction
+        # accumulates multiple references/comments.
+        for xref in sorted(xrefs, key=_xref_sort_key):
             comment = self._format_xref_comment(node, xref)
             if not comment:
                 continue
@@ -163,6 +175,9 @@ class CommentsDataRef(CommentsAnnotator):
                     comments_by_addr[ins_addr].append(comment)
             else:
                 comments_by_addr[ins_addr] = [comment]
+
+        for comments in comments_by_addr.values():
+            comments.sort()
 
         return comments_by_addr
 

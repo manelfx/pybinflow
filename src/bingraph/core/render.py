@@ -43,7 +43,7 @@ def plot_cfg(cfg: CFGBase,
 
 
 @lru_cache
-def render_cfg(project: Project, func_addr: int, cfg_mode: str, format: str = "svg") -> str:
+def render_cfg(project: Project, func_addr: int, format: str = "svg") -> str:
     """
     Render the control flow graph (CFG) of a specific function as an SVG image.
 
@@ -55,7 +55,7 @@ def render_cfg(project: Project, func_addr: int, cfg_mode: str, format: str = "s
     Args:
         project (angr.Project): The angr project containing the function.
         func_addr (int): The address of the function to visualize.
-        fast_mode (bool): Method for getting the function CFG.
+        format (str): Output format for the rendered CFG.
 
     Returns:
         str: The SVG content representing the function's CFG.
@@ -64,11 +64,12 @@ def render_cfg(project: Project, func_addr: int, cfg_mode: str, format: str = "s
         KeyError: If the function address is not found in the CFG.
         RuntimeError: If the CFG graph is not available for visualization.
     """
-    # extract nexworkx digraph for the function
-    cfg = get_cfg(project, func_addr, cfg_mode)
+    # Extract the angr CFG first. We still prefer it when the lift succeeds,
+    # because it carries richer metadata than a disassembly-only graph.
+    cfg = get_cfg(project, func_addr)
     settings = get_settings()
 
-    # check if function is found in CFG
+    # Check if function is found in CFG.
     function = cfg.functions.get(func_addr)
     if not function:
         raise KeyError(f"Function {func_addr:#x} not found in CFG")

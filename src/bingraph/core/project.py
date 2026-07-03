@@ -8,7 +8,13 @@ from angr.analyses.cfg import CFGBase
 from loguru import logger
 
 from bingraph.helpers import time_it, get_settings, CfgMode
-from .cfg import build_custom_cfg
+from .cfg import (
+    build_custom_cfg,
+    iter_function_nodes,
+    node_has_decode_gap,
+    node_has_decoding_coverage_mismatch,
+    node_has_truncated_leaf,
+)
 from .symbols import list_function_symbols
 
 
@@ -139,60 +145,42 @@ def _get_emu_cfg(project: Project, kb: KnowledgeBase, func_addr: int, keep_state
                                         normalize=True)
 
 
-def _iter_function_nodes(cfg: CFGBase, func_addr: int):
-    """Yield non-simprocedure CFG nodes that belong to the requested function."""
-
-    for node in cfg.graph.nodes():
-        if node.function_address != func_addr or node.is_simprocedure:
-            continue
-        yield node
-
-
 def _has_decoding_coverage_mismatch(node) -> bool:
     """Return True when decoded instructions do not cover the full node span."""
 
-    if node.size == 0:
-        logger.warning(
-            f"CFG anomaly for function {node.function_address:#x}: zero_sized_block at "
-            f"{node.addr:#x}: node size is zero"
-        )
-        return True
+    if not node_has_decoding_coverage_mismatch(node):
+        return False
+
+    logger.warning(
+        f"CFG anomaly for function {node.function_address:#x}:"
+        f" {"zero_sized_block" if node.size == 0 else "malformed_block"}"
+        f" at {node.addr:#x}"
+    )
+    return True
+
+
+def _has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
+    """Return True when a block stops before a real terminator and has no exits."""
+
+    if not node_has_truncated_leaf(cfg, func_addr, node):
+        return False
 
     try:
         insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError) as exc:
-        logger.warning(
-            f"Unable to inspect decoded coverage for CFG node at {node.addr:#x}: "
-            f"{type(exc).__name__}: {exc}"
-        )
-        insns = []
+    except (AttributeError, KeyError):
+        insn_text = "<unknown>"
+    else:
+        if insns:
+            last = insns[-1]
+            insn_text = f"{last.mnemonic} {last.op_str}".strip()
+        else:
+            insn_text = "<empty>"
 
-    expected_addr = node.addr
-
-    # A well-formed node should decode contiguously from its start address all
-    # the way to `node.addr + node.size`. If angr splits the node at the wrong
-    # address, capstone still decodes instructions, but the decoded span will
-    # show holes or end before the node boundary.
-    for insn in insns:
-        if insn.address != expected_addr:
-            logger.warning(
-                f"CFG anomaly for function {node.function_address:#x}: malformed_block at "
-                f"{node.addr:#x}: decoded instruction starts at {insn.address:#x} "
-                f"instead of expected {expected_addr:#x}"
-            )
-            return True
-        expected_addr += insn.size
-
-    node_end = node.addr + node.size
-    if expected_addr != node_end:
-        logger.warning(
-            f"CFG anomaly for function {node.function_address:#x}: malformed_block at "
-            f"{node.addr:#x}: decoded instructions end at {expected_addr:#x}, "
-            f"but node size extends to {node_end:#x}"
-        )
-        return True
-
-    return False
+    logger.warning(
+        f"CFG anomaly for function {func_addr:#x}: truncated_leaf at {node.addr:#x}: "
+        f"block ends with non-terminating instruction {insn_text} and has no CFG successors"
+    )
+    return True
 
 
 def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
@@ -205,22 +193,14 @@ def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
         # of by whether pyvex likes every block.
         return False
 
-    for node in _iter_function_nodes(cfg, func_addr):
+    for node in iter_function_nodes(cfg, func_addr):
         # Let the weird-graph pass own malformed node boundaries or undecodable
         # capstone streams. Decode gaps are reserved for nodes that look
         # structurally fine but still lift to Ijk_NoDecode in VEX.
         if _has_decoding_coverage_mismatch(node):
             continue
 
-        try:
-            jumpkind = node.block.vex.jumpkind
-        except AttributeError as exc:
-            logger.warning(
-                f"Unable to inspect jumpkind for CFG node at {node.addr:#x}: "
-                f"{type(exc).__name__}: {exc}"
-            )
-            continue
-        if jumpkind == "Ijk_NoDecode":
+        if node_has_decode_gap(node):
             logger.warning(
                 f"CFG anomaly for function {func_addr:#x}: decode_gap at {node.addr:#x}: "
                 "node ended with Ijk_NoDecode, which points to a lifting/decoding failure"
@@ -233,7 +213,7 @@ def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
 def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
     """Return True when the CFG shows malformed structure without a decode gap."""
 
-    for node in _iter_function_nodes(cfg, func_addr):
+    for node in iter_function_nodes(cfg, func_addr):
         # Disabled for now: unresolved jump-table style indirect jumps are a
         # useful anomaly signal, but CFGEmulated does not currently improve
         # those cases reliably enough to justify an automatic fallback.
@@ -251,6 +231,8 @@ def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
         # necessarily indicate a real decoding/lifting limitation. CFGEmulated
         # has been able to recover some of them in our corpus.
         if _has_decoding_coverage_mismatch(node):
+            return True
+        if _has_truncated_leaf(cfg, func_addr, node):
             return True
 
     return False

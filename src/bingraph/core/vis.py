@@ -9,6 +9,14 @@ from pydot import Node as PydotNode, Edge as PydotEdge
 
 from bingraph.helpers import time_it
 
+_CUSTOM_GRAPHS_BY_NODE_ID: dict[int, Any] = {}
+
+
+def register_custom_graph(node: CFGNode, graph: Any) -> None:
+    """Associate a rendered CFG node with the repaired graph that owns it."""
+
+    _CUSTOM_GRAPHS_BY_NODE_ID[id(node)] = graph
+
 
 class VisError(Exception):
     pass
@@ -23,7 +31,7 @@ class Node:
     @property
     def graph(self):
         """Returns NetworkX graph."""
-        return self.obj._cfg_model.graph
+        return _CUSTOM_GRAPHS_BY_NODE_ID.get(id(self.obj), self.obj._cfg_model.graph)
 
     @property
     def project(self):

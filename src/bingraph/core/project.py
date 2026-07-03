@@ -1,14 +1,14 @@
 from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
 
 from angr import Project, KnowledgeBase
 from angr.analyses import CFGFast, CFGEmulated
 from angr.analyses.cfg import CFGBase
 from loguru import logger
 
-from bingraph.helpers import time_it, get_settings
+from bingraph.helpers import time_it, get_settings, CfgMode
+from .cfg import build_custom_cfg
 from .symbols import list_function_symbols
 
 
@@ -148,22 +148,6 @@ def _iter_function_nodes(cfg: CFGBase, func_addr: int):
         yield node
 
 
-def _instruction_count(node) -> int:
-    """Return the number of decoded instructions in a CFG node block."""
-
-    # Use capstone-level decoding here instead of VEX lifting so we can tell
-    # whether a block is effectively empty without triggering the exact lift
-    # failures we are trying to classify.
-    try:
-        return len(node.block.capstone.insns)
-    except (AttributeError, KeyError) as exc:
-        logger.warning(
-            f"Unable to count instructions for CFG node at {node.addr:#x}: "
-            f"{type(exc).__name__}: {exc}"
-        )
-        return 0
-
-
 def _has_decoding_coverage_mismatch(node) -> bool:
     """Return True when decoded instructions do not cover the full node span."""
 
@@ -213,6 +197,13 @@ def _has_decoding_coverage_mismatch(node) -> bool:
 
 def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
     """Return True when the CFG contains true decoding/lifting failures."""
+
+    if getattr(getattr(cfg, "model", None), "ident", "") == "CFGFastCustom":
+        # The custom fallback is intentionally capstone-driven. VEX lifting can
+        # still complain about some recovered nodes, but at that point the
+        # custom graph should be judged by decoded instruction coverage instead
+        # of by whether pyvex likes every block.
+        return False
 
     for node in _iter_function_nodes(cfg, func_addr):
         # Let the weird-graph pass own malformed node boundaries or undecodable
@@ -278,11 +269,11 @@ def _log_post_fallback_status(cfg: CFGBase, func_addr: int, cfg_label: str) -> N
 
 @lru_cache
 @time_it
-def get_cfg(project: Project, func_addr: int) -> CFGBase:
+def get_cfg(project: Project, func_addr: int, cfg_mode: CfgMode | None = None) -> CFGBase:
     """Return the CFG for one function according to the configured fallback mode."""
 
-    cfg_mode: Literal["none", "stateless", "stateful", "custom"] = get_settings().cfg_mode
-    logger.info(f"Getting CFG for function {func_addr:#x} with mode '{cfg_mode}'")
+    resolved_cfg_mode = cfg_mode or get_settings().cfg_mode
+    logger.info(f"Getting CFG for function {func_addr:#x} with mode '{resolved_cfg_mode}'")
     # Keep one KB per high-level CFG request so a fallback CFGEmulated run can
     # reuse the metadata already discovered by CFGFast, especially comments and
     # related knowledge attached during the fast analysis.
@@ -292,12 +283,18 @@ def get_cfg(project: Project, func_addr: int) -> CFGBase:
     has_decode_gap = _has_decode_gap(fast_cfg, func_addr)
     has_weird_graph = _has_weird_graph(fast_cfg, func_addr)
 
-    if cfg_mode == "none":
+    if resolved_cfg_mode == "none":
         return fast_cfg
 
-    if cfg_mode == "custom":
-        if has_decode_gap:
-            raise AssertionError("custom CFG fallback is not implemented yet")
+    if resolved_cfg_mode == "custom":
+        if has_decode_gap or has_weird_graph:
+            logger.warning(
+                f"CFGFast produced anomalies for {func_addr:#x}; "
+                "building custom CFG fallback"
+            )
+            custom_cfg = build_custom_cfg(project, kb, func_addr, fast_cfg)
+            _log_post_fallback_status(custom_cfg, func_addr, "Custom CFG result")
+            return custom_cfg
         return fast_cfg
 
     if has_decode_gap:
@@ -309,7 +306,7 @@ def get_cfg(project: Project, func_addr: int) -> CFGBase:
         return fast_cfg
 
     if has_weird_graph:
-        keep_state = cfg_mode == "stateful"
+        keep_state = resolved_cfg_mode == "stateful"
         logger.warning(
             f"CFGFast produced a weird graph for {func_addr:#x}; "
             f"retrying with CFGEmulated(keep_state={keep_state})"

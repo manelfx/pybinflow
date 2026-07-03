@@ -8,7 +8,7 @@ from angr import Project
 from angr.analyses.cfg import CFGBase
 from loguru import logger
 
-from bingraph.helpers import get_settings  #, serialize_function, serialize_function_summary
+from bingraph.helpers import CfgMode, get_settings  #, serialize_function, serialize_function_summary
 from . import get_cfg
 from .annotators import ColorSimprocedures, CommentsDataRef, ColorEdgesVex
 from .contents import NodeHead, NodeAsm
@@ -43,7 +43,12 @@ def plot_cfg(cfg: CFGBase,
 
 
 @lru_cache
-def render_cfg(project: Project, func_addr: int, format: str = "svg") -> str:
+def render_cfg(
+    project: Project,
+    func_addr: int,
+    format: str = "svg",
+    cfg_mode: CfgMode | None = None,
+) -> str:
     """
     Render the control flow graph (CFG) of a specific function as an SVG image.
 
@@ -66,7 +71,7 @@ def render_cfg(project: Project, func_addr: int, format: str = "svg") -> str:
     """
     # Extract the angr CFG first. We still prefer it when the lift succeeds,
     # because it carries richer metadata than a disassembly-only graph.
-    cfg = get_cfg(project, func_addr)
+    cfg = get_cfg(project, func_addr, cfg_mode)
     settings = get_settings()
 
     # Check if function is found in CFG.

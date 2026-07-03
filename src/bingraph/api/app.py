@@ -14,7 +14,7 @@ from starlette.requests import Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from loguru import logger
 
-from bingraph.helpers import get_settings, resolve_under_root, MODULE_NAME
+from bingraph.helpers import CfgMode, get_settings, resolve_under_root, MODULE_NAME
 from bingraph.core import load_project, list_function_symbols, render_cfg, FunctionSymbol
 
 
@@ -144,26 +144,37 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             raise ValueError("Invalid function address") from exc
 
-    def _render_cfg(filepath: str, function: str, format: str = "svg") -> str:
+    def _render_cfg(
+        filepath: str,
+        function: str,
+        format: str = "svg",
+        mode: CfgMode | None = None,
+    ) -> str:
         func_addr = _resolve_faddr(function)
         project = _get_project(filepath)
-        return render_cfg(project, func_addr, format)
+        return render_cfg(project, func_addr, format, mode)
 
     @app.get("/cfg")
-    def cfg(request: Request, filepath: str = Query(...), function: str = Query(...)) -> Response:
+    def cfg(
+        request: Request,
+        filepath: str = Query(...),
+        function: str = Query(...),
+        mode: CfgMode | None = Query(None),
+    ) -> Response:
         """Endpoint to return the CFG of a specified function as an SVG image."""
 
-        svg = _render_cfg(filepath, function)
+        svg = _render_cfg(filepath, function, mode=mode)
         return Response(content=svg, media_type="image/svg+xml")
 
     @app.get("/api/cfg", response_model=dict[str, str])
     def api_cfg(request: Request,
                 filepath: str = Query(...),
                 function: str = Query(...),
-                format: str = Query(...)) -> dict[str, str]:
+                format: str = Query(...),
+                mode: CfgMode | None = Query(None)) -> dict[str, str]:
         """Endpoint to return the CFG of a specified function."""
 
-        cfg = _render_cfg(filepath, function, format=format)
+        cfg = _render_cfg(filepath, function, format=format, mode=mode)
         return {"graph": cfg}
 
     return app

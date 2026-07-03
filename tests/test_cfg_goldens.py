@@ -396,10 +396,13 @@ def _build_test_settings(config: GoldenConfig) -> settings_module.Settings:
 
     # Reuse the production settings model so test defaults track the real app
     # defaults automatically. We only override the fields that must differ for
-    # the golden-suite environment.
+    # the golden-suite environment. Golden CFG comparisons currently run with
+    # comments disabled so comment-label churn does not hide structural CFG
+    # differences between modes.
     return settings_module.Settings.model_construct(
         root=PLAYGROUND_ROOT,
         cfg_mode=config.cfg_mode,
+        comments=False,
         server=None,
         client=None,
     )

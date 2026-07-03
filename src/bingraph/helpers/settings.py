@@ -7,6 +7,9 @@ from pydantic import Field, field_validator, BaseModel
 from pydantic_settings import BaseSettings, CliImplicitFlag, SettingsConfigDict, CliSubCommand, CliApp
 
 
+# CFG mode
+CfgMode = Literal["none", "stateless", "stateful", "custom"]
+
 
 class GlobalSettings(BaseSettings):
     """Configuration settings for the application.
@@ -24,10 +27,7 @@ class GlobalSettings(BaseSettings):
     )
 
     root: Path = Field(..., description="The root directory for binaries")
-    cfg_mode: Literal["none", "stateless", "stateful", "custom"] = Field(
-        "stateless",
-        description="CFG reconstruction mode and fallback strategy",
-    )
+    cfg_mode: CfgMode = Field("stateless", description="CFG reconstruction mode and fallback strategy")
     comments: CliImplicitFlag[bool] = Field(True, description="Appends comments to instructions when available")
 
     log_level: str = Field("INFO", description="Flag to define level for logging messages")  # type: ignore

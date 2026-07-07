@@ -19,9 +19,7 @@ from CFGFast remains intact.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
-from pathlib import Path
-import sys
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Literal
 
@@ -48,15 +46,6 @@ TerminatorKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_Fallthrough", "Ijk_Ret"]
 # Edge jumpkinds that we actually materialize in the repaired graph. Keep this
 # aligned with the jumpkind vocabulary used by normal angr CFG edges.
 EdgeJumpKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"]
-
-
-@dataclass(frozen=True)
-class EdgeSpec:
-    """A conservative edge discovered by the custom block walker."""
-
-    src_addr: int
-    dst_addr: int
-    jumpkind: EdgeJumpKind
 
 
 @dataclass(frozen=True)
@@ -241,108 +230,10 @@ def _decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
     return capstone_insns[0].insn if capstone_insns else None
 
 
-def _decode_region_linear(
-    project: Project,
-    bounds: FunctionBounds,
-    start_addr: int,
-    end_addr: int,
-) -> list[CsInsn]:
-    """
-    Decode one address range with a small conservative worklist.
-
-    A plain linear sweep is not enough for repaired spans that contain a taken
-    branch into bytes located after a fallthrough path ending in `ret`. In that
-    situation we still want to decode the taken target block even though the
-    straight-line path stops early. We therefore keep a tiny queue of direct
-    in-function branch targets while still staying bounded to a local tail
-    window rooted at the anomalous span.
-    """
-
-    max_inst_bytes = getattr(project.arch, "max_inst_bytes", 16)
-    tail_limit = end_addr + 0x100
-    decoded_by_addr: dict[int, CsInsn] = {}
-    queue: list[int] = [start_addr]
-
-    while queue:
-        cur = min(queue)
-        queue.remove(cur)
-
-        while cur < tail_limit and cur not in decoded_by_addr:
-            # Let the decoder see a full instruction window even when the current
-            # instruction begins near the repair-span end. Otherwise variable-width
-            # ISAs such as x86 may fail to decode an instruction whose start is
-            # inside the span but whose bytes extend slightly past `end_addr`.
-            insn = _decode_one(project, cur, max_inst_bytes)
-            if insn is None:
-                logger.warning(
-                    f"Capstone failed decoding repair span [{start_addr:#x}, {end_addr:#x}) "
-                    f"at {cur:#x}; stopping local sweep branch"
-                )
-                break
-
-            decoded_by_addr[cur] = insn
-            semantic = InsnSemantics(insn)
-            target = semantic.direct_target()
-            if _is_direct_target_valid(bounds, target) and start_addr <= target < tail_limit:
-                if target not in decoded_by_addr and target not in queue:
-                    queue.append(target)
-
-            next_addr = insn.address + insn.size
-            if semantic.is_ret():
-                break
-            if semantic.is_call():
-                cur = next_addr
-                continue
-            if semantic.is_jump():
-                if semantic.is_conditional_jump():
-                    cur = next_addr
-                    continue
-                break
-            cur = next_addr
-
-    return [decoded_by_addr[addr] for addr in sorted(decoded_by_addr)]
-
-
 def _arch_has_delay_slot(project: Project) -> bool:
     """Return True for architectures where control transfers consume a delay slot."""
 
     return project.arch.name in {"MIPS32", "MIPS64"}
-
-
-def _candidate_block_starts(
-    project: Project,
-    bounds: FunctionBounds,
-    insns: list[CsInsn],
-    entry_addr: int,
-) -> set[int]:
-    """Return the conservative set of block starts for one repair span."""
-
-    starts = {entry_addr}
-    has_delay_slot = _arch_has_delay_slot(project)
-
-    for idx, insn in enumerate(insns):
-        semantic = InsnSemantics(insn)
-        target = semantic.direct_target()
-
-        if _is_direct_target_valid(bounds, target):
-            starts.add(target)
-
-        if not semantic.is_control_transfer():
-            continue
-
-        continuation_idx = idx + 1
-        if has_delay_slot:
-            continuation_idx += 1
-
-        if continuation_idx < len(insns):
-            next_addr = insns[continuation_idx].address
-            # Start a fresh block after any control-transfer instruction. VEX
-            # will later tell us whether this boundary is a real fallthrough or
-            # just decodable code after a terminating jump. On delay-slot
-            # architectures the continuation begins after the consumed slot.
-            starts.add(next_addr)
-
-    return starts
 
 
 def _control_transfer_index(project: Project, block_insns: list[CsInsn]) -> int | None:
@@ -424,7 +315,7 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
         if ins_addr != last.address:
             continue
         target = getattr(stmt.dst, "value", None)
-        if isinstance(target, int) and _is_direct_target_valid(bounds, target):
+        if isinstance(target, int):
             exit_targets.append(target)
 
     default_target = None
@@ -449,11 +340,14 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
     # re-infer conditionality from Capstone metadata. Conditional branches
     # show up as Exit statements plus a default fallthrough target, while
     # unconditional jumps only expose the default target.
-    if exit_targets:
-        fallthrough_addr = default_target if _is_direct_target_valid(bounds, default_target) else None
+    if exit_targets or semantic.is_conditional_jump():
+        all_targets: list[int] = list(exit_targets)
+        if isinstance(default_target, int) and default_target not in all_targets:
+            all_targets.append(default_target)
+        fallthrough_addr = next_addr if next_addr in all_targets and next_addr < bounds.end_addr else None
         return TerminatorInfo(
             jumpkind="Ijk_Boring",
-            direct_targets=tuple(exit_targets),
+            direct_targets=tuple(target for target in all_targets if target != fallthrough_addr),
             fallthrough_addr=fallthrough_addr,
         )
 
@@ -464,7 +358,7 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
         )
 
     direct_target = semantic.direct_target()
-    if semantic.is_jump() and _is_direct_target_valid(bounds, direct_target):
+    if semantic.is_jump() and direct_target is not None:
         return TerminatorInfo(
             jumpkind="Ijk_Boring",
             direct_targets=(direct_target,),
@@ -476,81 +370,6 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
     return TerminatorInfo(jumpkind="Ijk_Boring", direct_targets=direct_targets)
 
 
-def _build_block_specs(
-    project: Project,
-    bounds: FunctionBounds,
-    insns: list[CsInsn],
-    entry_addr: int,
-) -> tuple[list[BlockSpec], list[EdgeSpec]]:
-    """Split one repair span into conservative basic blocks and edges."""
-
-    if not insns:
-        return [], []
-
-    start_set = _candidate_block_starts(project, bounds, insns, entry_addr)
-    block_specs: list[BlockSpec] = []
-    has_delay_slot = _arch_has_delay_slot(project)
-
-    idx = 0
-    while idx < len(insns):
-        insn = insns[idx]
-        if insn.address not in start_set:
-            idx += 1
-            continue
-
-        block_insns = [insn]
-        j = idx
-        while True:
-            last = block_insns[-1]
-            next_idx = j + 1
-            semantic = InsnSemantics(last)
-            if _is_decode_barrier(project, last):
-                break
-            if semantic.is_control_transfer():
-                if has_delay_slot and next_idx < len(insns):
-                    # Keep the consumed delay-slot instruction in the same
-                    # recovered block as the branch/jump that owns it.
-                    block_insns.append(insns[next_idx])
-                    j = next_idx
-                break
-            if next_idx >= len(insns):
-                break
-            next_insn = insns[next_idx]
-            if next_insn.address in start_set:
-                break
-            block_insns.append(next_insn)
-            j = next_idx
-
-        terminator = _lift_block_terminator(project, bounds, block_insns)
-
-        block_specs.append(
-            BlockSpec(
-                addr=block_insns[0].address,
-                size=sum(obj.size for obj in block_insns),
-                instruction_addrs=tuple(obj.address for obj in block_insns),
-                jumpkind=terminator.jumpkind,
-                direct_targets=terminator.direct_targets,
-                fallthrough_addr=terminator.fallthrough_addr,
-            )
-        )
-        idx = j + 1
-
-    block_addrs = {block.addr for block in block_specs}
-    edge_specs: list[EdgeSpec] = []
-    for block in block_specs:
-        for target in block.direct_targets:
-            if target in block_addrs:
-                edge_jumpkind: EdgeJumpKind = "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
-                edge_specs.append(EdgeSpec(block.addr, target, edge_jumpkind))
-
-        if block.fallthrough_addr is not None and block.fallthrough_addr in block_addrs:
-            # Renderers expect graph edges to use the jumpkind values that
-            # CFGFast typically stores on edges, not our richer internal block
-            # terminator labels.
-            edge_jumpkind: EdgeJumpKind = "Ijk_FakeRet" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
-            edge_specs.append(EdgeSpec(block.addr, block.fallthrough_addr, edge_jumpkind))
-
-    return block_specs, edge_specs
 
 
 def _iter_seed_function_nodes(seed_cfg: CFGBase, func_addr: int):
@@ -622,6 +441,82 @@ def _seed_node_expected_successors(node) -> tuple[tuple[int, ...], int | None]:
             fallthrough_addr = target
 
     return tuple(direct_targets), fallthrough_addr
+
+
+def node_has_missing_conditional_successor(graph: nx.DiGraph, bounds: FunctionBounds, node) -> bool:
+    """
+    Return True for a direct conditional branch missing its taken external edge.
+
+    This intentionally targets a narrow anomaly class: CFGFast sometimes keeps
+    the in-function fallthrough edge of a conditional jump, but silently drops
+    the taken edge when that target lives outside the current function bounds.
+    We only flag that case, since the broader "missing conditional successor"
+    heuristic was too noisy on already-correct graphs.
+    """
+
+    try:
+        insns = list(node.block.capstone.insns)
+        vex = node.block.vex
+    except (AttributeError, KeyError):
+        return False
+    except Exception:
+        return False
+
+    if not insns:
+        return False
+
+    last = InsnSemantics(insns[-1].insn)
+    if not last.is_conditional_jump():
+        return False
+
+    exit_targets: list[int] = []
+    for ins_addr, _, stmt in vex.exit_statements:
+        if ins_addr != insns[-1].address:
+            continue
+        target = getattr(stmt.dst, "value", None)
+        if isinstance(target, int):
+            exit_targets.append(target)
+
+    all_targets = list(exit_targets)
+    if isinstance(vex.next, pyvex.expr.Const):
+        target = vex.next.con.value
+        if isinstance(target, int):
+            all_targets.append(target)
+
+    if not all_targets:
+        return False
+
+    next_addr = insns[-1].address + insns[-1].size
+    fallthrough_addr = next_addr if next_addr in all_targets and _is_direct_target_valid(bounds, next_addr) else None
+    direct_targets = [target for target in all_targets if target != fallthrough_addr]
+    external_targets = [
+        target for target in direct_targets if not _is_direct_target_valid(bounds, target)
+    ]
+    if not external_targets:
+        return False
+
+    if fallthrough_addr is None:
+        return False
+
+    successor_addrs = {
+        succ.addr
+        for succ in graph.successors(node)
+        if not getattr(succ, "is_simprocedure", False)
+    }
+    if fallthrough_addr not in successor_addrs:
+        return False
+
+    for succ in graph.successors(node):
+        if not getattr(succ, "is_simprocedure", False):
+            continue
+        if succ.addr in external_targets:
+            return False
+
+    logger.warning(
+        f"Node {node.addr:#x} is missing conditional branch successor(s) "
+        f"outside function bounds: {', '.join(hex(t) for t in external_targets)}"
+    )
+    return True
 
 
 def node_has_decoding_coverage_mismatch(node) -> bool:
@@ -723,13 +618,14 @@ def node_has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
     return has_later_function_node
 
 
-def _is_seed_node_anomalous(seed_cfg: CFGBase, func_addr: int, node) -> bool:
+def _is_seed_node_anomalous(seed_cfg: CFGBase, bounds: FunctionBounds, func_addr: int, node) -> bool:
     """Return True when a seed CFG node should be locally repaired."""
 
     return (
         node_has_decoding_coverage_mismatch(node)
         or node_has_decode_gap(node)
         or node_has_truncated_leaf(seed_cfg, func_addr, node)
+        or node_has_missing_conditional_successor(seed_cfg.graph, bounds, node)
     )
 
 
@@ -758,7 +654,7 @@ def _prune_orphan_simprocedures(graph: nx.DiGraph) -> None:
         ]
         if not orphan_nodes:
             return
-        graph.remove_nodes_from(orphan_nodes)
+        _remove_nodes(graph, orphan_nodes)
 
 
 def _prune_placeholders(graph: nx.DiGraph) -> None:
@@ -871,6 +767,57 @@ def _make_placeholder_node(seed_cfg: CFGBase, func_addr: int, addr: int) -> CFGN
     return node
 
 
+def _find_external_target_node(graph: nx.DiGraph, addr: int) -> CFGNode | None:
+    """Return an existing synthetic external-target leaf for one address."""
+
+    for node in graph.nodes():
+        if not getattr(node, "is_simprocedure", False):
+            continue
+        if node.addr == addr:
+            return node
+    return None
+
+
+def _external_target_name(project: Project, addr: int) -> str:
+    """Return the symbol-table name for an external target when available."""
+
+    symbol = project.loader.find_symbol(addr)
+    if symbol is None:
+        return f"ExternalTarget_{addr:#x}"
+
+    name = getattr(symbol, "name", None)
+    return name if isinstance(name, str) and name else f"ExternalTarget_{addr:#x}"
+
+
+def _make_external_target_node(seed_cfg: CFGBase, func_addr: int, addr: int) -> CFGNode:
+    """Create a synthetic leaf node for a branch target outside the function."""
+
+    name = _external_target_name(seed_cfg.project, addr)
+
+    return CFGNode(
+        addr,
+        0,
+        cfg=seed_cfg.model,
+        simprocedure_name=name,
+        function_address=func_addr,
+        block_id=addr,
+        instruction_addrs=(),
+        name=name,
+    )
+
+
+def _ensure_external_target_node(seed_cfg: CFGBase, graph: nx.DiGraph, func_addr: int, addr: int) -> CFGNode:
+    """Get or create one synthetic external-target leaf node."""
+
+    node = _find_external_target_node(graph, addr)
+    if node is not None:
+        return node
+
+    node = _make_external_target_node(seed_cfg, func_addr, addr)
+    graph.add_node(node)
+    return node
+
+
 def _node_is_acceptable(
     seed_cfg: CFGBase,
     graph: nx.DiGraph,
@@ -903,6 +850,8 @@ def _node_is_acceptable(
         return False
 
     if node_has_decode_gap(node):
+        return False
+    if node_has_missing_conditional_successor(graph, bounds, node):
         return False
     return True
 
@@ -1156,16 +1105,41 @@ def _splice_block(
     repaired_nodes.add(recovered_node)
 
     for pred, _, data in incoming_edges:
+        # Preserve the original incoming edge first. Recovered blocks replace a
+        # stale node at the same entry address, so predecessors that already
+        # pointed to that entry should continue to do so after the splice.
+        _add_successor_edge(graph, pred, recovered_node, data.get("jumpkind", "Ijk_Boring"))
+
         if pred in repaired_nodes:
-            _add_successor_edge(graph, pred, recovered_node, data.get("jumpkind", "Ijk_Boring"))
             continue
 
         if not _node_is_acceptable(seed_cfg, graph, bounds, func_addr, pred):
             continue
 
-        _wire_expected_successors(seed_cfg, graph, bounds, func_addr, pred, queue, queued, repaired_nodes)
+        # Then re-derive any additional sibling successors implied by the
+        # predecessor semantics. This still lets preserved nodes discover fresh
+        # split targets without relying on re-derivation for the replaced edge.
+        _wire_expected_successors(
+            seed_cfg,
+            graph,
+            bounds,
+            func_addr,
+            pred,
+            queue,
+            queued,
+            repaired_nodes,
+        )
 
     for target in block.direct_targets:
+        if not _is_direct_target_valid(bounds, target):
+            leaf = _ensure_external_target_node(seed_cfg, graph, func_addr, target)
+            _add_successor_edge(
+                graph,
+                recovered_node,
+                leaf,
+                "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring",
+            )
+            continue
         _enqueue_obligation(
             seed_cfg,
             graph,
@@ -1255,7 +1229,7 @@ def _repair_cfg_with_worklist(project: Project, seed_cfg: CFGBase, func_addr: in
         {
             node.addr
             for node in _iter_seed_function_nodes(seed_cfg, func_addr)
-            if _is_seed_node_anomalous(seed_cfg, func_addr, node)
+            if _is_seed_node_anomalous(seed_cfg, bounds, func_addr, node)
         }
     )
     if not initial_bad_addrs:

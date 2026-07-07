@@ -13,7 +13,9 @@ from .cfg import (
     iter_function_nodes,
     node_has_decode_gap,
     node_has_decoding_coverage_mismatch,
+    node_has_missing_conditional_successor,
     node_has_truncated_leaf,
+    _lookup_function_bounds,
 )
 from .symbols import list_function_symbols
 
@@ -213,6 +215,10 @@ def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
 def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
     """Return True when the CFG shows malformed structure without a decode gap."""
 
+    project = getattr(cfg, "project", None)
+    if project is None:
+        project = getattr(getattr(cfg, "kb", None), "_project", None)
+
     for node in iter_function_nodes(cfg, func_addr):
         # Disabled for now: unresolved jump-table style indirect jumps are a
         # useful anomaly signal, but CFGEmulated does not currently improve
@@ -233,6 +239,16 @@ def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
         if _has_decoding_coverage_mismatch(node):
             return True
         if _has_truncated_leaf(cfg, func_addr, node):
+            return True
+        if project is not None and node_has_missing_conditional_successor(
+            cfg.graph,
+            _lookup_function_bounds(project, func_addr),
+            node,
+        ):
+            logger.warning(
+                f"CFG anomaly for function {func_addr:#x}: missing_conditional_successor "
+                f"at {node.addr:#x}: conditional branch is missing its taken edge"
+            )
             return True
 
     return False

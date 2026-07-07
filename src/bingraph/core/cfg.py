@@ -737,6 +737,13 @@ def _node_is_placeholder(node) -> bool:
     return getattr(node, "size", 0) == 0 and str(getattr(node, "name", "")).startswith("placeholder_")
 
 
+def _node_has_forced_split(node, forced_block_starts: set[int]) -> bool:
+    """Return True when a known block start falls inside this node's range."""
+
+    node_end = _node_range_end(node)
+    return any(node.addr < addr < node_end for addr in forced_block_starts)
+
+
 def _make_cfg_node(seed_cfg: CFGBase, func_addr: int, bounds: FunctionBounds, block: BlockSpec) -> CFGNode:
     """Instantiate one CFGNode compatible with the existing rendering pipeline."""
 
@@ -823,11 +830,14 @@ def _node_is_acceptable(
     graph: nx.DiGraph,
     bounds: FunctionBounds,
     func_addr: int,
+    forced_block_starts: set[int],
     node,
 ) -> bool:
     """Return True when an existing node can stay as-is in the repaired graph."""
 
     if _node_is_placeholder(node):
+        return False
+    if _node_has_forced_split(node, forced_block_starts):
         return False
     if getattr(node, "function_address", None) != func_addr:
         # Malformed CFGFast regions can leave behind in-bounds nodes that are
@@ -905,6 +915,7 @@ def _enqueue_obligation(
     graph: nx.DiGraph,
     bounds: FunctionBounds,
     func_addr: int,
+    forced_block_starts: set[int],
     obligation: RepairObligation,
     queue: deque[RepairObligation],
     queued: set[int],
@@ -928,14 +939,27 @@ def _enqueue_obligation(
     covering_nodes = _covering_nodes(graph, bounds, addr)
     for node in covering_nodes:
         if node.addr != addr and not _node_is_placeholder(node):
+            forced_block_starts.add(addr)
+            placeholder = next((item for item in existing_nodes if _node_is_placeholder(item)), None)
+            if placeholder is None:
+                placeholder = _make_placeholder_node(seed_cfg, func_addr, addr)
+                graph.add_node(placeholder)
             if obligation.source_addr is not None:
                 src_nodes = _nodes_at_addr(graph, bounds, obligation.source_addr)
                 if src_nodes:
-                    _add_successor_edge(graph, src_nodes[0], node, obligation.jumpkind)
-            return node
+                    _add_successor_edge(graph, src_nodes[0], placeholder, obligation.jumpkind)
+            if node.addr not in queued:
+                queue.append(
+                    RepairObligation(
+                        addr=node.addr,
+                        reason=f"split_for_{addr:#x}",
+                    )
+                )
+                queued.add(node.addr)
+            return placeholder
 
     for node in existing_nodes:
-        if _node_is_acceptable(seed_cfg, graph, bounds, func_addr, node):
+        if _node_is_acceptable(seed_cfg, graph, bounds, func_addr, forced_block_starts, node):
             if obligation.source_addr is not None:
                 src_nodes = _nodes_at_addr(graph, bounds, obligation.source_addr)
                 if src_nodes:
@@ -985,6 +1009,7 @@ def _wire_expected_successors(
     graph: nx.DiGraph,
     bounds: FunctionBounds,
     func_addr: int,
+    forced_block_starts: set[int],
     src,
     queue: deque[RepairObligation],
     queued: set[int],
@@ -1005,6 +1030,7 @@ def _wire_expected_successors(
             graph,
             bounds,
             func_addr,
+            forced_block_starts,
             RepairObligation(
                 addr=target,
                 reason=f"expected_successor_of_{src.addr:#x}",
@@ -1022,6 +1048,7 @@ def _wire_expected_successors(
             graph,
             bounds,
             func_addr,
+            forced_block_starts,
             RepairObligation(
                 addr=fallthrough_addr,
                 reason=f"expected_fallthrough_of_{src.addr:#x}",
@@ -1066,6 +1093,7 @@ def _splice_block(
     graph: nx.DiGraph,
     bounds: FunctionBounds,
     func_addr: int,
+    forced_block_starts: set[int],
     block: BlockSpec,
     queue: deque[RepairObligation],
     queued: set[int],
@@ -1113,7 +1141,7 @@ def _splice_block(
         if pred in repaired_nodes:
             continue
 
-        if not _node_is_acceptable(seed_cfg, graph, bounds, func_addr, pred):
+        if not _node_is_acceptable(seed_cfg, graph, bounds, func_addr, forced_block_starts, pred):
             continue
 
         # Then re-derive any additional sibling successors implied by the
@@ -1124,6 +1152,7 @@ def _splice_block(
             graph,
             bounds,
             func_addr,
+            forced_block_starts,
             pred,
             queue,
             queued,
@@ -1145,6 +1174,7 @@ def _splice_block(
             graph,
             bounds,
             func_addr,
+            forced_block_starts,
             RepairObligation(
                 addr=target,
                 reason=f"direct_target_of_{block.addr:#x}",
@@ -1162,6 +1192,7 @@ def _splice_block(
             graph,
             bounds,
             func_addr,
+            forced_block_starts,
             RepairObligation(
                 addr=block.fallthrough_addr,
                 reason=f"fallthrough_of_{block.addr:#x}",
@@ -1222,6 +1253,7 @@ def _repair_cfg_with_worklist(project: Project, seed_cfg: CFGBase, func_addr: in
     queue: deque[RepairObligation] = deque()
     queued: set[int] = set()
     repaired_nodes: set[CFGNode] = set()
+    forced_block_starts: set[int] = set()
     processed_counts: dict[int, int] = {}
     iterations = 0
 
@@ -1246,6 +1278,7 @@ def _repair_cfg_with_worklist(project: Project, seed_cfg: CFGBase, func_addr: in
             graph,
             bounds,
             func_addr,
+            forced_block_starts,
             RepairObligation(addr=addr, reason="seed_anomaly"),
             queue,
             queued,
@@ -1276,15 +1309,20 @@ def _repair_cfg_with_worklist(project: Project, seed_cfg: CFGBase, func_addr: in
         current_nodes = _nodes_at_addr(graph, bounds, addr)
         if any(node.addr != addr and not _node_is_placeholder(node) for node in _covering_nodes(graph, bounds, addr)):
             continue
-        if any(_node_is_acceptable(seed_cfg, graph, bounds, func_addr, node) for node in current_nodes):
+        if any(_node_is_acceptable(seed_cfg, graph, bounds, func_addr, forced_block_starts, node) for node in current_nodes):
             continue
 
         stop_addrs = {
             node.addr
             for node in _iter_graph_bound_nodes(graph, bounds)
             if node.addr != addr
-            and _node_is_acceptable(seed_cfg, graph, bounds, func_addr, node)
+            and _node_is_acceptable(seed_cfg, graph, bounds, func_addr, forced_block_starts, node)
         }
+        stop_addrs.update(
+            target
+            for target in forced_block_starts
+            if addr < target < bounds.end_addr
+        )
         stop_addrs.update(_incoming_expected_starts(graph, bounds, addr))
         block = _recover_block(project, bounds, addr, stop_addrs)
         if block is None:
@@ -1296,6 +1334,7 @@ def _repair_cfg_with_worklist(project: Project, seed_cfg: CFGBase, func_addr: in
             graph,
             bounds,
             func_addr,
+            forced_block_starts,
             block,
             queue,
             queued,

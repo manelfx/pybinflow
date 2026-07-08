@@ -4,9 +4,9 @@ Golden-file regression tests for CFG rendering.
 How this module works:
 
 1. Test matrix
-   Pytest parametrizes over every row in `playground_functions.csv` and the four
+   Pytest parametrizes over every row in `playground_functions.csv` and the two
    supported CFG-mode configurations. That means the full suite collects
-   `4 x N` tests, where `N` is the number of CSV rows.
+   `2 x N` tests, where `N` is the number of CSV rows.
 
 2. Fresh render output
    Each test patches `get_settings()` so the app uses the requested test
@@ -105,8 +105,6 @@ CONFIGS = [
     # Compare the runtime CFG selection modes while inheriting the rest of the
     # application defaults from the real Settings model.
     GoldenConfig(name="cfg_mode_none", cfg_mode="none"),
-    GoldenConfig(name="cfg_mode_stateless", cfg_mode="stateless"),
-    GoldenConfig(name="cfg_mode_stateful", cfg_mode="stateful"),
     GoldenConfig(name="cfg_mode_custom", cfg_mode="custom"),
 ]
 

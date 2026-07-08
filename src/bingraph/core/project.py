@@ -10,12 +10,7 @@ from loguru import logger
 from bingraph.helpers import time_it, get_settings, CfgMode
 from .cfg import (
     build_custom_cfg,
-    iter_function_nodes,
-    node_has_decode_gap,
-    node_has_decoding_coverage_mismatch,
-    node_has_missing_conditional_successor,
-    node_has_truncated_leaf,
-    _lookup_function_bounds,
+    log_cfg_status,
 )
 from .symbols import list_function_symbols
 
@@ -146,125 +141,6 @@ def _get_emu_cfg(project: Project, kb: KnowledgeBase, func_addr: int, keep_state
                                         keep_state=keep_state,
                                         normalize=True)
 
-
-def _has_decoding_coverage_mismatch(node) -> bool:
-    """Return True when decoded instructions do not cover the full node span."""
-
-    if not node_has_decoding_coverage_mismatch(node):
-        return False
-
-    logger.warning(
-        f"CFG anomaly for function {node.function_address:#x}:"
-        f" {"zero_sized_block" if node.size == 0 else "malformed_block"}"
-        f" at {node.addr:#x}"
-    )
-    return True
-
-
-def _has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
-    """Return True when a block stops before a real terminator and has no exits."""
-
-    if not node_has_truncated_leaf(cfg, func_addr, node):
-        return False
-
-    try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError):
-        insn_text = "<unknown>"
-    else:
-        if insns:
-            last = insns[-1]
-            insn_text = f"{last.mnemonic} {last.op_str}".strip()
-        else:
-            insn_text = "<empty>"
-
-    logger.warning(
-        f"CFG anomaly for function {func_addr:#x}: truncated_leaf at {node.addr:#x}: "
-        f"block ends with non-terminating instruction {insn_text} and has no CFG successors"
-    )
-    return True
-
-
-def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
-    """Return True when the CFG contains true decoding/lifting failures."""
-
-    if getattr(getattr(cfg, "model", None), "ident", "") == "CFGFastCustom":
-        # The custom fallback is intentionally capstone-driven. VEX lifting can
-        # still complain about some recovered nodes, but at that point the
-        # custom graph should be judged by decoded instruction coverage instead
-        # of by whether pyvex likes every block.
-        return False
-
-    for node in iter_function_nodes(cfg, func_addr):
-        # Let the weird-graph pass own malformed node boundaries or undecodable
-        # capstone streams. Decode gaps are reserved for nodes that look
-        # structurally fine but still lift to Ijk_NoDecode in VEX.
-        if _has_decoding_coverage_mismatch(node):
-            continue
-
-        if node_has_decode_gap(node):
-            logger.warning(
-                f"CFG anomaly for function {func_addr:#x}: decode_gap at {node.addr:#x}: "
-                "node ended with Ijk_NoDecode, which points to a lifting/decoding failure"
-            )
-            return True
-
-    return False
-
-
-def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
-    """Return True when the CFG shows malformed structure without a decode gap."""
-
-    project = getattr(cfg, "project", None)
-    if project is None:
-        project = getattr(getattr(cfg, "kb", None), "_project", None)
-
-    for node in iter_function_nodes(cfg, func_addr):
-        # Disabled for now: unresolved jump-table style indirect jumps are a
-        # useful anomaly signal, but CFGEmulated does not currently improve
-        # those cases reliably enough to justify an automatic fallback.
-        #
-        # for succ in cfg.graph.successors(node):
-        #     if succ.is_simprocedure and succ.simprocedure_name == "UnresolvableJumpTarget":
-        #         logger.warning(
-        #             f"CFG anomaly for function {func_addr:#x}: "
-        #             f"unresolvable_indirect_jump at {node.addr:#x}: "
-        #             "node flows to UnresolvableJumpTarget"
-        #         )
-        #         return True
-
-        # These malformed CFG nodes are structurally wrong but do not
-        # necessarily indicate a real decoding/lifting limitation. CFGEmulated
-        # has been able to recover some of them in our corpus.
-        if _has_decoding_coverage_mismatch(node):
-            return True
-        if _has_truncated_leaf(cfg, func_addr, node):
-            return True
-        if project is not None and node_has_missing_conditional_successor(
-            cfg.graph,
-            _lookup_function_bounds(project, func_addr),
-            node,
-        ):
-            logger.warning(
-                f"CFG anomaly for function {func_addr:#x}: missing_conditional_successor "
-                f"at {node.addr:#x}: conditional branch is missing its taken edge"
-            )
-            return True
-
-    return False
-
-
-def _log_post_fallback_status(cfg: CFGBase, func_addr: int, cfg_label: str) -> None:
-    """Log whether fallback CFG recomputation cleared the known anomalies."""
-
-    has_weird_graph = _has_weird_graph(cfg, func_addr)
-    has_decode_gap = _has_decode_gap(cfg, func_addr)
-    if not has_weird_graph and not has_decode_gap:
-        logger.info(f"{cfg_label} for function {func_addr:#x} no longer shows known CFG anomalies")
-    else:
-        logger.warning(f"{cfg_label} for function {func_addr:#x} still shows CFG anomalies")
-
-
 @lru_cache
 @time_it
 def get_cfg(project: Project, func_addr: int, cfg_mode: CfgMode | None = None) -> CFGBase:
@@ -278,39 +154,13 @@ def get_cfg(project: Project, func_addr: int, cfg_mode: CfgMode | None = None) -
     kb = KnowledgeBase(project)
 
     fast_cfg = _get_fast_cfg(project, kb, func_addr)
-    has_decode_gap = _has_decode_gap(fast_cfg, func_addr)
-    has_weird_graph = _has_weird_graph(fast_cfg, func_addr)
 
     if resolved_cfg_mode == "none":
-        return fast_cfg
+        cfg = fast_cfg
+    elif resolved_cfg_mode == "custom":
+        cfg = build_custom_cfg(project, kb, func_addr, fast_cfg)
+    else:
+        raise ValueError(f"Unsupported cfg mode: {resolved_cfg_mode}")
 
-    if resolved_cfg_mode == "custom":
-        if has_decode_gap or has_weird_graph:
-            logger.warning(
-                f"CFGFast produced anomalies for {func_addr:#x}; "
-                "building custom CFG fallback"
-            )
-            custom_cfg = build_custom_cfg(project, kb, func_addr, fast_cfg)
-            _log_post_fallback_status(custom_cfg, func_addr, "Custom CFG result")
-            return custom_cfg
-        return fast_cfg
-
-    if has_decode_gap:
-        logger.warning(
-            f"CFGFast hit a decoding/lifting gap for {func_addr:#x}. "
-            "CFGEmulated is not selected for this anomaly class because it still "
-            "depends on VEX. A custom non-pyvex fallback is required."
-        )
-        return fast_cfg
-
-    if has_weird_graph:
-        keep_state = resolved_cfg_mode == "stateful"
-        logger.warning(
-            f"CFGFast produced a weird graph for {func_addr:#x}; "
-            f"retrying with CFGEmulated(keep_state={keep_state})"
-        )
-        emu_cfg = _get_emu_cfg(project, kb, func_addr, keep_state)
-        _log_post_fallback_status(emu_cfg, func_addr, "CFGEmulated result")
-        return emu_cfg
-
-    return fast_cfg
+    log_cfg_status(cfg, func_addr, f"Selected CFG ({resolved_cfg_mode})")
+    return cfg

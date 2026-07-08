@@ -1109,6 +1109,10 @@ class _RepairSession:
                     jumpkind=obligation.jumpkind,
                 )
             )
+            # Keep the requested split point alive as its own obligation. The
+            # covering block must be repaired first, but we still need a later
+            # pass to materialize the block that starts exactly at `addr`.
+            self._queue_if_needed(obligation)
             return placeholder
 
         for node in existing_nodes:
@@ -1201,6 +1205,18 @@ class _RepairSession:
             for pred in self.graph.predecessors(node):
                 if getattr(pred, "is_simprocedure", False):
                     continue
+                if pred not in self.repaired_nodes and not _node_is_acceptable(
+                    self.seed_cfg,
+                    self.graph,
+                    self.bounds,
+                    self.func_addr,
+                    self.forced_block_starts,
+                    pred,
+                ):
+                    # A malformed seed predecessor should not get to preserve
+                    # extra block leaders. Once it is repaired, its real branch
+                    # structure will enqueue the starts that truly matter.
+                    continue
                 direct_targets, fallthrough_addr = _seed_node_expected_successors(pred)
                 _add_expected_starts(
                     starts,
@@ -1213,6 +1229,43 @@ class _RepairSession:
 
         return starts
 
+    def _node_start_is_protected(self, node) -> bool:
+        """
+        Return True when `node.addr` must remain a basic-block leader.
+
+        A locally well-formed fragment should not survive as a stop point just
+        because CFGFast happened to split there. We only preserve starts that
+        are justified by the repaired graph: function entry, forced split
+        points, repaired nodes, or successors explicitly expected by an
+        acceptable predecessor.
+        """
+
+        if node.addr == self.func_addr:
+            return True
+        if node.addr in self.forced_block_starts:
+            return True
+        if node in self.repaired_nodes:
+            return True
+
+        for pred in self.graph.predecessors(node):
+            if getattr(pred, "is_simprocedure", False) or _node_is_placeholder(pred):
+                continue
+            if pred not in self.repaired_nodes and not _node_is_acceptable(
+                self.seed_cfg,
+                self.graph,
+                self.bounds,
+                self.func_addr,
+                self.forced_block_starts,
+                pred,
+            ):
+                continue
+
+            direct_targets, fallthrough_addr = _seed_node_expected_successors(pred)
+            if node.addr in direct_targets or fallthrough_addr == node.addr:
+                return True
+
+        return False
+
     def graph_expected_starts(self, addr: int) -> set[int]:
         """
         Return all in-function starts implied anywhere in the current graph.
@@ -1224,6 +1277,18 @@ class _RepairSession:
         starts: set[int] = set()
         for node in _iter_graph_bound_nodes(self.graph, self.bounds):
             if getattr(node, "is_simprocedure", False) or _node_is_placeholder(node):
+                continue
+            if node not in self.repaired_nodes and not _node_is_acceptable(
+                self.seed_cfg,
+                self.graph,
+                self.bounds,
+                self.func_addr,
+                self.forced_block_starts,
+                node,
+            ):
+                # Unacceptable seed nodes are precisely the fragments we are
+                # trying to overwrite. Let repaired or still-acceptable nodes
+                # preserve leaders; stale nodes only add fake split points.
                 continue
 
             direct_targets, fallthrough_addr = _seed_node_expected_successors(node)
@@ -1245,6 +1310,7 @@ class _RepairSession:
             node.addr
             for node in _iter_graph_bound_nodes(self.graph, self.bounds)
             if node.addr != addr
+            and self._node_start_is_protected(node)
             and _node_is_acceptable(
                 self.seed_cfg,
                 self.graph,
@@ -1404,10 +1470,24 @@ class _RepairSession:
                 continue
 
             current_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
-            if any(
-                node.addr != addr and not _node_is_placeholder(node)
+            covering_nodes = [
+                node
                 for node in _covering_nodes(self.graph, self.bounds, addr)
-            ):
+                if node.addr != addr and not _node_is_placeholder(node)
+            ]
+            if covering_nodes:
+                if addr in self.forced_block_starts:
+                    # Another node still covers this forced split point. Requeue
+                    # both the covering node and the split address so the target
+                    # is revisited after the prefix block gets truncated.
+                    for node in covering_nodes:
+                        self._queue_if_needed(
+                            RepairObligation(
+                                addr=node.addr,
+                                reason=f"split_for_{addr:#x}",
+                            )
+                        )
+                    self._queue_if_needed(obligation)
                 continue
             if any(
                 _node_is_acceptable(
@@ -1437,126 +1517,6 @@ class _RepairSession:
             functions=self.seed_cfg.functions,
             kb=self.seed_cfg.kb,
         )
-
-
-def _splice_block(
-    seed_cfg: CFGBase,
-    graph: nx.DiGraph,
-    bounds: FunctionBounds,
-    func_addr: int,
-    forced_block_starts: set[int],
-    block: BlockSpec,
-    queue: deque[RepairObligation],
-    queued: set[int],
-    repaired_nodes: set[CFGNode],
-) -> CFGNode:
-    """
-    Replace every stale overlapping node with one recovered block.
-
-    Incoming edges from preserved predecessors are rewired after the stale nodes
-    are removed. If a predecessor itself remains malformed it can still be
-    queued later; local repairs do not need to solve every adjacent anomaly in
-    one pass.
-    """
-
-    recovered_start = block.addr
-    recovered_end = block.addr + block.size
-
-    removed_nodes = [
-        node
-        for node in _iter_graph_bound_nodes(graph, bounds)
-        if node.addr == recovered_start
-        or _ranges_overlap(node.addr, _node_range_end(node), recovered_start, recovered_end)
-        or (_node_is_placeholder(node) and node.addr == recovered_start)
-    ]
-    removed_set = set(removed_nodes)
-
-    incoming_edges = [
-        (src, dst, dict(data))
-        for src, dst, data in list(graph.edges(data=True))
-        if dst in removed_set and src not in removed_set
-    ]
-
-    _remove_nodes(graph, removed_nodes)
-
-    recovered_node = _make_cfg_node(seed_cfg, func_addr, bounds, block)
-    graph.add_node(recovered_node)
-    repaired_nodes.add(recovered_node)
-
-    for pred, _, data in incoming_edges:
-        # Preserve the original incoming edge first. Recovered blocks replace a
-        # stale node at the same entry address, so predecessors that already
-        # pointed to that entry should continue to do so after the splice.
-        _add_successor_edge(graph, pred, recovered_node, data.get("jumpkind", "Ijk_Boring"))
-
-        if pred in repaired_nodes:
-            continue
-
-        if not _node_is_acceptable(seed_cfg, graph, bounds, func_addr, forced_block_starts, pred):
-            continue
-
-        # Then re-derive any additional sibling successors implied by the
-        # predecessor semantics. This still lets preserved nodes discover fresh
-        # split targets without relying on re-derivation for the replaced edge.
-        _wire_expected_successors(
-            seed_cfg,
-            graph,
-            bounds,
-            func_addr,
-            forced_block_starts,
-            pred,
-            queue,
-            queued,
-            repaired_nodes,
-        )
-
-    for target in block.direct_targets:
-        if not _is_direct_target_valid(bounds, target):
-            leaf = _ensure_external_target_node(seed_cfg, graph, func_addr, target)
-            _add_successor_edge(
-                graph,
-                recovered_node,
-                leaf,
-                "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring",
-            )
-            continue
-        _enqueue_obligation(
-            seed_cfg,
-            graph,
-            bounds,
-            func_addr,
-            forced_block_starts,
-            RepairObligation(
-                addr=target,
-                reason=f"direct_target_of_{block.addr:#x}",
-                source_addr=block.addr,
-                jumpkind="Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring",
-            ),
-            queue,
-            queued,
-            repaired_nodes,
-        )
-
-    if block.fallthrough_addr is not None:
-        _enqueue_obligation(
-            seed_cfg,
-            graph,
-            bounds,
-            func_addr,
-            forced_block_starts,
-            RepairObligation(
-                addr=block.fallthrough_addr,
-                reason=f"fallthrough_of_{block.addr:#x}",
-                source_addr=block.addr,
-                jumpkind="Ijk_FakeRet" if block.jumpkind == "Ijk_Call" else "Ijk_Boring",
-            ),
-            queue,
-            queued,
-            repaired_nodes,
-        )
-
-    return recovered_node
-
 
 def _cleanup_unreachable_function_nodes(graph: nx.DiGraph, bounds: FunctionBounds, func_addr: int) -> None:
     """Remove nodes in one function that are unreachable from the entry node."""

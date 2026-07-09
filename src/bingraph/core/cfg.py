@@ -37,8 +37,11 @@ High-level algorithm:
    - splice it into the live graph,
    - queue new obligations for block starts implied by the recovered
      terminator or by preserved predecessor semantics.
-5. When the worklist is empty, remove unreachable stale nodes and temporary
-   placeholders, then expose the repaired graph through a small CFG-like wrapper.
+5. Before declaring repair complete, do one last pass for any still-visible
+   straight-line splits that should collapse into larger blocks.
+6. When the worklist is truly empty, remove unreachable stale nodes and
+   temporary placeholders, then expose the repaired graph through a small
+   CFG-like wrapper.
 
 The implementation is intentionally conservative. It prefers localized repairs
 over whole-function reconstruction so already-correct arch-specific behavior
@@ -457,6 +460,45 @@ def _seed_node_expected_successors(node) -> tuple[tuple[int, ...], int | None]:
     return tuple(direct_targets), fallthrough_addr
 
 
+def _seed_graph_direct_targets(graph: nx.DiGraph, node) -> tuple[int, ...]:
+    """
+    Return direct branch targets that are explicitly present in the seed graph.
+
+    For unrepaired seed nodes we only want to preserve leaders that are backed
+    by a concrete branch edge already materialized in CFGFast. This is narrower
+    than trusting the node's fallthrough layout and avoids swallowing real
+    branch-target leaders such as `0x806a85a` in `__strcasecmp_l_sse4_2`.
+    """
+
+    try:
+        insns = list(node.block.capstone.insns)
+    except (AttributeError, KeyError):
+        return ()
+    except Exception:
+        return ()
+
+    if not insns:
+        return ()
+
+    last = InsnSemantics(insns[-1].insn)
+    if not last.is_jump():
+        return ()
+
+    target = last.direct_target()
+    if not isinstance(target, int):
+        return ()
+
+    successor_addrs = {
+        succ.addr
+        for succ in graph.successors(node)
+        if hasattr(succ, "addr")
+    }
+    if target not in successor_addrs:
+        return ()
+
+    return (target,)
+
+
 def node_has_missing_conditional_successor(graph: nx.DiGraph, bounds: FunctionBounds, node) -> bool:
     """
     Return True when a direct conditional branch does not expose both outcomes.
@@ -498,6 +540,51 @@ def node_has_missing_conditional_successor(graph: nx.DiGraph, bounds: FunctionBo
         f"or shows unexpected ones: expected "
         f"{', '.join(hex(t) for t in sorted(expected_successors))}, got "
         f"{', '.join(hex(t) for t in sorted(successor_addrs)) if successor_addrs else '<none>'}"
+    )
+    return True
+
+
+def node_has_linear_merge_successor(graph: nx.DiGraph, node) -> bool:
+    """
+    Return True when `node` should absorb its only straight-line successor.
+
+    This targets the specific malformed shape where CFGFast left an artificial
+    split inside one linear byte range: A has one `Ijk_Boring` successor B, B
+    has exactly one predecessor, B starts exactly where A ends, and A itself
+    does not end in a control-transfer instruction.
+    """
+
+    successors = list(graph.successors(node))
+    if len(successors) != 1:
+        return False
+
+    succ = successors[0]
+    if getattr(succ, "is_simprocedure", False):
+        return False
+    if graph.in_degree(succ) != 1:
+        return False
+
+    edge_data = graph.get_edge_data(node, succ) or {}
+    if edge_data.get("jumpkind") != "Ijk_Boring":
+        return False
+    if _node_range_end(node) != succ.addr:
+        return False
+
+    try:
+        insns = list(node.block.capstone.insns)
+    except (AttributeError, KeyError):
+        return False
+    except Exception:
+        return False
+
+    if not insns:
+        return False
+
+    if InsnSemantics(insns[-1].insn).is_control_transfer():
+        return False
+
+    logger.warning(
+        f"Node {node.addr:#x} is split from straight-line successor {succ.addr:#x}"
     )
     return True
 
@@ -609,6 +696,7 @@ def _is_seed_node_anomalous(seed_cfg: CFGBase, bounds: FunctionBounds, func_addr
         or node_has_decode_gap(node)
         or node_has_truncated_leaf(seed_cfg, func_addr, node)
         or node_has_missing_conditional_successor(seed_cfg.graph, bounds, node)
+        or node_has_linear_merge_successor(seed_cfg.graph, node)
     )
 
 
@@ -696,7 +784,12 @@ def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
                 f"at {node.addr:#x}: conditional branch is missing its taken edge"
             )
             return True
-
+        if node_has_linear_merge_successor(cfg.graph, node):
+            logger.warning(
+                f"CFG anomaly for function {func_addr:#x}: linear_split at {node.addr:#x}: "
+                "straight-line successor should be merged into the current block"
+            )
+            return True
     return False
 
 
@@ -732,7 +825,7 @@ def _prune_orphan_simprocedures(graph: nx.DiGraph) -> None:
         orphan_nodes = [
             node
             for node in list(graph.nodes())
-            if getattr(node, "is_simprocedure", False) and graph.in_degree(node) == 0
+            if _node_is_simprocedure(node) and graph.in_degree(node) == 0
         ]
         if not orphan_nodes:
             return
@@ -762,7 +855,7 @@ def _block_name(bounds: FunctionBounds, block: BlockSpec) -> str:
 def _node_intersects_bounds(node, bounds: FunctionBounds) -> bool:
     """Return True when a node overlaps the current function address range."""
 
-    if getattr(node, "is_simprocedure", False):
+    if _node_is_simprocedure(node):
         return False
     return _ranges_overlap(node.addr, _node_range_end(node), bounds.addr, bounds.end_addr)
 
@@ -819,6 +912,18 @@ def _node_is_placeholder(node) -> bool:
     return getattr(node, "size", 0) == 0 and str(getattr(node, "name", "")).startswith("placeholder_")
 
 
+def _node_is_simprocedure(node) -> bool:
+    """Return True when `node` is a synthetic/simprocedure CFG node."""
+
+    return getattr(node, "is_simprocedure", False)
+
+
+def _node_is_materialized_cfg_node(node) -> bool:
+    """Return True for normal in-graph nodes that are neither simprocs nor placeholders."""
+
+    return not _node_is_simprocedure(node) and not _node_is_placeholder(node)
+
+
 def _node_has_forced_split(node, forced_block_starts: set[int]) -> bool:
     """Return True when a known block start falls inside this node's range."""
 
@@ -858,7 +963,7 @@ def _find_external_target_node(graph: nx.DiGraph, addr: int) -> CFGNode | None:
     """Return an existing synthetic external-target leaf for one address."""
 
     for node in graph.nodes():
-        if not getattr(node, "is_simprocedure", False):
+        if not _node_is_simprocedure(node):
             continue
         if node.addr == addr:
             return node
@@ -938,6 +1043,8 @@ def _node_is_acceptable(
     if node_has_decode_gap(node):
         return False
     if node_has_missing_conditional_successor(graph, bounds, node):
+        return False
+    if node_has_linear_merge_successor(graph, node):
         return False
     return True
 
@@ -1061,6 +1168,76 @@ class _RepairSession:
         self.forced_block_starts: set[int] = set()
         self.processed_counts: dict[int, int] = {}
         self.iterations = 0
+        self.linear_merge_attempts: set[int] = set()
+
+    def _is_preservable_seed_node(self, node) -> bool:
+        """
+        Return True when an unrepaired seed node may still preserve CFG structure.
+
+        Malformed seed fragments should not freeze extra block leaders or
+        successor expectations. Once repaired, the replacement node will drive
+        discovery with its own recovered semantics.
+        """
+
+        return node in self.repaired_nodes or _node_is_acceptable(
+            self.seed_cfg,
+            self.graph,
+            self.bounds,
+            self.func_addr,
+            self.forced_block_starts,
+            node,
+        )
+
+    def _preserved_successor_starts(self, node) -> tuple[tuple[int, ...], int | None]:
+        """
+        Return the starts that `node` is allowed to preserve in the live graph.
+
+        Repaired nodes preserve both direct targets and true fallthroughs. Seed
+        nodes only preserve direct targets already materialized in the graph,
+        since CFGFast fallthrough splits are often the very artifacts we are
+        trying to erase.
+        """
+
+        if node in self.repaired_nodes:
+            return _seed_node_expected_successors(node)
+
+        return _seed_graph_direct_targets(self.graph, node), None
+
+    def _iter_start_contributors(self, addr: int):
+        """Yield materialized nodes that may contribute preserved starts around `addr`."""
+
+        seen: set[object] = set()
+        for node in _nodes_at_addr(self.graph, self.bounds, addr) + _covering_nodes(self.graph, self.bounds, addr):
+            if not _node_is_materialized_cfg_node(node) or node in seen:
+                continue
+            seen.add(node)
+            yield node
+
+    def _expected_starts_from_nodes(
+        self,
+        nodes,
+        addr: int,
+        *,
+        require_after_addr: bool,
+    ) -> set[int]:
+        """Collect preserved successor starts contributed by `nodes`."""
+
+        starts: set[int] = set()
+        for node in nodes:
+            if not self._is_preservable_seed_node(node):
+                continue
+
+            direct_targets, fallthrough_addr = self._preserved_successor_starts(node)
+            _add_expected_starts(
+                starts,
+                self.bounds,
+                addr,
+                direct_targets,
+                fallthrough_addr,
+                require_after_addr=require_after_addr,
+            )
+
+        return starts
 
     def enqueue(self, obligation: RepairObligation) -> CFGNode | None:
         """
@@ -1090,14 +1267,7 @@ class _RepairSession:
 
             repair_addr = node.addr
             repair_reason = f"split_for_{addr:#x}"
-            if not _node_is_acceptable(
-                self.seed_cfg,
-                self.graph,
-                self.bounds,
-                self.func_addr,
-                self.forced_block_starts,
-                node,
-            ):
+            if not self._is_preservable_seed_node(node):
                 repair_addr = addr
                 repair_reason = obligation.reason
 
@@ -1116,14 +1286,7 @@ class _RepairSession:
             return placeholder
 
         for node in existing_nodes:
-            if _node_is_acceptable(
-                self.seed_cfg,
-                self.graph,
-                self.bounds,
-                self.func_addr,
-                self.forced_block_starts,
-                node,
-            ):
+            if self._is_preservable_seed_node(node):
                 self._connect_source_to_node(obligation, node)
                 return node
 
@@ -1157,6 +1320,49 @@ class _RepairSession:
 
         self.queue.append(obligation)
         self.queued.add(obligation.addr)
+
+    def _queue_linear_merge_candidates(self, node: CFGNode) -> None:
+        """Revisit local straight-line neighbors that may now be mergeable."""
+
+        candidates = [node, *self.graph.predecessors(node)]
+        for candidate in candidates:
+            if not _node_is_materialized_cfg_node(candidate):
+                continue
+            if not _node_intersects_bounds(candidate, self.bounds):
+                continue
+            if not node_has_linear_merge_successor(self.graph, candidate):
+                continue
+            if candidate.addr in self.linear_merge_attempts:
+                continue
+            self.linear_merge_attempts.add(candidate.addr)
+            self._queue_if_needed(
+                RepairObligation(
+                    addr=candidate.addr,
+                    reason=f"linear_merge_of_{candidate.addr:#x}",
+                )
+            )
+
+    def _queue_remaining_linear_splits(self) -> bool:
+        """Queue any still-visible linear splits before declaring repair complete."""
+
+        queued_any = False
+        for node in _iter_graph_bound_nodes(self.graph, self.bounds):
+            if not _node_is_materialized_cfg_node(node):
+                continue
+            if not node_has_linear_merge_successor(self.graph, node):
+                continue
+            if node.addr in self.linear_merge_attempts:
+                continue
+            self.linear_merge_attempts.add(node.addr)
+            before = len(self.queue)
+            self._queue_if_needed(
+                RepairObligation(
+                    addr=node.addr,
+                    reason=f"remaining_linear_split_{node.addr:#x}",
+                )
+            )
+            queued_any = queued_any or len(self.queue) != before
+        return queued_any
 
     def enqueue_expected_successors(self, src) -> None:
         """
@@ -1199,35 +1405,20 @@ class _RepairSession:
         a preserved predecessor already expects to exist.
         """
 
-        starts: set[int] = set()
-        seed_nodes = _nodes_at_addr(self.graph, self.bounds, addr) + _covering_nodes(self.graph, self.bounds, addr)
-        for node in seed_nodes:
+        preds: list[CFGNode] = []
+        seen: set[object] = set()
+        for node in self._iter_start_contributors(addr):
             for pred in self.graph.predecessors(node):
-                if getattr(pred, "is_simprocedure", False):
+                if not _node_is_materialized_cfg_node(pred) or pred in seen:
                     continue
-                if pred not in self.repaired_nodes and not _node_is_acceptable(
-                    self.seed_cfg,
-                    self.graph,
-                    self.bounds,
-                    self.func_addr,
-                    self.forced_block_starts,
-                    pred,
-                ):
-                    # A malformed seed predecessor should not get to preserve
-                    # extra block leaders. Once it is repaired, its real branch
-                    # structure will enqueue the starts that truly matter.
-                    continue
-                direct_targets, fallthrough_addr = _seed_node_expected_successors(pred)
-                _add_expected_starts(
-                    starts,
-                    self.bounds,
-                    addr,
-                    direct_targets,
-                    fallthrough_addr,
-                    require_after_addr=True,
-                )
+                seen.add(pred)
+                preds.append(pred)
 
-        return starts
+        return self._expected_starts_from_nodes(
+            preds,
+            addr,
+            require_after_addr=True,
+        )
 
     def _node_start_is_protected(self, node) -> bool:
         """
@@ -1236,32 +1427,39 @@ class _RepairSession:
         A locally well-formed fragment should not survive as a stop point just
         because CFGFast happened to split there. We only preserve starts that
         are justified by the repaired graph: function entry, forced split
-        points, repaired nodes, or successors explicitly expected by an
-        acceptable predecessor.
+        points, or successors explicitly expected by an acceptable predecessor.
         """
 
         if node.addr == self.func_addr:
             return True
         if node.addr in self.forced_block_starts:
             return True
-        if node in self.repaired_nodes:
-            return True
+
+        # Do not preserve a start that only exists as the straight-line
+        # continuation of a repaired predecessor. Those are precisely the
+        # artificial split points we want later recovery passes to absorb into
+        # a larger self-loop/body block such as 0x4211e5 -> 0x421255.
+        preds = [
+            pred
+            for pred in self.graph.predecessors(node)
+            if _node_is_materialized_cfg_node(pred)
+        ]
+        if len(preds) == 1:
+            pred = preds[0]
+            if pred in self.repaired_nodes and node_has_linear_merge_successor(self.graph, pred):
+                return False
 
         for pred in self.graph.predecessors(node):
-            if getattr(pred, "is_simprocedure", False) or _node_is_placeholder(pred):
+            if not _node_is_materialized_cfg_node(pred):
                 continue
-            if pred not in self.repaired_nodes and not _node_is_acceptable(
-                self.seed_cfg,
-                self.graph,
-                self.bounds,
-                self.func_addr,
-                self.forced_block_starts,
-                pred,
-            ):
+            if not self._is_preservable_seed_node(pred):
                 continue
 
-            direct_targets, fallthrough_addr = _seed_node_expected_successors(pred)
-            if node.addr in direct_targets or fallthrough_addr == node.addr:
+            direct_targets, fallthrough_addr = self._preserved_successor_starts(pred)
+
+            if node.addr in direct_targets:
+                return True
+            if pred in self.repaired_nodes and fallthrough_addr == node.addr:
                 return True
 
         return False
@@ -1274,34 +1472,16 @@ class _RepairSession:
         visible as successors of still-malformed nodes.
         """
 
-        starts: set[int] = set()
-        for node in _iter_graph_bound_nodes(self.graph, self.bounds):
-            if getattr(node, "is_simprocedure", False) or _node_is_placeholder(node):
-                continue
-            if node not in self.repaired_nodes and not _node_is_acceptable(
-                self.seed_cfg,
-                self.graph,
-                self.bounds,
-                self.func_addr,
-                self.forced_block_starts,
-                node,
-            ):
-                # Unacceptable seed nodes are precisely the fragments we are
-                # trying to overwrite. Let repaired or still-acceptable nodes
-                # preserve leaders; stale nodes only add fake split points.
-                continue
-
-            direct_targets, fallthrough_addr = _seed_node_expected_successors(node)
-            _add_expected_starts(
-                starts,
-                self.bounds,
-                addr,
-                direct_targets,
-                fallthrough_addr,
-                require_after_addr=False,
-            )
-
-        return starts
+        nodes = [
+            node
+            for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+            if _node_is_materialized_cfg_node(node)
+        ]
+        return self._expected_starts_from_nodes(
+            nodes,
+            addr,
+            require_after_addr=False,
+        )
 
     def current_stop_addrs(self, addr: int) -> set[int]:
         """Return the hard stop addresses used for bounded recovery at `addr`."""
@@ -1311,14 +1491,7 @@ class _RepairSession:
             for node in _iter_graph_bound_nodes(self.graph, self.bounds)
             if node.addr != addr
             and self._node_start_is_protected(node)
-            and _node_is_acceptable(
-                self.seed_cfg,
-                self.graph,
-                self.bounds,
-                self.func_addr,
-                self.forced_block_starts,
-                node,
-            )
+            and self._is_preservable_seed_node(node)
         }
         stop_addrs.update(
             target
@@ -1331,7 +1504,38 @@ class _RepairSession:
             for target in self.graph_expected_starts(addr)
             if addr < target < self.bounds.end_addr
         )
-        return stop_addrs
+        return {
+            target
+            for target in stop_addrs
+            if not self._addr_is_linear_tail_start(target)
+        }
+
+    def _addr_is_linear_tail_start(self, addr: int) -> bool:
+        """
+        Return True when `addr` is only the straight-line tail of a predecessor.
+
+        Such addresses should not act as hard recovery boundaries: if the live
+        graph currently has `A -> B` as a linear split candidate, revisiting A
+        should be allowed to absorb B into one larger block even when other
+        stop-set sources still mention B.
+        """
+
+        nodes = [
+            node
+            for node in _nodes_at_addr(self.graph, self.bounds, addr)
+            if _node_is_materialized_cfg_node(node)
+        ]
+        for node in nodes:
+            preds = [
+                pred
+                for pred in self.graph.predecessors(node)
+                if _node_is_materialized_cfg_node(pred)
+            ]
+            if len(preds) != 1:
+                continue
+            if node_has_linear_merge_successor(self.graph, preds[0]):
+                return True
+        return False
 
     def splice_block(self, block: BlockSpec) -> CFGNode:
         """
@@ -1412,6 +1616,8 @@ class _RepairSession:
                 )
             )
 
+        self._queue_linear_merge_candidates(recovered_node)
+
         return recovered_node
 
     def _cleanup(self) -> None:
@@ -1448,7 +1654,12 @@ class _RepairSession:
         for addr in initial_bad_addrs:
             self.enqueue(RepairObligation(addr=addr, reason="seed_anomaly"))
 
-        while self.queue:
+        while True:
+            if not self.queue:
+                if self._queue_remaining_linear_splits():
+                    continue
+                break
+
             self.iterations += 1
             if self.iterations > 5000:
                 raise RuntimeError(
@@ -1568,9 +1779,8 @@ def build_custom_cfg(
     """
     Build a custom repaired CFG for one function starting from CFGFast output.
 
-    The KB parameter is kept explicit because the long-term plan is to keep the
-    custom path anchored to the same knowledge-base state as CFGFast, even if we
-    later enrich the repair process with extra metadata.
+    The explicit KB parameter mirrors the higher-level CFG plumbing even though
+    the current repair pass operates directly on the provided seed CFG graph.
     """
 
     logger.info(f"Building custom CFG for function {func_addr:#x}")

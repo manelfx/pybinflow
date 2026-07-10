@@ -1476,7 +1476,12 @@ class _RepairSession:
 
         return leaders
 
-    def enqueue(self, obligation: RepairObligation) -> CFGNode | None:
+    def ensure_block_entry(
+        self,
+        obligation: RepairObligation,
+        *,
+        recover_now: bool = False,
+    ) -> CFGNode | None:
         """
         Ensure one obligation is represented in the graph and queued for repair.
 
@@ -1488,6 +1493,11 @@ class _RepairSession:
         addr = obligation.addr
         if not (self.bounds.addr <= addr < self.bounds.end_addr):
             return None
+
+        if recover_now:
+            recovered = self._recover_entry_now(obligation)
+            if recovered is not None:
+                return recovered
 
         existing_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
         covering_nodes = _covering_nodes(self.graph, self.bounds, addr)
@@ -1558,6 +1568,52 @@ class _RepairSession:
         self._connect_source_to_node(obligation, placeholder)
         self._queue_if_needed(obligation)
         return placeholder
+
+    def _recover_entry_now(self, obligation: RepairObligation) -> CFGNode | None:
+        """Resolve an existing entry or decode one immediately for local repair."""
+
+        exact_nodes = [
+            node
+            for node in _nodes_at_addr(self.graph, self.bounds, obligation.addr)
+            if _node_is_materialized_cfg_node(node)
+        ]
+        acceptable_node = self._first_acceptable_entry(exact_nodes)
+        if acceptable_node is not None:
+            return acceptable_node
+
+        block = _recover_block(
+            self.project,
+            self.bounds,
+            obligation.addr,
+            self.current_stop_addrs(obligation.addr),
+        )
+        if block is None or block.addr != obligation.addr:
+            return None
+
+        recovered_node = self.splice_block(block)
+        return recovered_node
+
+    def _first_acceptable_entry(
+        self,
+        nodes: Iterable[CFGNode],
+    ) -> CFGNode | None:
+        """Return the first live node that can satisfy an entry request unchanged."""
+
+        return next(
+            (
+                node
+                for node in nodes
+                if _node_is_acceptable(
+                    self.seed_cfg,
+                    self.graph,
+                    self.bounds,
+                    self.func_addr,
+                    self._explicit_split_starts(),
+                    node,
+                )
+            ),
+            None,
+        )
 
     def _connect_source_to_node(
         self,
@@ -1656,7 +1712,7 @@ class _RepairSession:
         """Satisfy local edge invariants before scheduling a full block recovery."""
 
         for expectation in _missing_jump_successors(self.graph, self.bounds, node):
-            self._materialize_missing_successor(
+            self._ensure_successor(
                 node,
                 expectation.addr,
                 expectation.jumpkind,
@@ -1708,7 +1764,7 @@ class _RepairSession:
         _add_successor_edge(self.graph, src, leaf, jumpkind)
         return True
 
-    def _materialize_missing_successor(
+    def _ensure_successor(
         self,
         src: CFGNode,
         target: int,
@@ -1717,58 +1773,33 @@ class _RepairSession:
         preserve_exact_addr: bool,
     ) -> bool:
         """
-        Ensure one missing successor target exists and is connected from `src`.
+        Ensure one successor target exists and is connected from `src`.
 
-        Reconciliation uses this when the source block is known to be valid
-        and only its successor edge is missing.
+        In-function successors always enter through `ensure_block_entry()`,
+        which owns the preserve/split/placeholder/recovery decision. Missing
+        successors still request immediate local recovery before a placeholder
+        is queued, preserving the convergence behavior of the original repair
+        algorithm.
         """
 
         if self._materialize_external_successor(src, target, jumpkind):
             return True
 
-        exact_nodes = [
-            node
-            for node in _nodes_at_addr(self.graph, self.bounds, target)
-            if _node_is_materialized_cfg_node(node)
-        ]
-        acceptable_node = next(
-            (
-                node
-                for node in exact_nodes
-                if _node_is_acceptable(
-                    self.seed_cfg,
-                    self.graph,
-                    self.bounds,
-                    self.func_addr,
-                    self._explicit_split_starts(),
-                    node,
-                )
-            ),
-            None,
-        )
-        if acceptable_node is not None:
-            _add_successor_edge(self.graph, src, acceptable_node, jumpkind)
-            return True
-
-        block = _recover_block(self.project, self.bounds, target, self.current_stop_addrs(target))
-        if block is not None and block.addr == target:
-            recovered = self.splice_block(block)
-            _add_successor_edge(self.graph, src, recovered, jumpkind)
-            return True
-
-        before = len(self.queue)
-        self.enqueue(
+        node = self.ensure_block_entry(
             RepairObligation(
                 addr=target,
                 reason=f"missing_successor_of_{src.addr:#x}",
                 source_addr=src.addr,
                 jumpkind=jumpkind,
                 preserve_exact_addr=preserve_exact_addr,
-            )
+            ),
+            recover_now=True,
         )
-        return len(self.queue) != before
+        if node is not None:
+            _add_successor_edge(self.graph, src, node, jumpkind)
+        return node is not None
 
-    def enqueue_expected_successors(self, src) -> None:
+    def ensure_expected_successors(self, src: CFGNode) -> None:
         """
         Recreate the successor edges implied by one preserved predecessor node.
 
@@ -1780,7 +1811,7 @@ class _RepairSession:
         for target in direct_targets:
             if self._materialize_external_successor(src, target, "Ijk_Boring"):
                 continue
-            self.enqueue(
+            self.ensure_block_entry(
                 RepairObligation(
                     addr=target,
                     reason=f"expected_successor_of_{src.addr:#x}",
@@ -1791,7 +1822,7 @@ class _RepairSession:
             )
 
         if fallthrough_addr is not None:
-            self.enqueue(
+            self.ensure_block_entry(
                 RepairObligation(
                     addr=fallthrough_addr,
                     reason=f"expected_fallthrough_of_{src.addr:#x}",
@@ -1886,13 +1917,13 @@ class _RepairSession:
             ):
                 continue
 
-            self.enqueue_expected_successors(pred)
+            self.ensure_expected_successors(pred)
 
         for target in block.direct_targets:
             edge_jumpkind = "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
             if self._materialize_external_successor(recovered_node, target, edge_jumpkind):
                 continue
-            self.enqueue(
+            self.ensure_block_entry(
                 RepairObligation(
                     addr=target,
                     reason=f"direct_target_of_{block.addr:#x}",
@@ -1903,7 +1934,7 @@ class _RepairSession:
             )
 
         if block.fallthrough_addr is not None:
-            self.enqueue(
+            self.ensure_block_entry(
                 RepairObligation(
                     addr=block.fallthrough_addr,
                     reason=f"fallthrough_of_{block.addr:#x}",
@@ -1952,7 +1983,7 @@ class _RepairSession:
         )
 
         for addr in initial_bad_addrs:
-            self.enqueue(RepairObligation(addr=addr, reason="seed_anomaly"))
+            self.ensure_block_entry(RepairObligation(addr=addr, reason="seed_anomaly"))
 
         while True:
             if not self.queue:
@@ -2002,21 +2033,7 @@ class _RepairSession:
                         )
                     self._requeue_pending(obligation)
                 continue
-            acceptable_node = next(
-                (
-                    node
-                    for node in current_nodes
-                    if _node_is_acceptable(
-                        self.seed_cfg,
-                        self.graph,
-                        self.bounds,
-                        self.func_addr,
-                        self._explicit_split_starts(),
-                        node,
-                    )
-                ),
-                None,
-            )
+            acceptable_node = self._first_acceptable_entry(current_nodes)
             if acceptable_node is not None:
                 self._connect_source_to_node(obligation, acceptable_node)
                 continue

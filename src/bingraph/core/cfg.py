@@ -22,6 +22,10 @@ Terminology used throughout the module:
   every source-edge claim, split requirement, and reason that led to them.
   Obligations are created from seed anomalies and from edges discovered while
   repairing neighboring blocks.
+- resolution policy:
+  Immediate resolution attempts local recovery for a missing successor of a
+  live node. If it cannot recover that target, the request becomes ordinary
+  queued work; all other requests begin queued.
 - terminator:
   The control-transfer summary of a recovered block: return, call, direct jump,
   or plain fallthrough, plus any direct targets or fallthrough address.
@@ -53,7 +57,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 from typing import Any, Literal, Protocol, cast
 
@@ -79,6 +83,11 @@ TerminatorKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_Fallthrough", "Ijk_Ret"]
 # Edge jumpkinds that we actually materialize in the repaired graph. Keep this
 # aligned with the jumpkind vocabulary used by normal angr CFG edges.
 EdgeJumpKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"]
+
+# Entry resolution is deliberately explicit: most discovered block starts can
+# wait for normal worklist processing, while a missing successor of a live node
+# may need immediate local recovery to preserve convergence.
+EntryResolutionPolicy = Literal["queued", "immediate"]
 
 
 class CFGGraph(Protocol):
@@ -185,6 +194,7 @@ class RepairObligation:
     source_node: CFGNode | None = None
     jumpkind: EdgeJumpKind = "Ijk_Boring"
     preserve_exact_addr: bool = False
+    resolution_policy: EntryResolutionPolicy = "queued"
 
 
 @dataclass(frozen=True)
@@ -197,7 +207,7 @@ class EdgeClaim:
 
 @dataclass
 class PendingObligation:
-    """Merged worklist state for one action at one CFG address."""
+    """Merged queued work for one action at one CFG address."""
 
     addr: int
     action: Literal["recover", "reconcile"]
@@ -1479,8 +1489,6 @@ class _RepairSession:
     def ensure_block_entry(
         self,
         obligation: RepairObligation,
-        *,
-        recover_now: bool = False,
     ) -> CFGNode | None:
         """
         Ensure one obligation is represented in the graph and queued for repair.
@@ -1494,10 +1502,14 @@ class _RepairSession:
         if not (self.bounds.addr <= addr < self.bounds.end_addr):
             return None
 
-        if recover_now:
+        if obligation.resolution_policy == "immediate":
             recovered = self._recover_entry_now(obligation)
             if recovered is not None:
                 return recovered
+            # An immediate local attempt is a convergence aid, not a separate
+            # execution path. Once it cannot recover the entry, hand the same
+            # request to normal worklist processing.
+            obligation = replace(obligation, resolution_policy="queued")
 
         existing_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
         covering_nodes = _covering_nodes(self.graph, self.bounds, addr)
@@ -1638,6 +1650,9 @@ class _RepairSession:
 
     def _queue_if_needed(self, request: RepairObligation) -> bool:
         """Merge a request into the pending work item for its action and address."""
+
+        if request.resolution_policy != "queued":
+            raise ValueError("Only queued obligations may enter the worklist")
 
         key = (request.action, request.addr)
         pending = self.pending.get(key)
@@ -1787,8 +1802,8 @@ class _RepairSession:
                 source_node=src,
                 jumpkind=jumpkind,
                 preserve_exact_addr=preserve_exact_addr,
+                resolution_policy="immediate",
             ),
-            recover_now=True,
         )
         if node is not None:
             _add_successor_edge(self.graph, src, node, jumpkind)

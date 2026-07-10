@@ -17,15 +17,23 @@ Terminology used throughout the module:
   Replacing stale seed nodes with newly decoded blocks while preserving good
   incoming/outgoing structure around them.
 - obligation:
-  A queued request to ensure that one address exists as a block entry in the
-  repaired graph. Requests for the same action and address are merged, keeping
-  every source-edge claim, split requirement, and reason that led to them.
-  Obligations are created from seed anomalies and from edges discovered while
-  repairing neighboring blocks.
+  A queued worklist item for either recovering a block entry or reconciling a
+  live block's local invariants. Requests for the same action and address are
+  merged, retaining all their edge claims, split requirements, and reasons.
+- edge claim:
+  A required outgoing edge from one exact source node to an obligation's
+  address. Identity matters because distinct CFG nodes can share an address.
 - resolution policy:
   Immediate resolution attempts local recovery for a missing successor of a
   live node. If it cannot recover that target, the request becomes ordinary
   queued work; all other requests begin queued.
+- leader:
+  An address that must begin a recovered block. The repair session derives
+  leaders from the function entry, direct targets, fallthroughs, and explicit
+  splits through stale nodes, then uses them to bound local decoding.
+- reconciliation:
+  The local worklist action that restores required direct successors for a live
+  node and queues recovery again only if the node still violates an invariant.
 - terminator:
   The control-transfer summary of a recovered block: return, call, direct jump,
   or plain fallthrough, plus any direct targets or fallthrough address.
@@ -39,16 +47,21 @@ High-level algorithm:
 
 1. Build a bounded CFGFast graph for the target function.
 2. If the seed graph shows no known anomalies, return it unchanged.
-3. Otherwise, seed a worklist with one repair obligation per anomalous block.
-4. Process obligations one by one:
-   - decode a bounded replacement block at the requested address,
-   - splice it into the live graph,
-   - queue new obligations for block starts implied by the recovered
-     terminator or by preserved predecessor semantics,
-   - reconcile the replacement block and its immediate graph neighborhood.
-5. When the worklist is truly empty, remove unreachable stale nodes and
-   temporary placeholders, then expose the repaired graph through a small
-   CFG-like wrapper.
+3. Otherwise, seed a worklist with one recovery obligation per anomalous
+   address. The queue merges requests for the same action and address.
+4. Dispatch each obligation:
+   - recovery resolves an existing entry, a covered entry, or a placeholder;
+     it decodes and splices a bounded replacement block when required,
+   - reconciliation restores direct successor edges and requeues recovery only
+     for nodes that still violate an invariant,
+   - both actions may add edge claims, leaders, and neighboring reconciliation
+     work as the live graph changes.
+5. Reject a requeued obligation when neither the graph revision nor its merged
+   repair state changed. A separate iteration limit protects against a graph
+   that continues changing without converging.
+6. When the worklist is empty, remove unreachable stale nodes and temporary
+   placeholders, then expose the repaired graph through a small CFG-like
+   wrapper.
 
 The implementation is intentionally conservative. It prefers localized repairs
 over whole-function reconstruction so already-correct arch-specific behavior
@@ -90,6 +103,10 @@ EdgeJumpKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"]
 # wait for normal worklist processing, while a missing successor of a live node
 # may need immediate local recovery to preserve convergence.
 EntryResolutionPolicy = Literal["queued", "immediate"]
+
+# Last-resort protection for repair loops that keep mutating the graph without
+# converging. Stable requeues are diagnosed earlier by PendingObligation state.
+MAX_CUSTOM_CFG_WORKLIST_ITERATIONS = 5_000
 
 
 class CFGGraph(Protocol):
@@ -1798,32 +1815,26 @@ class _RepairSession:
     def _requeue_pending(
         self,
         obligation: PendingObligation,
-        *,
-        addr: int | None = None,
-        reason: str | None = None,
-        include_claims: bool = True,
     ) -> None:
         """Turn merged work back into one or more ordinary queue requests."""
 
-        target_addr = obligation.addr if addr is None else addr
-        request_reason = reason or ", ".join(sorted(obligation.reasons))
-        claims = obligation.edge_claims if include_claims else set()
-        if not claims:
+        reason = ", ".join(sorted(obligation.reasons))
+        if not obligation.edge_claims:
             self._queue_if_needed(
                 RepairObligation(
-                    addr=target_addr,
-                    reason=request_reason,
+                    addr=obligation.addr,
+                    reason=reason,
                     action=obligation.action,
                     preserve_exact_addr=obligation.preserve_exact_addr,
                 )
             )
             return
 
-        for claim in claims:
+        for claim in obligation.edge_claims:
             self._queue_if_needed(
                 RepairObligation(
-                    addr=target_addr,
-                    reason=request_reason,
+                    addr=obligation.addr,
+                    reason=reason,
                     action=obligation.action,
                     source_node=claim.source_node,
                     jumpkind=claim.jumpkind,
@@ -2194,9 +2205,10 @@ class _RepairSession:
 
         while self.queue:
             self.iterations += 1
-            if self.iterations > 5000:
+            if self.iterations > MAX_CUSTOM_CFG_WORKLIST_ITERATIONS:
                 raise RuntimeError(
-                    f"Custom CFG worklist exceeded 5000 iterations for {self.func_addr:#x}; "
+                    "Custom CFG worklist exceeded "
+                    f"{MAX_CUSTOM_CFG_WORKLIST_ITERATIONS} iterations for {self.func_addr:#x}; "
                     f"top counts: {self.processed_counts}"
                 )
 
@@ -2260,16 +2272,6 @@ def _remove_nodes(graph: CFGGraph, nodes: Iterable[CFGNode]) -> None:
         graph.remove_node(node)
 
 
-def _repair_cfg_with_worklist(
-    project: Project,
-    seed_cfg: CFGBase,
-    func_addr: int,
-) -> CFGBase | CustomCFG:
-    """Repair only anomalous CFGFast regions by materializing blocks on demand."""
-
-    return _RepairSession(project, seed_cfg, func_addr).run()
-
-
 def build_custom_cfg(
     project: Project,
     kb: KnowledgeBase,
@@ -2287,4 +2289,4 @@ def build_custom_cfg(
     """
 
     logger.info(f"Building custom CFG for function {func_addr:#x}")
-    return _repair_cfg_with_worklist(project, seed_cfg, func_addr)
+    return _RepairSession(project, seed_cfg, func_addr).run()

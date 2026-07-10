@@ -1842,11 +1842,14 @@ class _RepairSession:
         """Satisfy local edge invariants before scheduling a full block recovery."""
 
         for expectation in _missing_jump_successors(self.graph, self.bounds, node):
-            self._ensure_successor(
+            self._resolve_successor(
                 node,
                 expectation.addr,
                 expectation.jumpkind,
+                reason=f"missing_successor_of_{node.addr:#x}",
                 preserve_exact_addr=expectation.preserve_exact_addr,
+                resolution_policy="immediate",
+                materialize_external=True,
             )
 
         if _node_needs_repair(
@@ -1896,40 +1899,43 @@ class _RepairSession:
         self._add_edge(src, leaf, jumpkind)
         return True
 
-    def _ensure_successor(
+    def _resolve_successor(
         self,
         src: CFGNode,
         target: int,
         jumpkind: EdgeJumpKind,
         *,
+        reason: str,
         preserve_exact_addr: bool,
-    ) -> bool:
+        resolution_policy: EntryResolutionPolicy = "queued",
+        materialize_external: bool = False,
+    ) -> None:
         """
-        Ensure one successor target exists and is connected from `src`.
+        Resolve one successor target and connect it from `src`.
 
-        In-function successors always enter through `ensure_block_entry()`,
-        which owns the preserve/split/placeholder/recovery decision. Missing
-        successors still request immediate local recovery before a placeholder
-        is queued, preserving the convergence behavior of the original repair
-        algorithm.
+        Direct targets may materialize an external leaf. In-function targets
+        enter through `ensure_block_entry()`, which owns the
+        preserve/split/placeholder/recovery decision. Callers choose immediate
+        resolution only when a live node is missing a required successor.
         """
 
-        if self._materialize_external_successor(src, target, jumpkind):
-            return True
+        if materialize_external and self._materialize_external_successor(
+            src, target, jumpkind
+        ):
+            return
 
         node = self.ensure_block_entry(
             RepairObligation(
                 addr=target,
-                reason=f"missing_successor_of_{src.addr:#x}",
+                reason=reason,
                 source_node=src,
                 jumpkind=jumpkind,
                 preserve_exact_addr=preserve_exact_addr,
-                resolution_policy="immediate",
+                resolution_policy=resolution_policy,
             ),
         )
         if node is not None:
             self._add_edge(src, node, jumpkind)
-        return node is not None
 
     def ensure_expected_successors(self, src: CFGNode) -> None:
         """
@@ -1941,26 +1947,22 @@ class _RepairSession:
 
         direct_targets, fallthrough_addr = _seed_node_expected_successors(src)
         for target in direct_targets:
-            if self._materialize_external_successor(src, target, "Ijk_Boring"):
-                continue
-            self.ensure_block_entry(
-                RepairObligation(
-                    addr=target,
-                    reason=f"expected_successor_of_{src.addr:#x}",
-                    source_node=src,
-                    jumpkind="Ijk_Boring",
-                    preserve_exact_addr=True,
-                )
+            self._resolve_successor(
+                src,
+                target,
+                "Ijk_Boring",
+                reason=f"expected_successor_of_{src.addr:#x}",
+                preserve_exact_addr=True,
+                materialize_external=True,
             )
 
         if fallthrough_addr is not None:
-            self.ensure_block_entry(
-                RepairObligation(
-                    addr=fallthrough_addr,
-                    reason=f"expected_fallthrough_of_{src.addr:#x}",
-                    source_node=src,
-                    jumpkind="Ijk_Boring",
-                )
+            self._resolve_successor(
+                src,
+                fallthrough_addr,
+                "Ijk_Boring",
+                reason=f"expected_fallthrough_of_{src.addr:#x}",
+                preserve_exact_addr=False,
             )
 
     def current_stop_addrs(self, addr: int) -> set[int]:
@@ -2062,30 +2064,22 @@ class _RepairSession:
 
         for target in block.direct_targets:
             edge_jumpkind = "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
-            if self._materialize_external_successor(
-                recovered_node, target, edge_jumpkind
-            ):
-                continue
-            self.ensure_block_entry(
-                RepairObligation(
-                    addr=target,
-                    reason=f"direct_target_of_{block.addr:#x}",
-                    source_node=recovered_node,
-                    jumpkind=edge_jumpkind,
-                    preserve_exact_addr=True,
-                )
+            self._resolve_successor(
+                recovered_node,
+                target,
+                edge_jumpkind,
+                reason=f"direct_target_of_{block.addr:#x}",
+                preserve_exact_addr=True,
+                materialize_external=True,
             )
 
         if block.fallthrough_addr is not None:
-            self.ensure_block_entry(
-                RepairObligation(
-                    addr=block.fallthrough_addr,
-                    reason=f"fallthrough_of_{block.addr:#x}",
-                    source_node=recovered_node,
-                    jumpkind="Ijk_FakeRet"
-                    if block.jumpkind == "Ijk_Call"
-                    else "Ijk_Boring",
-                )
+            self._resolve_successor(
+                recovered_node,
+                block.fallthrough_addr,
+                "Ijk_FakeRet" if block.jumpkind == "Ijk_Call" else "Ijk_Boring",
+                reason=f"fallthrough_of_{block.addr:#x}",
+                preserve_exact_addr=False,
             )
 
         self._queue_reconciliation_neighborhood(recovered_node)

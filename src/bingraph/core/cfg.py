@@ -91,10 +91,6 @@ EdgeJumpKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"]
 # may need immediate local recovery to preserve convergence.
 EntryResolutionPolicy = Literal["queued", "immediate"]
 
-# A request that keeps reappearing without changing the graph is a repair-loop
-# diagnostic, not useful work. Successful graph mutations reset its count.
-MAX_STALLED_OBLIGATION_RETRIES = 25
-
 
 class CFGGraph(Protocol):
     """Public graph operations shared by NetworkX and angr's SpillingCFG."""
@@ -247,6 +243,19 @@ class PendingObligation:
         if request.source_node is not None:
             self.edge_claims.add(EdgeClaim(request.source_node, request.jumpkind))
         self.preserve_exact_addr |= request.preserve_exact_addr
+
+    def fingerprint(self) -> tuple[bool, tuple[tuple[int, EdgeJumpKind], ...]]:
+        """Return the repair-relevant state used to detect a stalled requeue."""
+
+        # Source identity matters because distinct CFG nodes can share an
+        # address. Reasons are diagnostic only, so they do not affect whether
+        # retrying this obligation can change the graph.
+        claims = tuple(
+            sorted(
+                (id(claim.source_node), claim.jumpkind) for claim in self.edge_claims
+            )
+        )
+        return self.preserve_exact_addr, claims
 
 
 @dataclass(frozen=True)
@@ -1471,7 +1480,10 @@ class _RepairSession:
         self.leaders = BlockLeaderRegistry({func_addr: {"function_entry"}})
         self.processed_counts: dict[int, int] = {}
         self.mutation_revision = 0
-        self.stalled_retries: dict[tuple[str, int], int] = {}
+        self.last_requeue_states: dict[
+            tuple[str, int],
+            tuple[int, tuple[bool, tuple[tuple[int, EdgeJumpKind], ...]]],
+        ] = {}
         self.iterations = 0
 
     def _is_preservable_seed_node(self, node) -> bool:
@@ -1514,23 +1526,25 @@ class _RepairSession:
         self,
         key: tuple[str, int],
         obligation: PendingObligation,
-        revision_before: int,
     ) -> None:
-        """Reject a requeued obligation that repeatedly makes no graph progress."""
+        """Reject a requeued obligation whose graph and repair state are unchanged."""
 
-        if key not in self.pending or self.mutation_revision != revision_before:
-            self.stalled_retries.pop(key, None)
+        pending = self.pending.get(key)
+        if pending is None:
+            self.last_requeue_states.pop(key, None)
             return
 
-        retries = self.stalled_retries.get(key, 0) + 1
-        self.stalled_retries[key] = retries
-        if retries <= MAX_STALLED_OBLIGATION_RETRIES:
+        state = self.mutation_revision, pending.fingerprint()
+        previous_state = self.last_requeue_states.get(key)
+        if state != previous_state:
+            self.last_requeue_states[key] = state
             return
 
-        reasons = ", ".join(sorted(obligation.reasons))
+        reasons = ", ".join(sorted(pending.reasons))
         raise RuntimeError(
             f"Custom CFG stalled while {obligation.action} at {obligation.addr:#x}: "
-            f"{retries} retries without graph progress (reasons: {reasons})"
+            "the graph and pending repair state did not change "
+            f"(reasons: {reasons})"
         )
 
     def _preserved_successor_starts(self, node) -> tuple[tuple[int, ...], int | None]:
@@ -2137,14 +2151,13 @@ class _RepairSession:
                     f"(visit {self.processed_counts[addr]})"
                 )
 
-            revision_before = self.mutation_revision
             if not (self.bounds.addr <= addr < self.bounds.end_addr):
-                self._record_obligation_progress(key, obligation, revision_before)
+                self._record_obligation_progress(key, obligation)
                 continue
 
             if obligation.action == "reconcile":
                 self._reconcile_addr(addr)
-                self._record_obligation_progress(key, obligation, revision_before)
+                self._record_obligation_progress(key, obligation)
                 continue
 
             current_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
@@ -2166,12 +2179,12 @@ class _RepairSession:
                             )
                         )
                     self._requeue_pending(obligation)
-                self._record_obligation_progress(key, obligation, revision_before)
+                self._record_obligation_progress(key, obligation)
                 continue
             acceptable_node = self._first_acceptable_entry(current_nodes)
             if acceptable_node is not None:
                 self._connect_source_to_node(obligation, acceptable_node)
-                self._record_obligation_progress(key, obligation, revision_before)
+                self._record_obligation_progress(key, obligation)
                 continue
 
             block = _recover_block(
@@ -2179,12 +2192,12 @@ class _RepairSession:
             )
             if block is None:
                 logger.warning(f"Custom CFG could not recover a block at {addr:#x}")
-                self._record_obligation_progress(key, obligation, revision_before)
+                self._record_obligation_progress(key, obligation)
                 continue
 
             recovered_node = self.splice_block(block)
             self._connect_source_to_node(obligation, recovered_node)
-            self._record_obligation_progress(key, obligation, revision_before)
+            self._record_obligation_progress(key, obligation)
 
         self._cleanup()
         self._register_custom_graphs()

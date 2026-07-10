@@ -182,16 +182,16 @@ class RepairObligation:
     addr: int
     reason: str
     action: Literal["recover", "reconcile"] = "recover"
-    source_addr: int | None = None
+    source_node: CFGNode | None = None
     jumpkind: EdgeJumpKind = "Ijk_Boring"
     preserve_exact_addr: bool = False
 
 
 @dataclass(frozen=True)
 class EdgeClaim:
-    """One required edge from a recovered source address into an obligation."""
+    """One required edge from one exact live source node into an obligation."""
 
-    source_addr: int
+    source_node: CFGNode
     jumpkind: EdgeJumpKind
 
 
@@ -210,8 +210,8 @@ class PendingObligation:
         """Create pending state from one first-in request."""
 
         claims = set()
-        if request.source_addr is not None:
-            claims.add(EdgeClaim(request.source_addr, request.jumpkind))
+        if request.source_node is not None:
+            claims.add(EdgeClaim(request.source_node, request.jumpkind))
         return cls(
             addr=request.addr,
             action=request.action,
@@ -224,8 +224,8 @@ class PendingObligation:
         """Accumulate another request without changing queue order."""
 
         self.reasons.add(request.reason)
-        if request.source_addr is not None:
-            self.edge_claims.add(EdgeClaim(request.source_addr, request.jumpkind))
+        if request.source_node is not None:
+            self.edge_claims.add(EdgeClaim(request.source_node, request.jumpkind))
         self.preserve_exact_addr |= request.preserve_exact_addr
 
 
@@ -1542,7 +1542,7 @@ class _RepairSession:
                 RepairObligation(
                     addr=repair_addr,
                     reason=repair_reason,
-                    source_addr=obligation.source_addr if repair_addr == addr else None,
+                    source_node=obligation.source_node if repair_addr == addr else None,
                     jumpkind=obligation.jumpkind,
                 )
             )
@@ -1624,22 +1624,17 @@ class _RepairSession:
 
         if isinstance(obligation, RepairObligation):
             claims = (
-                {EdgeClaim(obligation.source_addr, obligation.jumpkind)}
-                if obligation.source_addr is not None
+                {EdgeClaim(obligation.source_node, obligation.jumpkind)}
+                if obligation.source_node is not None
                 else set()
             )
         else:
             claims = obligation.edge_claims
 
         for claim in claims:
-            src_nodes = _nodes_at_addr(self.graph, self.bounds, claim.source_addr)
-            preferred_src_nodes = [
-                src
-                for src in src_nodes
-                if _node_is_materialized_cfg_node(src)
-            ]
-            for src in preferred_src_nodes or src_nodes:
-                _add_successor_edge(self.graph, src, node, claim.jumpkind)
+            if not any(source is claim.source_node for source in self.graph.nodes()):
+                continue
+            _add_successor_edge(self.graph, claim.source_node, node, claim.jumpkind)
 
     def _queue_if_needed(self, request: RepairObligation) -> bool:
         """Merge a request into the pending work item for its action and address."""
@@ -1684,7 +1679,7 @@ class _RepairSession:
                     addr=target_addr,
                     reason=request_reason,
                     action=obligation.action,
-                    source_addr=claim.source_addr,
+                    source_node=claim.source_node,
                     jumpkind=claim.jumpkind,
                     preserve_exact_addr=obligation.preserve_exact_addr,
                 )
@@ -1789,7 +1784,7 @@ class _RepairSession:
             RepairObligation(
                 addr=target,
                 reason=f"missing_successor_of_{src.addr:#x}",
-                source_addr=src.addr,
+                source_node=src,
                 jumpkind=jumpkind,
                 preserve_exact_addr=preserve_exact_addr,
             ),
@@ -1815,7 +1810,7 @@ class _RepairSession:
                 RepairObligation(
                     addr=target,
                     reason=f"expected_successor_of_{src.addr:#x}",
-                    source_addr=src.addr,
+                    source_node=src,
                     jumpkind="Ijk_Boring",
                     preserve_exact_addr=True,
                 )
@@ -1826,7 +1821,7 @@ class _RepairSession:
                 RepairObligation(
                     addr=fallthrough_addr,
                     reason=f"expected_fallthrough_of_{src.addr:#x}",
-                    source_addr=src.addr,
+                    source_node=src,
                     jumpkind="Ijk_Boring",
                 )
             )
@@ -1927,7 +1922,7 @@ class _RepairSession:
                 RepairObligation(
                     addr=target,
                     reason=f"direct_target_of_{block.addr:#x}",
-                    source_addr=block.addr,
+                    source_node=recovered_node,
                     jumpkind=edge_jumpkind,
                     preserve_exact_addr=True,
                 )
@@ -1938,7 +1933,7 @@ class _RepairSession:
                 RepairObligation(
                     addr=block.fallthrough_addr,
                     reason=f"fallthrough_of_{block.addr:#x}",
-                    source_addr=block.addr,
+                    source_node=recovered_node,
                     jumpkind="Ijk_FakeRet" if block.jumpkind == "Ijk_Call" else "Ijk_Boring",
                 )
             )

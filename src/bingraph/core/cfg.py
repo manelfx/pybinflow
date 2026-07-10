@@ -50,9 +50,10 @@ from CFGFast remains intact.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Literal
+from typing import Any, Literal, Protocol, cast
 
 from angr import KnowledgeBase, Project
 from angr.analyses.cfg import CFGBase
@@ -61,7 +62,6 @@ from capstone import CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_OP_IMM, CsInsn
 from capstone.arm import ARM_CC_AL, ARM_CC_INVALID
 from capstone.x86 import X86_INS_JMP, X86_INS_LJMP
 from loguru import logger
-import networkx as nx
 import pyvex
 
 from .symbols import FunctionSymbol, list_function_symbols
@@ -77,6 +77,38 @@ TerminatorKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_Fallthrough", "Ijk_Ret"]
 # Edge jumpkinds that we actually materialize in the repaired graph. Keep this
 # aligned with the jumpkind vocabulary used by normal angr CFG edges.
 EdgeJumpKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"]
+
+
+class CFGGraph(Protocol):
+    """Public graph operations shared by NetworkX and angr's SpillingCFG."""
+
+    def nodes(self) -> Iterable[CFGNode]: ...
+
+    def edges(
+        self, data: bool = False
+    ) -> Iterable[tuple[CFGNode, CFGNode, dict[str, Any]]]: ...
+
+    def predecessors(self, node: CFGNode) -> Iterable[CFGNode]: ...
+
+    def successors(self, node: CFGNode) -> Iterable[CFGNode]: ...
+
+    def in_degree(self, node: CFGNode) -> int: ...
+
+    def has_edge(self, src: CFGNode, dst: CFGNode) -> bool: ...
+
+    def get_edge_data(self, src: CFGNode, dst: CFGNode) -> dict[str, Any] | None: ...
+
+    def add_node(self, node: CFGNode) -> None: ...
+
+    def add_edge(self, src: CFGNode, dst: CFGNode, **attrs: Any) -> None: ...
+
+    def remove_node(self, node: CFGNode) -> None: ...
+
+
+def _cfg_graph(cfg: CFGBase) -> CFGGraph:
+    """Return the CFG's public graph wrapper with the operations used here."""
+
+    return cast(CFGGraph, cfg.graph)
 
 
 @dataclass(frozen=True)
@@ -449,16 +481,18 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
         if isinstance(target, int):
             exit_targets.append(target)
 
-    default_target = None
+    default_target: int | None = None
     if isinstance(vex.next, pyvex.expr.Const):
-        default_target = vex.next.con.value
+        target = vex.next.con.value
+        if isinstance(target, int):
+            default_target = target
 
     if semantic.is_ret():
         return TerminatorInfo(jumpkind="Ijk_Ret")
 
     if semantic.is_call():
-        direct_targets = ()
-        if _is_direct_target_valid(bounds, default_target):
+        direct_targets: tuple[int, ...] = ()
+        if isinstance(default_target, int) and _is_direct_target_valid(bounds, default_target):
             direct_targets = (default_target,)
         fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
         return TerminatorInfo(
@@ -483,7 +517,7 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
             fallthrough_addr=fallthrough_addr,
         )
 
-    if semantic.is_jump() and _is_direct_target_valid(bounds, default_target):
+    if semantic.is_jump() and isinstance(default_target, int) and _is_direct_target_valid(bounds, default_target):
         return TerminatorInfo(
             jumpkind="Ijk_Boring",
             direct_targets=(default_target,),
@@ -496,8 +530,8 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
             direct_targets=(direct_target,),
         )
 
-    direct_targets = ()
-    if _is_direct_target_valid(bounds, default_target):
+    direct_targets: tuple[int, ...] = ()
+    if isinstance(default_target, int) and _is_direct_target_valid(bounds, default_target):
         direct_targets = (default_target,)
     return TerminatorInfo(jumpkind="Ijk_Boring", direct_targets=direct_targets)
 
@@ -507,7 +541,7 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
 def _iter_seed_function_nodes(seed_cfg: CFGBase, func_addr: int):
     """Yield non-simprocedure nodes from the seed CFG for one function."""
 
-    for node in seed_cfg.graph.nodes():
+    for node in _cfg_graph(seed_cfg).nodes():
         if getattr(node, "function_address", None) != func_addr:
             continue
         if getattr(node, "is_simprocedure", False):
@@ -543,11 +577,15 @@ def _seed_node_expected_successors(node) -> tuple[tuple[int, ...], int | None]:
     if decoded.is_empty:
         return (), None
 
-    last_semantic = InsnSemantics(decoded.last)
+    last_insn = decoded.last
+    if last_insn is None:
+        return (), None
+
+    last_semantic = InsnSemantics(last_insn)
     if not last_semantic.is_control_transfer():
         return (), None
 
-    last_addrs = {decoded.last.address}
+    last_addrs = {last_insn.address}
 
     direct_targets: list[int] = []
     for ins_addr, _, stmt in vex.exit_statements:
@@ -566,7 +604,7 @@ def _seed_node_expected_successors(node) -> tuple[tuple[int, ...], int | None]:
     return tuple(direct_targets), fallthrough_addr
 
 
-def _seed_graph_direct_targets(graph: nx.DiGraph, node) -> tuple[int, ...]:
+def _seed_graph_direct_targets(graph: CFGGraph, node) -> tuple[int, ...]:
     """
     Return direct branch targets that are explicitly present in the seed graph.
 
@@ -584,7 +622,11 @@ def _seed_graph_direct_targets(graph: nx.DiGraph, node) -> tuple[int, ...]:
     if decoded.is_empty:
         return ()
 
-    last = InsnSemantics(decoded.last)
+    last_insn = decoded.last
+    if last_insn is None:
+        return ()
+
+    last = InsnSemantics(last_insn)
     if not last.is_jump():
         return ()
 
@@ -604,7 +646,7 @@ def _seed_graph_direct_targets(graph: nx.DiGraph, node) -> tuple[int, ...]:
 
 
 def _analyze_jump_successors(
-    graph: nx.DiGraph,
+    graph: CFGGraph,
     bounds: FunctionBounds,
     node,
 ) -> JumpSuccessorAnalysis | None:
@@ -625,7 +667,11 @@ def _analyze_jump_successors(
     if decoded.is_empty or node_has_decoding_coverage_mismatch(node):
         return None
 
-    last = InsnSemantics(decoded.last)
+    last_insn = decoded.last
+    if last_insn is None:
+        return None
+
+    last = InsnSemantics(last_insn)
     if not last.is_jump():
         return None
 
@@ -634,7 +680,7 @@ def _analyze_jump_successors(
     direct_target = last.direct_target()
     if direct_target is None:
         return None
-    fallthrough_addr = decoded.last.address + decoded.last.size
+    fallthrough_addr = last_insn.address + last_insn.size
 
     try:
         vex = node.block.vex
@@ -644,7 +690,7 @@ def _analyze_jump_successors(
     exit_targets: list[int] = []
     if vex is not None:
         for ins_addr, _, stmt in vex.exit_statements:
-            if ins_addr != decoded.last.address:
+            if ins_addr != last_insn.address:
                 continue
             target = getattr(stmt.dst, "value", None)
             if isinstance(target, int) and target not in exit_targets:
@@ -672,7 +718,7 @@ def _analyze_jump_successors(
 
 
 def node_has_missing_jump_successor(
-    graph: nx.DiGraph,
+    graph: CFGGraph,
     bounds: FunctionBounds,
     node,
 ) -> bool:
@@ -697,7 +743,7 @@ def node_has_missing_jump_successor(
 
 
 def _missing_jump_successors(
-    graph: nx.DiGraph,
+    graph: CFGGraph,
     bounds: FunctionBounds,
     node,
 ) -> tuple[JumpSuccessorExpectation, ...]:
@@ -710,7 +756,7 @@ def _missing_jump_successors(
     return tuple(item for item in analysis.expected if item.addr not in analysis.present)
 
 
-def node_has_linear_merge_successor(graph: nx.DiGraph, node) -> bool:
+def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
     """
     Return True when `node` should absorb its only straight-line successor.
 
@@ -746,7 +792,10 @@ def node_has_linear_merge_successor(graph: nx.DiGraph, node) -> bool:
     if decoded.is_empty:
         return False
 
-    if InsnSemantics(decoded.last).is_control_transfer():
+    last_insn = decoded.last
+    if last_insn is None:
+        return False
+    if InsnSemantics(last_insn).is_control_transfer():
         return False
 
     logger.warning(
@@ -819,7 +868,7 @@ def node_has_decode_gap(node) -> bool:
         return False
 
 
-def node_has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
+def node_has_truncated_leaf(graph: CFGGraph, func_addr: int, node) -> bool:
     """Return True when a CFG node stops before a real terminator and has no exits."""
 
     try:
@@ -835,11 +884,15 @@ def node_has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
     if decoded.is_empty:
         return False
 
-    last = InsnSemantics(decoded.last)
+    last_insn = decoded.last
+    if last_insn is None:
+        return False
+
+    last = InsnSemantics(last_insn)
     if last.is_control_transfer():
         return False
 
-    if any(True for _ in cfg.graph.successors(node)):
+    if any(True for _ in graph.successors(node)):
         return False
 
     has_later_function_node = any(
@@ -847,13 +900,13 @@ def node_has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
         and getattr(other, "function_address", None) == func_addr
         and not getattr(other, "is_simprocedure", False)
         and other.addr > node.addr
-        for other in cfg.graph.nodes()
+        for other in graph.nodes()
     )
     return has_later_function_node
 
 
 def _node_needs_repair(
-    cfg: CFGBase,
+    graph: CFGGraph,
     bounds: FunctionBounds,
     func_addr: int,
     node,
@@ -863,9 +916,9 @@ def _node_needs_repair(
     return (
         node_has_decoding_coverage_mismatch(node)
         or node_has_decode_gap(node)
-        or node_has_truncated_leaf(cfg, func_addr, node)
-        or node_has_missing_jump_successor(cfg.graph, bounds, node)
-        or node_has_linear_merge_successor(cfg.graph, node)
+        or node_has_truncated_leaf(graph, func_addr, node)
+        or node_has_missing_jump_successor(graph, bounds, node)
+        or node_has_linear_merge_successor(graph, node)
     )
 
 
@@ -886,7 +939,7 @@ def _has_decoding_coverage_mismatch(cfg: CFGBase, node) -> bool:
 def _has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
     """Return True when a block stops before a real terminator and has no exits."""
 
-    if not node_has_truncated_leaf(cfg, func_addr, node):
+    if not node_has_truncated_leaf(_cfg_graph(cfg), func_addr, node):
         return False
 
     try:
@@ -944,7 +997,7 @@ def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
         if _has_truncated_leaf(cfg, func_addr, node):
             return True
         if project is not None and node_has_missing_jump_successor(
-            cfg.graph,
+            _cfg_graph(cfg),
             _lookup_function_bounds(project, func_addr),
             node,
         ):
@@ -953,7 +1006,7 @@ def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
                 f"at {node.addr:#x}: direct jump block is missing one or more CFG edges"
             )
             return True
-        if node_has_linear_merge_successor(cfg.graph, node):
+        if node_has_linear_merge_successor(_cfg_graph(cfg), node):
             logger.warning(
                 f"CFG anomaly for function {func_addr:#x}: linear_split at {node.addr:#x}: "
                 "straight-line successor should be merged into the current block"
@@ -979,7 +1032,7 @@ def _custom_model_marker() -> SimpleNamespace:
     return SimpleNamespace(ident="CFGFastCustom")
 
 
-def _prune_orphan_simprocedures(graph: nx.DiGraph) -> None:
+def _prune_orphan_simprocedures(graph: CFGGraph) -> None:
     """
     Remove simprocedure nodes that no longer have any incoming edges.
 
@@ -1001,7 +1054,7 @@ def _prune_orphan_simprocedures(graph: nx.DiGraph) -> None:
         _remove_nodes(graph, orphan_nodes)
 
 
-def _prune_placeholders(graph: nx.DiGraph) -> None:
+def _prune_placeholders(graph: CFGGraph) -> None:
     """Remove any temporary placeholder nodes left after the repair pass."""
 
     placeholders = [
@@ -1029,7 +1082,7 @@ def _node_intersects_bounds(node, bounds: FunctionBounds) -> bool:
     return _ranges_overlap(node.addr, _node_range_end(node), bounds.addr, bounds.end_addr)
 
 
-def _iter_graph_bound_nodes(graph: nx.DiGraph, bounds: FunctionBounds):
+def _iter_graph_bound_nodes(graph: CFGGraph, bounds: FunctionBounds):
     """
     Yield live graph nodes that overlap the current function bounds.
 
@@ -1043,7 +1096,7 @@ def _iter_graph_bound_nodes(graph: nx.DiGraph, bounds: FunctionBounds):
             yield node
 
 
-def _nodes_at_addr(graph: nx.DiGraph, bounds: FunctionBounds, addr: int) -> list[CFGNode]:
+def _nodes_at_addr(graph: CFGGraph, bounds: FunctionBounds, addr: int) -> list[CFGNode]:
     """Return all non-simprocedure nodes in the function bounds that start at addr."""
 
     return [
@@ -1053,7 +1106,7 @@ def _nodes_at_addr(graph: nx.DiGraph, bounds: FunctionBounds, addr: int) -> list
     ]
 
 
-def _covering_nodes(graph: nx.DiGraph, bounds: FunctionBounds, addr: int) -> list[CFGNode]:
+def _covering_nodes(graph: CFGGraph, bounds: FunctionBounds, addr: int) -> list[CFGNode]:
     """Return all non-simprocedure nodes in bounds whose range covers addr."""
 
     return [
@@ -1144,7 +1197,7 @@ def _make_placeholder_node(seed_cfg: CFGBase, func_addr: int, addr: int) -> CFGN
     )
 
 
-def _find_external_target_node(graph: nx.DiGraph, addr: int) -> CFGNode | None:
+def _find_external_target_node(graph: CFGGraph, addr: int) -> CFGNode | None:
     """Return an existing synthetic external-target leaf for one address."""
 
     for node in graph.nodes():
@@ -1183,7 +1236,7 @@ def _make_external_target_node(seed_cfg: CFGBase, func_addr: int, addr: int) -> 
     )
 
 
-def _ensure_external_target_node(seed_cfg: CFGBase, graph: nx.DiGraph, func_addr: int, addr: int) -> CFGNode:
+def _ensure_external_target_node(seed_cfg: CFGBase, graph: CFGGraph, func_addr: int, addr: int) -> CFGNode:
     """Get or create one synthetic external-target leaf node."""
 
     node = _find_external_target_node(graph, addr)
@@ -1197,7 +1250,7 @@ def _ensure_external_target_node(seed_cfg: CFGBase, graph: nx.DiGraph, func_addr
 
 def _node_is_acceptable(
     seed_cfg: CFGBase,
-    graph: nx.DiGraph,
+    graph: CFGGraph,
     bounds: FunctionBounds,
     func_addr: int,
     forced_block_starts: set[int],
@@ -1219,7 +1272,7 @@ def _node_is_acceptable(
     # structurally incomplete by the seed anomaly checks. Otherwise an initial
     # bad block like __strcmp_sse4_2+0x37 can survive forever just because its
     # byte coverage looks locally self-consistent.
-    if _node_needs_repair(SimpleNamespace(graph=graph), bounds, func_addr, node):
+    if _node_needs_repair(graph, bounds, func_addr, node):
         return False
     return True
 
@@ -1284,7 +1337,7 @@ def _recover_block(project: Project, bounds: FunctionBounds, start_addr: int, st
 
 
 def _add_successor_edge(
-    graph: nx.DiGraph,
+    graph: CFGGraph,
     src: CFGNode,
     dst: CFGNode,
     jumpkind: EdgeJumpKind,
@@ -1309,7 +1362,7 @@ class _RepairSession:
         # Mutate the live SpillingCFG wrapper in place, but stay on its public
         # API. Its private backing graph stores tuple keys that the renderer
         # cannot consume directly.
-        self.graph = seed_cfg.graph
+        self.graph = _cfg_graph(seed_cfg)
         self.queue: deque[RepairObligation] = deque()
         self.queued: set[tuple[str, int]] = set()
         self.repaired_nodes: set[CFGNode] = set()
@@ -1523,7 +1576,7 @@ class _RepairSession:
             )
 
         if _node_needs_repair(
-            SimpleNamespace(graph=self.graph),
+            self.graph,
             self.bounds,
             self.func_addr,
             node,
@@ -1788,14 +1841,14 @@ class _RepairSession:
         for node in self.graph.nodes():
             register_custom_graph(node, self.graph)
 
-    def run(self) -> CFGBase:
+    def run(self) -> CFGBase | CustomCFG:
         """Execute the repair worklist and return the repaired CFG wrapper."""
 
         initial_bad_addrs = sorted(
             {
                 node.addr
                 for node in _iter_seed_function_nodes(self.seed_cfg, self.func_addr)
-                if _node_needs_repair(self.seed_cfg, self.bounds, self.func_addr, node)
+                if _node_needs_repair(self.graph, self.bounds, self.func_addr, node)
             }
         )
         if not initial_bad_addrs:
@@ -1896,15 +1949,15 @@ class _RepairSession:
             kb=self.seed_cfg.kb,
         )
 
-def _cleanup_unreachable_function_nodes(graph: nx.DiGraph, bounds: FunctionBounds, func_addr: int) -> None:
+def _cleanup_unreachable_function_nodes(graph: CFGGraph, bounds: FunctionBounds, func_addr: int) -> None:
     """Remove nodes in one function that are unreachable from the entry node."""
 
     entry_nodes = _nodes_at_addr(graph, bounds, func_addr)
     if not entry_nodes:
         return
 
-    reachable: set[object] = set()
-    queue: deque[object] = deque(entry_nodes)
+    reachable: set[CFGNode] = set()
+    queue: deque[CFGNode] = deque(entry_nodes)
 
     while queue:
         node = queue.popleft()
@@ -1924,14 +1977,18 @@ def _cleanup_unreachable_function_nodes(graph: nx.DiGraph, bounds: FunctionBound
             graph.remove_node(node)
 
 
-def _remove_nodes(graph, nodes: list[object]) -> None:
+def _remove_nodes(graph: CFGGraph, nodes: Iterable[CFGNode]) -> None:
     """Remove a batch of nodes through the graph wrapper's public API."""
 
     for node in nodes:
         graph.remove_node(node)
 
 
-def _repair_cfg_with_worklist(project: Project, seed_cfg: CFGBase, func_addr: int) -> CFGBase:
+def _repair_cfg_with_worklist(
+    project: Project,
+    seed_cfg: CFGBase,
+    func_addr: int,
+) -> CFGBase | CustomCFG:
     """Repair only anomalous CFGFast regions by materializing blocks on demand."""
 
     return _RepairSession(project, seed_cfg, func_addr).run()
@@ -1942,7 +1999,7 @@ def build_custom_cfg(
     kb: KnowledgeBase,
     func_addr: int,
     seed_cfg: CFGBase,
-) -> CFGBase:
+) -> CFGBase | CustomCFG:
     """
     Build a custom repaired CFG for one function starting from CFGFast output.
 

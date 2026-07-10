@@ -18,8 +18,10 @@ Terminology used throughout the module:
   incoming/outgoing structure around them.
 - obligation:
   A queued request to ensure that one address exists as a block entry in the
-  repaired graph. Obligations are created from seed anomalies and from edges
-  discovered while repairing neighboring blocks.
+  repaired graph. Requests for the same action and address are merged, keeping
+  every source-edge claim, split requirement, and reason that led to them.
+  Obligations are created from seed anomalies and from edges discovered while
+  repairing neighboring blocks.
 - terminator:
   The control-transfer summary of a recovered block: return, call, direct jump,
   or plain fallthrough, plus any direct targets or fallthrough address.
@@ -175,7 +177,7 @@ class BlockLeaderRegistry:
 
 @dataclass(frozen=True)
 class RepairObligation:
-    """One queued recovery or local-reconciliation task for a CFG address."""
+    """One request to recover or reconcile a CFG address."""
 
     addr: int
     reason: str
@@ -183,6 +185,48 @@ class RepairObligation:
     source_addr: int | None = None
     jumpkind: EdgeJumpKind = "Ijk_Boring"
     preserve_exact_addr: bool = False
+
+
+@dataclass(frozen=True)
+class EdgeClaim:
+    """One required edge from a recovered source address into an obligation."""
+
+    source_addr: int
+    jumpkind: EdgeJumpKind
+
+
+@dataclass
+class PendingObligation:
+    """Merged worklist state for one action at one CFG address."""
+
+    addr: int
+    action: Literal["recover", "reconcile"]
+    reasons: set[str]
+    edge_claims: set[EdgeClaim]
+    preserve_exact_addr: bool = False
+
+    @classmethod
+    def from_request(cls, request: RepairObligation) -> PendingObligation:
+        """Create pending state from one first-in request."""
+
+        claims = set()
+        if request.source_addr is not None:
+            claims.add(EdgeClaim(request.source_addr, request.jumpkind))
+        return cls(
+            addr=request.addr,
+            action=request.action,
+            reasons={request.reason},
+            edge_claims=claims,
+            preserve_exact_addr=request.preserve_exact_addr,
+        )
+
+    def merge(self, request: RepairObligation) -> None:
+        """Accumulate another request without changing queue order."""
+
+        self.reasons.add(request.reason)
+        if request.source_addr is not None:
+            self.edge_claims.add(EdgeClaim(request.source_addr, request.jumpkind))
+        self.preserve_exact_addr |= request.preserve_exact_addr
 
 
 @dataclass(frozen=True)
@@ -1363,8 +1407,8 @@ class _RepairSession:
         # API. Its private backing graph stores tuple keys that the renderer
         # cannot consume directly.
         self.graph = _cfg_graph(seed_cfg)
-        self.queue: deque[RepairObligation] = deque()
-        self.queued: set[tuple[str, int]] = set()
+        self.queue: deque[tuple[str, int]] = deque()
+        self.pending: dict[tuple[str, int], PendingObligation] = {}
         self.repaired_nodes: set[CFGNode] = set()
         self.leaders = BlockLeaderRegistry(
             {func_addr: {"function_entry"}}
@@ -1515,36 +1559,80 @@ class _RepairSession:
         self._queue_if_needed(obligation)
         return placeholder
 
-    def _connect_source_to_node(self, obligation: RepairObligation, node: CFGNode) -> None:
-        """Materialize the source edge for an obligation when the source exists."""
+    def _connect_source_to_node(
+        self,
+        obligation: RepairObligation | PendingObligation,
+        node: CFGNode,
+    ) -> None:
+        """Materialize every available source-edge claim into ``node``."""
 
-        if obligation.source_addr is None:
+        if isinstance(obligation, RepairObligation):
+            claims = (
+                {EdgeClaim(obligation.source_addr, obligation.jumpkind)}
+                if obligation.source_addr is not None
+                else set()
+            )
+        else:
+            claims = obligation.edge_claims
+
+        for claim in claims:
+            src_nodes = _nodes_at_addr(self.graph, self.bounds, claim.source_addr)
+            preferred_src_nodes = [
+                src
+                for src in src_nodes
+                if _node_is_materialized_cfg_node(src)
+            ]
+            for src in preferred_src_nodes or src_nodes:
+                _add_successor_edge(self.graph, src, node, claim.jumpkind)
+
+    def _queue_if_needed(self, request: RepairObligation) -> bool:
+        """Merge a request into the pending work item for its action and address."""
+
+        key = (request.action, request.addr)
+        pending = self.pending.get(key)
+        if pending is not None:
+            pending.merge(request)
+            return False
+
+        self.pending[key] = PendingObligation.from_request(request)
+        self.queue.append(key)
+        return True
+
+    def _requeue_pending(
+        self,
+        obligation: PendingObligation,
+        *,
+        addr: int | None = None,
+        reason: str | None = None,
+        include_claims: bool = True,
+    ) -> None:
+        """Turn merged work back into one or more ordinary queue requests."""
+
+        target_addr = obligation.addr if addr is None else addr
+        request_reason = reason or ", ".join(sorted(obligation.reasons))
+        claims = obligation.edge_claims if include_claims else set()
+        if not claims:
+            self._queue_if_needed(
+                RepairObligation(
+                    addr=target_addr,
+                    reason=request_reason,
+                    action=obligation.action,
+                    preserve_exact_addr=obligation.preserve_exact_addr,
+                )
+            )
             return
 
-        src_nodes = _nodes_at_addr(self.graph, self.bounds, obligation.source_addr)
-        if not src_nodes:
-            return
-
-        preferred_src_nodes = [
-            src
-            for src in src_nodes
-            if _node_is_materialized_cfg_node(src)
-        ]
-        if not preferred_src_nodes:
-            preferred_src_nodes = src_nodes
-
-        for src in preferred_src_nodes:
-            _add_successor_edge(self.graph, src, node, obligation.jumpkind)
-
-    def _queue_if_needed(self, obligation: RepairObligation) -> None:
-        """Queue one obligation exactly once per action and target address."""
-
-        key = (obligation.action, obligation.addr)
-        if key in self.queued:
-            return
-
-        self.queue.append(obligation)
-        self.queued.add(key)
+        for claim in claims:
+            self._queue_if_needed(
+                RepairObligation(
+                    addr=target_addr,
+                    reason=request_reason,
+                    action=obligation.action,
+                    source_addr=claim.source_addr,
+                    jumpkind=claim.jumpkind,
+                    preserve_exact_addr=obligation.preserve_exact_addr,
+                )
+            )
 
     def _queue_reconciliation(self, node: CFGNode, reason: str) -> None:
         """Queue a local invariant check for one materialized node."""
@@ -1877,9 +1965,9 @@ class _RepairSession:
                     f"top counts: {self.processed_counts}"
                 )
 
-            obligation = self.queue.popleft()
+            key = self.queue.popleft()
+            obligation = self.pending.pop(key)
             addr = obligation.addr
-            self.queued.discard((obligation.action, addr))
             self.processed_counts[addr] = self.processed_counts.get(addr, 0) + 1
             if self.processed_counts[addr] <= 5:
                 logger.info(
@@ -1912,7 +2000,7 @@ class _RepairSession:
                                 reason=f"split_for_{addr:#x}",
                             )
                         )
-                    self._queue_if_needed(obligation)
+                    self._requeue_pending(obligation)
                 continue
             acceptable_node = next(
                 (
@@ -1938,7 +2026,8 @@ class _RepairSession:
                 logger.warning(f"Custom CFG could not recover a block at {addr:#x}")
                 continue
 
-            self.splice_block(block)
+            recovered_node = self.splice_block(block)
+            self._connect_source_to_node(obligation, recovered_node)
 
         self._cleanup()
         self._register_custom_graphs()

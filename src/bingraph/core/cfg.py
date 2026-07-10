@@ -30,8 +30,10 @@ Terminology used throughout the module:
   The control-transfer summary of a recovered block: return, call, direct jump,
   or plain fallthrough, plus any direct targets or fallthrough address.
 - placeholder:
-  A temporary zero-sized node that lets us materialize edges to an address
-  before the corresponding block has been decoded and spliced into the graph.
+  A temporary zero-sized target node that records an unresolved block entry.
+  It may receive incoming edge claims, but never supplies control-flow
+  semantics itself; recovery replaces it with a decoded block or cleanup
+  removes it.
 
 High-level algorithm:
 
@@ -1538,11 +1540,7 @@ class _RepairSession:
                 return node
 
             self.leaders.add(addr, "explicit_split")
-            placeholder = next((item for item in existing_nodes if _node_is_placeholder(item)), None)
-            if placeholder is None:
-                placeholder = _make_placeholder_node(self.seed_cfg, self.func_addr, addr)
-                self.graph.add_node(placeholder)
-            self._connect_source_to_node(obligation, placeholder)
+            placeholder = self._claim_placeholder(obligation)
 
             repair_addr = node.addr
             repair_reason = f"split_for_{addr:#x}"
@@ -1569,16 +1567,32 @@ class _RepairSession:
                 self._connect_source_to_node(obligation, node)
                 return node
 
-        for node in existing_nodes:
-            if _node_is_placeholder(node):
-                self._connect_source_to_node(obligation, node)
-                self._queue_if_needed(obligation)
-                return node
-
-        placeholder = _make_placeholder_node(self.seed_cfg, self.func_addr, addr)
-        self.graph.add_node(placeholder)
-        self._connect_source_to_node(obligation, placeholder)
+        placeholder = self._claim_placeholder(obligation)
         self._queue_if_needed(obligation)
+        return placeholder
+
+    def _claim_placeholder(
+        self,
+        obligation: RepairObligation,
+    ) -> CFGNode:
+        """Get the target placeholder for an entry and attach its edge claims."""
+
+        placeholder = next(
+            (
+                node
+                for node in _nodes_at_addr(self.graph, self.bounds, obligation.addr)
+                if _node_is_placeholder(node)
+            ),
+            None,
+        )
+        if placeholder is None:
+            placeholder = _make_placeholder_node(
+                self.seed_cfg,
+                self.func_addr,
+                obligation.addr,
+            )
+            self.graph.add_node(placeholder)
+        self._connect_source_to_node(obligation, placeholder)
         return placeholder
 
     def _recover_entry_now(self, obligation: RepairObligation) -> CFGNode | None:

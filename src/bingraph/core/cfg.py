@@ -36,10 +36,9 @@ High-level algorithm:
    - decode a bounded replacement block at the requested address,
    - splice it into the live graph,
    - queue new obligations for block starts implied by the recovered
-     terminator or by preserved predecessor semantics.
-5. Before declaring repair complete, do one last pass for any still-visible
-   straight-line splits that should collapse into larger blocks.
-6. When the worklist is truly empty, remove unreachable stale nodes and
+     terminator or by preserved predecessor semantics,
+   - reconcile the replacement block and its immediate graph neighborhood.
+5. When the worklist is truly empty, remove unreachable stale nodes and
    temporary placeholders, then expose the repaired graph through a small
    CFG-like wrapper.
 
@@ -115,10 +114,11 @@ class FunctionBounds:
 
 @dataclass(frozen=True)
 class RepairObligation:
-    """One block-entry repair task derived from a concrete CFG edge or anomaly."""
+    """One queued recovery or local-reconciliation task for a CFG address."""
 
     addr: int
     reason: str
+    action: Literal["recover", "reconcile"] = "recover"
     source_addr: int | None = None
     jumpkind: EdgeJumpKind = "Ijk_Boring"
     preserve_exact_addr: bool = False
@@ -140,6 +140,56 @@ class JumpSuccessorAnalysis:
     kind: Literal["conditional", "direct"]
     expected: tuple[JumpSuccessorExpectation, ...]
     present: frozenset[int]
+
+
+@dataclass(frozen=True)
+class DecodedNode:
+    """The Capstone instruction view of one CFG node, when it is available."""
+
+    insns: tuple[CsInsn, ...] | None
+    inspection_error: Exception | None = None
+
+    @classmethod
+    def from_node(cls, node) -> DecodedNode:
+        """Read a node's Capstone instructions with the project's usual fallback."""
+
+        try:
+            return cls(tuple(item.insn for item in node.block.capstone.insns))
+        except (AttributeError, KeyError) as exc:
+            return cls(None, exc)
+
+    @property
+    def is_empty(self) -> bool:
+        """Return whether Capstone found no instructions in the node."""
+
+        return not self.insns
+
+    @property
+    def last(self) -> CsInsn | None:
+        """Return the final decoded instruction, if one exists."""
+
+        return self.insns[-1] if self.insns else None
+
+    def has_exact_coverage(self, node) -> bool:
+        """Return whether instructions exactly cover the node's declared range."""
+
+        if node.size == 0 or self.insns is None:
+            return False
+
+        expected_addr = node.addr
+        for insn in self.insns:
+            if insn.address != expected_addr:
+                return False
+            expected_addr += insn.size
+
+        return expected_addr == node.addr + node.size
+
+    def contains_mid_instruction_addr(self, addr: int) -> bool:
+        """Return whether ``addr`` falls strictly inside a decoded instruction."""
+
+        if self.insns is None:
+            return False
+        return any(insn.address < addr < insn.address + insn.size for insn in self.insns)
 
 
 class CustomCFG(SimpleNamespace):
@@ -450,22 +500,25 @@ def _seed_node_expected_successors(node) -> tuple[tuple[int, ...], int | None]:
     """
 
     try:
-        insns = [obj.insn for obj in node.block.capstone.insns]
-        vex = node.block.vex
-    except (AttributeError, KeyError):
+        decoded = DecodedNode.from_node(node)
+    except Exception:
         return (), None
+    if decoded.insns is None:
+        return (), None
+
+    try:
+        vex = node.block.vex
     except Exception:
         return (), None
 
-    if not insns:
+    if decoded.is_empty:
         return (), None
 
-    last_insn = getattr(insns[-1], "insn", insns[-1])
-    last_semantic = InsnSemantics(last_insn)
+    last_semantic = InsnSemantics(decoded.last)
     if not last_semantic.is_control_transfer():
         return (), None
 
-    last_addrs = {insns[-1].address}
+    last_addrs = {decoded.last.address}
 
     direct_targets: list[int] = []
     for ins_addr, _, stmt in vex.exit_statements:
@@ -495,16 +548,14 @@ def _seed_graph_direct_targets(graph: nx.DiGraph, node) -> tuple[int, ...]:
     """
 
     try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError):
-        return ()
+        decoded = DecodedNode.from_node(node)
     except Exception:
         return ()
 
-    if not insns:
+    if decoded.is_empty:
         return ()
 
-    last = InsnSemantics(insns[-1].insn)
+    last = InsnSemantics(decoded.last)
     if not last.is_jump():
         return ()
 
@@ -538,16 +589,14 @@ def _analyze_jump_successors(
     """
 
     try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError):
-        return None
+        decoded = DecodedNode.from_node(node)
     except Exception:
         return None
 
-    if not insns or node_has_decoding_coverage_mismatch(node):
+    if decoded.is_empty or node_has_decoding_coverage_mismatch(node):
         return None
 
-    last = InsnSemantics(insns[-1].insn)
+    last = InsnSemantics(decoded.last)
     if not last.is_jump():
         return None
 
@@ -556,7 +605,7 @@ def _analyze_jump_successors(
     direct_target = last.direct_target()
     if direct_target is None:
         return None
-    fallthrough_addr = insns[-1].address + insns[-1].size
+    fallthrough_addr = decoded.last.address + decoded.last.size
 
     try:
         vex = node.block.vex
@@ -566,7 +615,7 @@ def _analyze_jump_successors(
     exit_targets: list[int] = []
     if vex is not None:
         for ins_addr, _, stmt in vex.exit_statements:
-            if ins_addr != insns[-1].address:
+            if ins_addr != decoded.last.address:
                 continue
             target = getattr(stmt.dst, "value", None)
             if isinstance(target, int) and target not in exit_targets:
@@ -661,16 +710,14 @@ def node_has_linear_merge_successor(graph: nx.DiGraph, node) -> bool:
         return False
 
     try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError):
-        return False
+        decoded = DecodedNode.from_node(node)
     except Exception:
         return False
 
-    if not insns:
+    if decoded.is_empty:
         return False
 
-    if InsnSemantics(insns[-1].insn).is_control_transfer():
+    if InsnSemantics(decoded.last).is_control_transfer():
         return False
 
     logger.warning(
@@ -686,17 +733,20 @@ def node_has_decoding_coverage_mismatch(node) -> bool:
         logger.warning(f"Node {node.addr:#x} has size zero")
         return True
 
-    try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError) as exc:
+    decoded = DecodedNode.from_node(node)
+    if decoded.insns is None:
         logger.warning(
             f"Capstone inspection failed for node {node.addr:#x}: "
-            f"{type(exc).__name__}: {exc}"
+            f"{type(decoded.inspection_error).__name__}: "
+            f"{decoded.inspection_error}"
         )
         return True
 
+    if decoded.has_exact_coverage(node):
+        return False
+
     expected_addr = node.addr
-    for insn in insns:
+    for insn in decoded.insns:
         if insn.address != expected_addr:
             logger.warning(
                 f"Node {node.addr:#x} decodes instruction at {insn.address:#x} "
@@ -730,12 +780,8 @@ def node_has_decode_gap(node) -> bool:
     if node_has_decoding_coverage_mismatch(node):
         return False
 
-    try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError):
-        insns = []
-
-    if insns:
+    decoded = DecodedNode.from_node(node)
+    if not decoded.is_empty:
         return False
 
     try:
@@ -753,15 +799,14 @@ def node_has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
     except Exception:
         pass
 
-    try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError):
+    decoded = DecodedNode.from_node(node)
+    if decoded.insns is None:
         return False
 
-    if not insns:
+    if decoded.is_empty:
         return False
 
-    last = InsnSemantics(insns[-1].insn)
+    last = InsnSemantics(decoded.last)
     if last.is_control_transfer():
         return False
 
@@ -778,15 +823,20 @@ def node_has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
     return has_later_function_node
 
 
-def _is_seed_node_anomalous(seed_cfg: CFGBase, bounds: FunctionBounds, func_addr: int, node) -> bool:
-    """Return True when a seed CFG node should be locally repaired."""
+def _node_needs_repair(
+    cfg: CFGBase,
+    bounds: FunctionBounds,
+    func_addr: int,
+    node,
+) -> bool:
+    """Return True when a node violates one of the repair invariants."""
 
     return (
         node_has_decoding_coverage_mismatch(node)
         or node_has_decode_gap(node)
-        or node_has_truncated_leaf(seed_cfg, func_addr, node)
-        or node_has_missing_jump_successor(seed_cfg.graph, bounds, node)
-        or node_has_linear_merge_successor(seed_cfg.graph, node)
+        or node_has_truncated_leaf(cfg, func_addr, node)
+        or node_has_missing_jump_successor(cfg.graph, bounds, node)
+        or node_has_linear_merge_successor(cfg.graph, node)
     )
 
 
@@ -1021,17 +1071,6 @@ def _node_has_forced_split(node, forced_block_starts: set[int]) -> bool:
     return any(node.addr < addr < node_end for addr in forced_block_starts)
 
 
-def _node_instruction_starts(node) -> tuple[int, ...]:
-    """Return the decoded instruction start addresses currently exposed by `node`."""
-
-    try:
-        return tuple(insn.address for insn in node.block.capstone.insns)
-    except (AttributeError, KeyError):
-        return ()
-    except Exception:
-        return ()
-
-
 def _addr_is_mid_instruction_start(node, addr: int) -> bool:
     """
     Return True when `addr` falls inside one decoded instruction of `node`.
@@ -1043,16 +1082,9 @@ def _addr_is_mid_instruction_start(node, addr: int) -> bool:
     """
 
     try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError):
-        return False
+        return DecodedNode.from_node(node).contains_mid_instruction_addr(addr)
     except Exception:
         return False
-
-    for insn in insns:
-        if insn.address < addr < insn.address + insn.size:
-            return True
-    return False
 
 
 def _make_cfg_node(seed_cfg: CFGBase, func_addr: int, bounds: FunctionBounds, block: BlockSpec) -> CFGNode:
@@ -1154,21 +1186,11 @@ def _node_is_acceptable(
         # function entry. Treat those as stale so the repair pass can replace
         # them with canonical nodes owned by the repaired function.
         return False
-    if node_has_decoding_coverage_mismatch(node):
-        return False
-
     # Keep the worklist repairing nodes that were already classified as
     # structurally incomplete by the seed anomaly checks. Otherwise an initial
     # bad block like __strcmp_sse4_2+0x37 can survive forever just because its
     # byte coverage looks locally self-consistent.
-    if node_has_truncated_leaf(SimpleNamespace(graph=graph), func_addr, node):
-        return False
-
-    if node_has_decode_gap(node):
-        return False
-    if node_has_missing_jump_successor(graph, bounds, node):
-        return False
-    if node_has_linear_merge_successor(graph, node):
+    if _node_needs_repair(SimpleNamespace(graph=graph), bounds, func_addr, node):
         return False
     return True
 
@@ -1287,12 +1309,11 @@ class _RepairSession:
         # cannot consume directly.
         self.graph = seed_cfg.graph
         self.queue: deque[RepairObligation] = deque()
-        self.queued: set[int] = set()
+        self.queued: set[tuple[str, int]] = set()
         self.repaired_nodes: set[CFGNode] = set()
         self.forced_block_starts: set[int] = set()
         self.processed_counts: dict[int, int] = {}
         self.iterations = 0
-        self.linear_merge_attempts: set[int] = set()
 
     def _is_preservable_seed_node(self, node) -> bool:
         """
@@ -1468,34 +1489,63 @@ class _RepairSession:
             _add_successor_edge(self.graph, src, node, obligation.jumpkind)
 
     def _queue_if_needed(self, obligation: RepairObligation) -> None:
-        """Queue one obligation exactly once per target address."""
+        """Queue one obligation exactly once per action and target address."""
 
-        if obligation.addr in self.queued:
+        key = (obligation.action, obligation.addr)
+        if key in self.queued:
             return
 
         self.queue.append(obligation)
-        self.queued.add(obligation.addr)
+        self.queued.add(key)
 
-    def _queue_linear_merge_candidates(self, node: CFGNode) -> None:
-        """Revisit local straight-line neighbors that may now be mergeable."""
+    def _queue_reconciliation(self, node: CFGNode, reason: str) -> None:
+        """Queue a local invariant check for one materialized node."""
 
-        candidates = [node, *self.graph.predecessors(node)]
-        for candidate in candidates:
-            if not _node_is_materialized_cfg_node(candidate):
-                continue
-            if not _node_intersects_bounds(candidate, self.bounds):
-                continue
-            if not node_has_linear_merge_successor(self.graph, candidate):
-                continue
-            if candidate.addr in self.linear_merge_attempts:
-                continue
-            self.linear_merge_attempts.add(candidate.addr)
+        if not _node_is_materialized_cfg_node(node):
+            return
+        if not _node_intersects_bounds(node, self.bounds):
+            return
+        self._queue_if_needed(
+            RepairObligation(addr=node.addr, reason=reason, action="reconcile")
+        )
+
+    def _queue_reconciliation_neighborhood(self, node: CFGNode) -> None:
+        """Recheck the nodes whose local invariants a splice may have changed."""
+
+        neighbors = [node, *self.graph.predecessors(node), *self.graph.successors(node)]
+        for neighbor in neighbors:
+            self._queue_reconciliation(neighbor, f"neighbor_of_{node.addr:#x}")
+
+    def _reconcile_node(self, node: CFGNode) -> None:
+        """Satisfy local edge invariants before scheduling a full block recovery."""
+
+        for expectation in _missing_jump_successors(self.graph, self.bounds, node):
+            self._materialize_missing_successor(
+                node,
+                expectation.addr,
+                expectation.jumpkind,
+                preserve_exact_addr=expectation.preserve_exact_addr,
+            )
+
+        if _node_needs_repair(
+            SimpleNamespace(graph=self.graph),
+            self.bounds,
+            self.func_addr,
+            node,
+        ):
             self._queue_if_needed(
                 RepairObligation(
-                    addr=candidate.addr,
-                    reason=f"linear_merge_of_{candidate.addr:#x}",
+                    addr=node.addr,
+                    reason=f"remaining_anomaly_at_{node.addr:#x}",
                 )
             )
+
+    def _reconcile_addr(self, addr: int) -> None:
+        """Reconcile every materialized node currently starting at ``addr``."""
+
+        for node in _nodes_at_addr(self.graph, self.bounds, addr):
+            if _node_is_materialized_cfg_node(node):
+                self._reconcile_node(node)
 
     def _materialize_external_successor(
         self,
@@ -1533,8 +1583,8 @@ class _RepairSession:
         """
         Ensure one missing successor target exists and is connected from `src`.
 
-        This is used by the late repair pass once we already know the source
-        block is the right one and only its successor edge is missing.
+        Reconciliation uses this when the source block is known to be valid
+        and only its successor edge is missing.
         """
 
         if self._materialize_external_successor(src, target, jumpkind):
@@ -1581,51 +1631,6 @@ class _RepairSession:
             )
         )
         return len(self.queue) != before
-
-    def _queue_remaining_linear_splits(self) -> bool:
-        """Queue any still-visible linear splits before declaring repair complete."""
-
-        queued_any = False
-        for node in _iter_graph_bound_nodes(self.graph, self.bounds):
-            if not _node_is_materialized_cfg_node(node):
-                continue
-            if not node_has_linear_merge_successor(self.graph, node):
-                continue
-            if node.addr in self.linear_merge_attempts:
-                continue
-            self.linear_merge_attempts.add(node.addr)
-            before = len(self.queue)
-            self._queue_if_needed(
-                RepairObligation(
-                    addr=node.addr,
-                    reason=f"remaining_linear_split_{node.addr:#x}",
-                )
-            )
-            queued_any = queued_any or len(self.queue) != before
-        return queued_any
-
-    def _queue_remaining_missing_successors(self) -> bool:
-        """Queue or attach any live nodes that still miss successor edges."""
-
-        queued_any = False
-        # Work on a snapshot because satisfying a missing successor may add a
-        # synthetic external leaf, which mutates the graph.
-        for node in list(_iter_graph_bound_nodes(self.graph, self.bounds)):
-            if not _node_is_materialized_cfg_node(node):
-                continue
-
-            for expectation in _missing_jump_successors(self.graph, self.bounds, node):
-                queued_any = (
-                    self._materialize_missing_successor(
-                        node,
-                        expectation.addr,
-                        expectation.jumpkind,
-                        preserve_exact_addr=expectation.preserve_exact_addr,
-                    )
-                    or queued_any
-                )
-
-        return queued_any
 
     def enqueue_expected_successors(self, src) -> None:
         """
@@ -1873,7 +1878,7 @@ class _RepairSession:
                 )
             )
 
-        self._queue_linear_merge_candidates(recovered_node)
+        self._queue_reconciliation_neighborhood(recovered_node)
 
         return recovered_node
 
@@ -1897,10 +1902,14 @@ class _RepairSession:
             {
                 node.addr
                 for node in _iter_seed_function_nodes(self.seed_cfg, self.func_addr)
-                if _is_seed_node_anomalous(self.seed_cfg, self.bounds, self.func_addr, node)
+                if _node_needs_repair(self.seed_cfg, self.bounds, self.func_addr, node)
             }
         )
         if not initial_bad_addrs:
+            logger.info(
+                f"Seed CFG for function {self.func_addr:#x} has no known anomalies; "
+                "skipping custom repair"
+            )
             return self.seed_cfg
 
         logger.info(
@@ -1913,10 +1922,6 @@ class _RepairSession:
 
         while True:
             if not self.queue:
-                if self._queue_remaining_missing_successors():
-                    continue
-                if self._queue_remaining_linear_splits():
-                    continue
                 break
 
             self.iterations += 1
@@ -1928,7 +1933,7 @@ class _RepairSession:
 
             obligation = self.queue.popleft()
             addr = obligation.addr
-            self.queued.discard(addr)
+            self.queued.discard((obligation.action, addr))
             self.processed_counts[addr] = self.processed_counts.get(addr, 0) + 1
             if self.processed_counts[addr] <= 5:
                 logger.info(
@@ -1937,6 +1942,10 @@ class _RepairSession:
                 )
 
             if not (self.bounds.addr <= addr < self.bounds.end_addr):
+                continue
+
+            if obligation.action == "reconcile":
+                self._reconcile_addr(addr)
                 continue
 
             current_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
@@ -2046,13 +2055,10 @@ def build_custom_cfg(
 
     The explicit KB parameter mirrors the higher-level CFG plumbing even though
     the current repair pass operates directly on the provided seed CFG graph.
+    `_RepairSession.run()` owns both initial anomaly discovery and repair, so
+    the custom path performs one coherent classification before it mutates the
+    seed graph.
     """
 
     logger.info(f"Building custom CFG for function {func_addr:#x}")
-    if not (_has_decode_gap(seed_cfg, func_addr) or _has_weird_graph(seed_cfg, func_addr)):
-        logger.info(
-            f"Seed CFG for function {func_addr:#x} has no known anomalies; "
-            "skipping custom repair"
-        )
-        return seed_cfg
     return _repair_cfg_with_worklist(project, seed_cfg, func_addr)

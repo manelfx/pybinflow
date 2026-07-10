@@ -91,6 +91,10 @@ EdgeJumpKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"]
 # may need immediate local recovery to preserve convergence.
 EntryResolutionPolicy = Literal["queued", "immediate"]
 
+# A request that keeps reappearing without changing the graph is a repair-loop
+# diagnostic, not useful work. Successful graph mutations reset its count.
+MAX_STALLED_OBLIGATION_RETRIES = 25
+
 
 class CFGGraph(Protocol):
     """Public graph operations shared by NetworkX and angr's SpillingCFG."""
@@ -170,10 +174,14 @@ class BlockLeaderRegistry:
             {addr: set(reasons) for addr, reasons in self.reasons.items()}
         )
 
-    def add(self, addr: int, reason: str) -> None:
-        """Record one reason that ``addr`` must remain a block leader."""
+    def add(self, addr: int, reason: str) -> bool:
+        """Record one leader reason and return whether the registry changed."""
 
-        self.reasons.setdefault(addr, set()).add(reason)
+        reasons = self.reasons.setdefault(addr, set())
+        if reason in reasons:
+            return False
+        reasons.add(reason)
+        return True
 
     def starts(self) -> set[int]:
         """Return all addresses currently required to begin a block."""
@@ -306,7 +314,9 @@ class DecodedNode:
 
         if self.insns is None:
             return False
-        return any(insn.address < addr < insn.address + insn.size for insn in self.insns)
+        return any(
+            insn.address < addr < insn.address + insn.size for insn in self.insns
+        )
 
 
 class CustomCFG(SimpleNamespace):
@@ -410,7 +420,9 @@ def _lookup_function_bounds(project: Project, func_addr: int) -> FunctionBounds:
     parsing and size-inference logic instead.
     """
 
-    function = next((sym for sym in list_function_symbols(project) if sym.addr == func_addr), None)
+    function = next(
+        (sym for sym in list_function_symbols(project) if sym.addr == func_addr), None
+    )
     if function is None:
         raise KeyError(f"Function {func_addr:#x} not found in binary")
 
@@ -480,7 +492,9 @@ def _control_transfer_index(project: Project, block_insns: list[CsInsn]) -> int 
     return None
 
 
-def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns: list[CsInsn]) -> TerminatorInfo:
+def _lift_block_terminator(
+    project: Project, bounds: FunctionBounds, block_insns: list[CsInsn]
+) -> TerminatorInfo:
     """
     Lift one recovered block with VEX and derive its control-flow shape.
 
@@ -498,7 +512,9 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
     if term_idx is None:
         next_addr = block_end_addr
         fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
-        return TerminatorInfo(jumpkind="Ijk_Fallthrough", fallthrough_addr=fallthrough_addr)
+        return TerminatorInfo(
+            jumpkind="Ijk_Fallthrough", fallthrough_addr=fallthrough_addr
+        )
 
     tail_insns = block_insns[term_idx:]
     last = tail_insns[0]
@@ -548,7 +564,9 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
 
     if semantic.is_call():
         direct_targets: tuple[int, ...] = ()
-        if isinstance(default_target, int) and _is_direct_target_valid(bounds, default_target):
+        if isinstance(default_target, int) and _is_direct_target_valid(
+            bounds, default_target
+        ):
             direct_targets = (default_target,)
         fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
         return TerminatorInfo(
@@ -566,14 +584,24 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
         all_targets: list[int] = list(exit_targets)
         if isinstance(default_target, int) and default_target not in all_targets:
             all_targets.append(default_target)
-        fallthrough_addr = next_addr if next_addr in all_targets and next_addr < bounds.end_addr else None
+        fallthrough_addr = (
+            next_addr
+            if next_addr in all_targets and next_addr < bounds.end_addr
+            else None
+        )
         return TerminatorInfo(
             jumpkind="Ijk_Boring",
-            direct_targets=tuple(target for target in all_targets if target != fallthrough_addr),
+            direct_targets=tuple(
+                target for target in all_targets if target != fallthrough_addr
+            ),
             fallthrough_addr=fallthrough_addr,
         )
 
-    if semantic.is_jump() and isinstance(default_target, int) and _is_direct_target_valid(bounds, default_target):
+    if (
+        semantic.is_jump()
+        and isinstance(default_target, int)
+        and _is_direct_target_valid(bounds, default_target)
+    ):
         return TerminatorInfo(
             jumpkind="Ijk_Boring",
             direct_targets=(default_target,),
@@ -587,11 +615,11 @@ def _lift_block_terminator(project: Project, bounds: FunctionBounds, block_insns
         )
 
     direct_targets: tuple[int, ...] = ()
-    if isinstance(default_target, int) and _is_direct_target_valid(bounds, default_target):
+    if isinstance(default_target, int) and _is_direct_target_valid(
+        bounds, default_target
+    ):
         direct_targets = (default_target,)
     return TerminatorInfo(jumpkind="Ijk_Boring", direct_targets=direct_targets)
-
-
 
 
 def _iter_seed_function_nodes(seed_cfg: CFGBase, func_addr: int):
@@ -609,6 +637,8 @@ def iter_function_nodes(cfg: CFGBase, func_addr: int):
     """Yield non-simprocedure nodes that belong to one function."""
 
     yield from _iter_seed_function_nodes(cfg, func_addr)
+
+
 def _seed_node_expected_successors(node) -> tuple[tuple[int, ...], int | None]:
     """
     Return the local direct targets and fallthrough encoded in one seed node.
@@ -691,9 +721,7 @@ def _seed_graph_direct_targets(graph: CFGGraph, node) -> tuple[int, ...]:
         return ()
 
     successor_addrs = {
-        succ.addr
-        for succ in graph.successors(node)
-        if hasattr(succ, "addr")
+        succ.addr for succ in graph.successors(node) if hasattr(succ, "addr")
     }
     if target not in successor_addrs:
         return ()
@@ -755,16 +783,16 @@ def _analyze_jump_successors(
     if exit_targets or last.is_conditional_jump():
         expected.append(JumpSuccessorExpectation(direct_target, "Ijk_Boring", True))
         if bounds.addr <= fallthrough_addr < bounds.end_addr:
-            expected.append(JumpSuccessorExpectation(fallthrough_addr, "Ijk_Boring", False))
+            expected.append(
+                JumpSuccessorExpectation(fallthrough_addr, "Ijk_Boring", False)
+            )
         kind = "conditional"
     else:
         expected.append(JumpSuccessorExpectation(direct_target, "Ijk_Boring", True))
         kind = "direct"
 
     present = frozenset(
-        succ.addr
-        for succ in graph.successors(node)
-        if not _node_is_placeholder(succ)
+        succ.addr for succ in graph.successors(node) if not _node_is_placeholder(succ)
     )
     return JumpSuccessorAnalysis(
         kind=kind,
@@ -809,7 +837,9 @@ def _missing_jump_successors(
     if analysis is None:
         return ()
 
-    return tuple(item for item in analysis.expected if item.addr not in analysis.present)
+    return tuple(
+        item for item in analysis.expected if item.addr not in analysis.present
+    )
 
 
 def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
@@ -1077,9 +1107,13 @@ def log_cfg_status(cfg: CFGBase, func_addr: int, cfg_label: str) -> None:
     has_weird_graph = _has_weird_graph(cfg, func_addr)
     has_decode_gap = _has_decode_gap(cfg, func_addr)
     if not has_weird_graph and not has_decode_gap:
-        logger.info(f"{cfg_label} for function {func_addr:#x} no longer shows known CFG anomalies")
+        logger.info(
+            f"{cfg_label} for function {func_addr:#x} no longer shows known CFG anomalies"
+        )
     else:
-        logger.warning(f"{cfg_label} for function {func_addr:#x} still shows CFG anomalies")
+        logger.warning(
+            f"{cfg_label} for function {func_addr:#x} still shows CFG anomalies"
+        )
 
 
 def _custom_model_marker() -> SimpleNamespace:
@@ -1113,11 +1147,7 @@ def _prune_orphan_simprocedures(graph: CFGGraph) -> None:
 def _prune_placeholders(graph: CFGGraph) -> None:
     """Remove any temporary placeholder nodes left after the repair pass."""
 
-    placeholders = [
-        node
-        for node in list(graph.nodes())
-        if _node_is_placeholder(node)
-    ]
+    placeholders = [node for node in list(graph.nodes()) if _node_is_placeholder(node)]
     if placeholders:
         _remove_nodes(graph, placeholders)
 
@@ -1135,7 +1165,9 @@ def _node_intersects_bounds(node, bounds: FunctionBounds) -> bool:
 
     if _node_is_simprocedure(node):
         return False
-    return _ranges_overlap(node.addr, _node_range_end(node), bounds.addr, bounds.end_addr)
+    return _ranges_overlap(
+        node.addr, _node_range_end(node), bounds.addr, bounds.end_addr
+    )
 
 
 def _iter_graph_bound_nodes(graph: CFGGraph, bounds: FunctionBounds):
@@ -1156,13 +1188,13 @@ def _nodes_at_addr(graph: CFGGraph, bounds: FunctionBounds, addr: int) -> list[C
     """Return all non-simprocedure nodes in the function bounds that start at addr."""
 
     return [
-        node
-        for node in _iter_graph_bound_nodes(graph, bounds)
-        if node.addr == addr
+        node for node in _iter_graph_bound_nodes(graph, bounds) if node.addr == addr
     ]
 
 
-def _covering_nodes(graph: CFGGraph, bounds: FunctionBounds, addr: int) -> list[CFGNode]:
+def _covering_nodes(
+    graph: CFGGraph, bounds: FunctionBounds, addr: int
+) -> list[CFGNode]:
     """Return all non-simprocedure nodes in bounds whose range covers addr."""
 
     return [
@@ -1187,7 +1219,9 @@ def _ranges_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
 def _node_is_placeholder(node) -> bool:
     """Return True when the node is a custom placeholder awaiting repair."""
 
-    return getattr(node, "size", 0) == 0 and str(getattr(node, "name", "")).startswith("placeholder_")
+    return getattr(node, "size", 0) == 0 and str(getattr(node, "name", "")).startswith(
+        "placeholder_"
+    )
 
 
 def _node_is_simprocedure(node) -> bool:
@@ -1225,7 +1259,9 @@ def _addr_is_mid_instruction_start(node, addr: int) -> bool:
         return False
 
 
-def _make_cfg_node(seed_cfg: CFGBase, func_addr: int, bounds: FunctionBounds, block: BlockSpec) -> CFGNode:
+def _make_cfg_node(
+    seed_cfg: CFGBase, func_addr: int, bounds: FunctionBounds, block: BlockSpec
+) -> CFGNode:
     """Instantiate one CFGNode compatible with the existing rendering pipeline."""
 
     return CFGNode(
@@ -1292,16 +1328,21 @@ def _make_external_target_node(seed_cfg: CFGBase, func_addr: int, addr: int) -> 
     )
 
 
-def _ensure_external_target_node(seed_cfg: CFGBase, graph: CFGGraph, func_addr: int, addr: int) -> CFGNode:
-    """Get or create one synthetic external-target leaf node."""
+def _ensure_external_target_node(
+    seed_cfg: CFGBase,
+    graph: CFGGraph,
+    func_addr: int,
+    addr: int,
+) -> tuple[CFGNode, bool]:
+    """Get or create one synthetic external-target leaf and report creation."""
 
     node = _find_external_target_node(graph, addr)
     if node is not None:
-        return node
+        return node, False
 
     node = _make_external_target_node(seed_cfg, func_addr, addr)
     graph.add_node(node)
-    return node
+    return node, True
 
 
 def _node_is_acceptable(
@@ -1333,7 +1374,9 @@ def _node_is_acceptable(
     return True
 
 
-def _recover_block(project: Project, bounds: FunctionBounds, start_addr: int, stop_addrs: set[int]) -> BlockSpec | None:
+def _recover_block(
+    project: Project, bounds: FunctionBounds, start_addr: int, stop_addrs: set[int]
+) -> BlockSpec | None:
     """Decode one block starting at addr and stop on control flow or known block starts."""
 
     max_inst_bytes = getattr(project.arch, "max_inst_bytes", 16)
@@ -1387,7 +1430,9 @@ def _recover_block(project: Project, bounds: FunctionBounds, start_addr: int, st
         # identifies a missing basic-block leader, typically a loop header that
         # CFGFast failed to seed. Re-run bounded recovery with that leader as a
         # hard stop so we do not absorb the target block into its predecessor.
-        return _recover_block(project, bounds, start_addr, stop_addrs | {internal_targets[0]})
+        return _recover_block(
+            project, bounds, start_addr, stop_addrs | {internal_targets[0]}
+        )
 
     return block
 
@@ -1397,14 +1442,15 @@ def _add_successor_edge(
     src: CFGNode,
     dst: CFGNode,
     jumpkind: EdgeJumpKind,
-) -> None:
+) -> bool:
     """Add one successor edge if it is not already present with the same kind."""
 
     if graph.has_edge(src, dst):
         edge_data = graph.get_edge_data(src, dst) or {}
         if edge_data.get("jumpkind") == jumpkind:
-            return
+            return False
     graph.add_edge(src, dst, jumpkind=jumpkind)
+    return True
 
 
 class _RepairSession:
@@ -1422,10 +1468,10 @@ class _RepairSession:
         self.queue: deque[tuple[str, int]] = deque()
         self.pending: dict[tuple[str, int], PendingObligation] = {}
         self.repaired_nodes: set[CFGNode] = set()
-        self.leaders = BlockLeaderRegistry(
-            {func_addr: {"function_entry"}}
-        )
+        self.leaders = BlockLeaderRegistry({func_addr: {"function_entry"}})
         self.processed_counts: dict[int, int] = {}
+        self.mutation_revision = 0
+        self.stalled_retries: dict[tuple[str, int], int] = {}
         self.iterations = 0
 
     def _is_preservable_seed_node(self, node) -> bool:
@@ -1444,6 +1490,47 @@ class _RepairSession:
             self.func_addr,
             self._explicit_split_starts(),
             node,
+        )
+
+    def _note_mutation(self) -> None:
+        """Advance the revision after a live CFG graph mutation."""
+
+        self.mutation_revision += 1
+
+    def _add_edge(
+        self,
+        src: CFGNode,
+        dst: CFGNode,
+        jumpkind: EdgeJumpKind,
+    ) -> bool:
+        """Add an edge and record whether it changed the live graph."""
+
+        changed = _add_successor_edge(self.graph, src, dst, jumpkind)
+        if changed:
+            self._note_mutation()
+        return changed
+
+    def _record_obligation_progress(
+        self,
+        key: tuple[str, int],
+        obligation: PendingObligation,
+        revision_before: int,
+    ) -> None:
+        """Reject a requeued obligation that repeatedly makes no graph progress."""
+
+        if key not in self.pending or self.mutation_revision != revision_before:
+            self.stalled_retries.pop(key, None)
+            return
+
+        retries = self.stalled_retries.get(key, 0) + 1
+        self.stalled_retries[key] = retries
+        if retries <= MAX_STALLED_OBLIGATION_RETRIES:
+            return
+
+        reasons = ", ".join(sorted(obligation.reasons))
+        raise RuntimeError(
+            f"Custom CFG stalled while {obligation.action} at {obligation.addr:#x}: "
+            f"{retries} retries without graph progress (reasons: {reasons})"
         )
 
     def _preserved_successor_starts(self, node) -> tuple[tuple[int, ...], int | None]:
@@ -1520,7 +1607,10 @@ class _RepairSession:
                 continue
 
             if _addr_is_mid_instruction_start(node, addr):
-                allow_exact_split = obligation.preserve_exact_addr and not self._is_preservable_seed_node(node)
+                allow_exact_split = (
+                    obligation.preserve_exact_addr
+                    and not self._is_preservable_seed_node(node)
+                )
                 if allow_exact_split:
                     continue
                 # The requested address falls inside a decoded instruction of
@@ -1539,7 +1629,8 @@ class _RepairSession:
                 )
                 return node
 
-            self.leaders.add(addr, "explicit_split")
+            if self.leaders.add(addr, "explicit_split"):
+                self._note_mutation()
             placeholder = self._claim_placeholder(obligation)
 
             repair_addr = node.addr
@@ -1592,6 +1683,7 @@ class _RepairSession:
                 obligation.addr,
             )
             self.graph.add_node(placeholder)
+            self._note_mutation()
         self._connect_source_to_node(obligation, placeholder)
         return placeholder
 
@@ -1660,7 +1752,7 @@ class _RepairSession:
         for claim in claims:
             if not any(source is claim.source_node for source in self.graph.nodes()):
                 continue
-            _add_successor_edge(self.graph, claim.source_node, node, claim.jumpkind)
+            self._add_edge(claim.source_node, node, claim.jumpkind)
 
     def _queue_if_needed(self, request: RepairObligation) -> bool:
         """Merge a request into the pending work item for its action and address."""
@@ -1779,13 +1871,15 @@ class _RepairSession:
         if _is_direct_target_valid(self.bounds, target):
             return False
 
-        leaf = _ensure_external_target_node(
+        leaf, created = _ensure_external_target_node(
             self.seed_cfg,
             self.graph,
             self.func_addr,
             target,
         )
-        _add_successor_edge(self.graph, src, leaf, jumpkind)
+        if created:
+            self._note_mutation()
+        self._add_edge(src, leaf, jumpkind)
         return True
 
     def _ensure_successor(
@@ -1820,7 +1914,7 @@ class _RepairSession:
             ),
         )
         if node is not None:
-            _add_successor_edge(self.graph, src, node, jumpkind)
+            self._add_edge(src, node, jumpkind)
         return node is not None
 
     def ensure_expected_successors(self, src: CFGNode) -> None:
@@ -1909,7 +2003,9 @@ class _RepairSession:
             node
             for node in _iter_graph_bound_nodes(self.graph, self.bounds)
             if node.addr == recovered_start
-            or _ranges_overlap(node.addr, _node_range_end(node), recovered_start, recovered_end)
+            or _ranges_overlap(
+                node.addr, _node_range_end(node), recovered_start, recovered_end
+            )
             or (_node_is_placeholder(node) and node.addr == recovered_start)
         ]
         removed_set = set(removed_nodes)
@@ -1922,12 +2018,19 @@ class _RepairSession:
 
         _remove_nodes(self.graph, removed_nodes)
 
-        recovered_node = _make_cfg_node(self.seed_cfg, self.func_addr, self.bounds, block)
+        recovered_node = _make_cfg_node(
+            self.seed_cfg, self.func_addr, self.bounds, block
+        )
         self.graph.add_node(recovered_node)
+        self._note_mutation()
         self.repaired_nodes.add(recovered_node)
 
         for pred, _, data in incoming_edges:
-            _add_successor_edge(self.graph, pred, recovered_node, data.get("jumpkind", "Ijk_Boring"))
+            self._add_edge(
+                pred,
+                recovered_node,
+                data.get("jumpkind", "Ijk_Boring"),
+            )
 
             if pred in self.repaired_nodes:
                 continue
@@ -1945,7 +2048,9 @@ class _RepairSession:
 
         for target in block.direct_targets:
             edge_jumpkind = "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
-            if self._materialize_external_successor(recovered_node, target, edge_jumpkind):
+            if self._materialize_external_successor(
+                recovered_node, target, edge_jumpkind
+            ):
                 continue
             self.ensure_block_entry(
                 RepairObligation(
@@ -1963,7 +2068,9 @@ class _RepairSession:
                     addr=block.fallthrough_addr,
                     reason=f"fallthrough_of_{block.addr:#x}",
                     source_node=recovered_node,
-                    jumpkind="Ijk_FakeRet" if block.jumpkind == "Ijk_Call" else "Ijk_Boring",
+                    jumpkind="Ijk_FakeRet"
+                    if block.jumpkind == "Ijk_Call"
+                    else "Ijk_Boring",
                 )
             )
 
@@ -2030,11 +2137,14 @@ class _RepairSession:
                     f"(visit {self.processed_counts[addr]})"
                 )
 
+            revision_before = self.mutation_revision
             if not (self.bounds.addr <= addr < self.bounds.end_addr):
+                self._record_obligation_progress(key, obligation, revision_before)
                 continue
 
             if obligation.action == "reconcile":
                 self._reconcile_addr(addr)
+                self._record_obligation_progress(key, obligation, revision_before)
                 continue
 
             current_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
@@ -2056,19 +2166,25 @@ class _RepairSession:
                             )
                         )
                     self._requeue_pending(obligation)
+                self._record_obligation_progress(key, obligation, revision_before)
                 continue
             acceptable_node = self._first_acceptable_entry(current_nodes)
             if acceptable_node is not None:
                 self._connect_source_to_node(obligation, acceptable_node)
+                self._record_obligation_progress(key, obligation, revision_before)
                 continue
 
-            block = _recover_block(self.project, self.bounds, addr, self.current_stop_addrs(addr))
+            block = _recover_block(
+                self.project, self.bounds, addr, self.current_stop_addrs(addr)
+            )
             if block is None:
                 logger.warning(f"Custom CFG could not recover a block at {addr:#x}")
+                self._record_obligation_progress(key, obligation, revision_before)
                 continue
 
             recovered_node = self.splice_block(block)
             self._connect_source_to_node(obligation, recovered_node)
+            self._record_obligation_progress(key, obligation, revision_before)
 
         self._cleanup()
         self._register_custom_graphs()
@@ -2079,7 +2195,10 @@ class _RepairSession:
             kb=self.seed_cfg.kb,
         )
 
-def _cleanup_unreachable_function_nodes(graph: CFGGraph, bounds: FunctionBounds, func_addr: int) -> None:
+
+def _cleanup_unreachable_function_nodes(
+    graph: CFGGraph, bounds: FunctionBounds, func_addr: int
+) -> None:
     """Remove nodes in one function that are unreachable from the entry node."""
 
     entry_nodes = _nodes_at_addr(graph, bounds, func_addr)

@@ -1614,9 +1614,27 @@ class _RepairSession:
             # request to normal worklist processing.
             obligation = replace(obligation, resolution_policy="queued")
 
-        existing_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
-        covering_nodes = _covering_nodes(self.graph, self.bounds, addr)
-        for node in covering_nodes:
+        covering_entry = self._resolve_covering_entry(obligation)
+        if covering_entry is not None:
+            return covering_entry
+
+        for node in _nodes_at_addr(self.graph, self.bounds, addr):
+            if self._is_preservable_seed_node(node):
+                self._connect_source_to_node(obligation, node)
+                return node
+
+        placeholder = self._claim_placeholder(obligation)
+        self._queue_if_needed(obligation)
+        return placeholder
+
+    def _resolve_covering_entry(
+        self,
+        obligation: RepairObligation,
+    ) -> CFGNode | None:
+        """Resolve an entry covered by an existing node, or leave it deferred."""
+
+        addr = obligation.addr
+        for node in _covering_nodes(self.graph, self.bounds, addr):
             if node.addr == addr or _node_is_placeholder(node):
                 continue
 
@@ -1667,14 +1685,7 @@ class _RepairSession:
             self._queue_if_needed(obligation)
             return placeholder
 
-        for node in existing_nodes:
-            if self._is_preservable_seed_node(node):
-                self._connect_source_to_node(obligation, node)
-                return node
-
-        placeholder = self._claim_placeholder(obligation)
-        self._queue_if_needed(obligation)
-        return placeholder
+        return None
 
     def _claim_placeholder(
         self,

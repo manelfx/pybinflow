@@ -112,6 +112,35 @@ class FunctionBounds:
     symbol: FunctionSymbol
 
 
+@dataclass
+class BlockLeaderRegistry:
+    """Reasons that an address must remain a basic-block entry during recovery."""
+
+    reasons: dict[int, set[str]]
+
+    def copy(self) -> BlockLeaderRegistry:
+        """Return an independent snapshot suitable for one recovery attempt."""
+
+        return BlockLeaderRegistry(
+            {addr: set(reasons) for addr, reasons in self.reasons.items()}
+        )
+
+    def add(self, addr: int, reason: str) -> None:
+        """Record one reason that ``addr`` must remain a block leader."""
+
+        self.reasons.setdefault(addr, set()).add(reason)
+
+    def starts(self) -> set[int]:
+        """Return all addresses currently required to begin a block."""
+
+        return set(self.reasons)
+
+    def starts_with_reason(self, reason: str) -> set[int]:
+        """Return leader addresses that carry one particular reason."""
+
+        return {addr for addr, reasons in self.reasons.items() if reason in reasons}
+
+
 @dataclass(frozen=True)
 class RepairObligation:
     """One queued recovery or local-reconciliation task for a CFG address."""
@@ -1269,33 +1298,6 @@ def _add_successor_edge(
     graph.add_edge(src, dst, jumpkind=jumpkind)
 
 
-def _add_expected_starts(
-    starts: set[int],
-    bounds: FunctionBounds,
-    addr: int,
-    direct_targets: tuple[int, ...],
-    fallthrough_addr: int | None,
-    *,
-    require_after_addr: bool,
-) -> None:
-    """Add in-function successor starts to `starts` with shared filtering logic."""
-
-    for target in direct_targets:
-        if not (bounds.addr <= target < bounds.end_addr) or target == addr:
-            continue
-        if require_after_addr and target <= addr:
-            continue
-        starts.add(target)
-
-    if fallthrough_addr is None:
-        return
-    if not (bounds.addr <= fallthrough_addr < bounds.end_addr) or fallthrough_addr == addr:
-        return
-    if require_after_addr and fallthrough_addr <= addr:
-        return
-    starts.add(fallthrough_addr)
-
-
 class _RepairSession:
     """Mutable state and helpers for one worklist-driven CFG repair run."""
 
@@ -1311,7 +1313,9 @@ class _RepairSession:
         self.queue: deque[RepairObligation] = deque()
         self.queued: set[tuple[str, int]] = set()
         self.repaired_nodes: set[CFGNode] = set()
-        self.forced_block_starts: set[int] = set()
+        self.leaders = BlockLeaderRegistry(
+            {func_addr: {"function_entry"}}
+        )
         self.processed_counts: dict[int, int] = {}
         self.iterations = 0
 
@@ -1329,7 +1333,7 @@ class _RepairSession:
             self.graph,
             self.bounds,
             self.func_addr,
-            self.forced_block_starts,
+            self._explicit_split_starts(),
             node,
         )
 
@@ -1348,41 +1352,32 @@ class _RepairSession:
 
         return _seed_graph_direct_targets(self.graph, node), None
 
-    def _iter_start_contributors(self, addr: int):
-        """Yield materialized nodes that may contribute preserved starts around `addr`."""
+    def _explicit_split_starts(self) -> set[int]:
+        """Return leaders created by a requested split through an old node."""
 
-        seen: set[object] = set()
-        for node in _nodes_at_addr(self.graph, self.bounds, addr) + _covering_nodes(self.graph, self.bounds, addr):
-            if not _node_is_materialized_cfg_node(node) or node in seen:
+        return self.leaders.starts_with_reason("explicit_split")
+
+    def _current_leaders(self) -> BlockLeaderRegistry:
+        """Build the leader snapshot that bounds one local block recovery."""
+
+        leaders = self.leaders.copy()
+        for node in _iter_graph_bound_nodes(self.graph, self.bounds):
+            if not _node_is_materialized_cfg_node(node):
                 continue
-            seen.add(node)
-            yield node
-
-    def _expected_starts_from_nodes(
-        self,
-        nodes,
-        addr: int,
-        *,
-        require_after_addr: bool,
-    ) -> set[int]:
-        """Collect preserved successor starts contributed by `nodes`."""
-
-        starts: set[int] = set()
-        for node in nodes:
             if not self._is_preservable_seed_node(node):
                 continue
 
             direct_targets, fallthrough_addr = self._preserved_successor_starts(node)
-            _add_expected_starts(
-                starts,
-                self.bounds,
-                addr,
-                direct_targets,
-                fallthrough_addr,
-                require_after_addr=require_after_addr,
-            )
+            for target in direct_targets:
+                if self.bounds.addr <= target < self.bounds.end_addr:
+                    leaders.add(target, "direct_target")
+            if (
+                fallthrough_addr is not None
+                and self.bounds.addr <= fallthrough_addr < self.bounds.end_addr
+            ):
+                leaders.add(fallthrough_addr, "fallthrough")
 
-        return starts
+        return leaders
 
     def enqueue(self, obligation: RepairObligation) -> CFGNode | None:
         """
@@ -1423,7 +1418,7 @@ class _RepairSession:
                 )
                 return node
 
-            self.forced_block_starts.add(addr)
+            self.leaders.add(addr, "explicit_split")
             placeholder = next((item for item in existing_nodes if _node_is_placeholder(item)), None)
             if placeholder is None:
                 placeholder = _make_placeholder_node(self.seed_cfg, self.func_addr, addr)
@@ -1604,7 +1599,7 @@ class _RepairSession:
                     self.graph,
                     self.bounds,
                     self.func_addr,
-                    self.forced_block_starts,
+                    self._explicit_split_starts(),
                     node,
                 )
             ),
@@ -1664,116 +1659,14 @@ class _RepairSession:
                 )
             )
 
-    def incoming_expected_starts(self, addr: int) -> set[int]:
-        """
-        Return extra starts implied by predecessors of nodes covering `addr`.
-
-        This prevents bounded recovery from swallowing a sibling successor that
-        a preserved predecessor already expects to exist.
-        """
-
-        preds: list[CFGNode] = []
-        seen: set[object] = set()
-        for node in self._iter_start_contributors(addr):
-            for pred in self.graph.predecessors(node):
-                if not _node_is_materialized_cfg_node(pred) or pred in seen:
-                    continue
-                seen.add(pred)
-                preds.append(pred)
-
-        return self._expected_starts_from_nodes(
-            preds,
-            addr,
-            require_after_addr=True,
-        )
-
-    def _node_start_is_protected(self, node) -> bool:
-        """
-        Return True when `node.addr` must remain a basic-block leader.
-
-        A locally well-formed fragment should not survive as a stop point just
-        because CFGFast happened to split there. We only preserve starts that
-        are justified by the repaired graph: function entry, forced split
-        points, or successors explicitly expected by an acceptable predecessor.
-        """
-
-        if node.addr == self.func_addr:
-            return True
-        if node.addr in self.forced_block_starts:
-            return True
-
-        # Do not preserve a start that only exists as the straight-line
-        # continuation of a repaired predecessor. Those are precisely the
-        # artificial split points we want later recovery passes to absorb into
-        # a larger self-loop/body block such as 0x4211e5 -> 0x421255.
-        preds = [
-            pred
-            for pred in self.graph.predecessors(node)
-            if _node_is_materialized_cfg_node(pred)
-        ]
-        if len(preds) == 1:
-            pred = preds[0]
-            if pred in self.repaired_nodes and node_has_linear_merge_successor(self.graph, pred):
-                return False
-
-        for pred in self.graph.predecessors(node):
-            if not _node_is_materialized_cfg_node(pred):
-                continue
-            if not self._is_preservable_seed_node(pred):
-                continue
-
-            direct_targets, fallthrough_addr = self._preserved_successor_starts(pred)
-
-            if node.addr in direct_targets:
-                return True
-            if pred in self.repaired_nodes and fallthrough_addr == node.addr:
-                return True
-
-        return False
-
-    def graph_expected_starts(self, addr: int) -> set[int]:
-        """
-        Return all in-function starts implied anywhere in the current graph.
-
-        This keeps the worklist from erasing legitimate leaders that are only
-        visible as successors of still-malformed nodes.
-        """
-
-        nodes = [
-            node
-            for node in _iter_graph_bound_nodes(self.graph, self.bounds)
-            if _node_is_materialized_cfg_node(node)
-        ]
-        return self._expected_starts_from_nodes(
-            nodes,
-            addr,
-            require_after_addr=False,
-        )
-
     def current_stop_addrs(self, addr: int) -> set[int]:
         """Return the hard stop addresses used for bounded recovery at `addr`."""
 
-        stop_addrs = {
-            node.addr
-            for node in _iter_graph_bound_nodes(self.graph, self.bounds)
-            if node.addr != addr
-            and self._node_start_is_protected(node)
-            and self._is_preservable_seed_node(node)
-        }
-        stop_addrs.update(
-            target
-            for target in self.forced_block_starts
-            if addr < target < self.bounds.end_addr
-        )
-        stop_addrs.update(self.incoming_expected_starts(addr))
-        stop_addrs.update(
-            target
-            for target in self.graph_expected_starts(addr)
-            if addr < target < self.bounds.end_addr
-        )
+        leaders = self._current_leaders()
         return {
             target
-            for target in stop_addrs
+            for target in leaders.starts()
+            if addr < target < self.bounds.end_addr
             if not self._addr_is_linear_tail_start(target)
         }
 
@@ -1847,7 +1740,7 @@ class _RepairSession:
                 self.graph,
                 self.bounds,
                 self.func_addr,
-                self.forced_block_starts,
+                self._explicit_split_starts(),
                 pred,
             ):
                 continue
@@ -1955,7 +1848,7 @@ class _RepairSession:
                 if node.addr != addr and not _node_is_placeholder(node)
             ]
             if covering_nodes:
-                if addr in self.forced_block_starts:
+                if addr in self._explicit_split_starts():
                     # Another node still covers this forced split point. Requeue
                     # both the covering node and the split address so the target
                     # is revisited after the prefix block gets truncated.
@@ -1977,7 +1870,7 @@ class _RepairSession:
                         self.graph,
                         self.bounds,
                         self.func_addr,
-                        self.forced_block_starts,
+                        self._explicit_split_starts(),
                         node,
                     )
                 ),

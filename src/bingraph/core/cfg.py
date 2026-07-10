@@ -2099,6 +2099,63 @@ class _RepairSession:
         for node in self.graph.nodes():
             register_custom_graph(node, self.graph)
 
+    def _process_reconciliation(self, obligation: PendingObligation) -> None:
+        """Reconcile every live node at one queued address."""
+
+        self._reconcile_addr(obligation.addr)
+
+    def _process_recovery(self, obligation: PendingObligation) -> None:
+        """Recover a queued address or requeue the work needed to expose it."""
+
+        addr = obligation.addr
+        current_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
+        covering_nodes = [
+            node
+            for node in _covering_nodes(self.graph, self.bounds, addr)
+            if node.addr != addr and not _node_is_placeholder(node)
+        ]
+        if covering_nodes:
+            if addr in self._explicit_split_starts():
+                # Another node still covers this forced split point. Requeue
+                # both the covering node and the split address so the target
+                # is revisited after the prefix block gets truncated.
+                for node in covering_nodes:
+                    self._queue_if_needed(
+                        RepairObligation(
+                            addr=node.addr,
+                            reason=f"split_for_{addr:#x}",
+                        )
+                    )
+                self._requeue_pending(obligation)
+            return
+
+        acceptable_node = self._first_acceptable_entry(current_nodes)
+        if acceptable_node is not None:
+            self._connect_source_to_node(obligation, acceptable_node)
+            return
+
+        block = _recover_block(
+            self.project, self.bounds, addr, self.current_stop_addrs(addr)
+        )
+        if block is None:
+            logger.warning(f"Custom CFG could not recover a block at {addr:#x}")
+            return
+
+        recovered_node = self.splice_block(block)
+        self._connect_source_to_node(obligation, recovered_node)
+
+    def _process_obligation(self, obligation: PendingObligation) -> None:
+        """Dispatch one in-bounds worklist item to its action-specific handler."""
+
+        if not (self.bounds.addr <= obligation.addr < self.bounds.end_addr):
+            return
+
+        if obligation.action == "reconcile":
+            self._process_reconciliation(obligation)
+            return
+
+        self._process_recovery(obligation)
+
     def run(self) -> CFGBase | CustomCFG:
         """Execute the repair worklist and return the repaired CFG wrapper."""
 
@@ -2124,10 +2181,7 @@ class _RepairSession:
         for addr in initial_bad_addrs:
             self.ensure_block_entry(RepairObligation(addr=addr, reason="seed_anomaly"))
 
-        while True:
-            if not self.queue:
-                break
-
+        while self.queue:
             self.iterations += 1
             if self.iterations > 5000:
                 raise RuntimeError(
@@ -2145,52 +2199,7 @@ class _RepairSession:
                     f"(visit {self.processed_counts[addr]})"
                 )
 
-            if not (self.bounds.addr <= addr < self.bounds.end_addr):
-                self._record_obligation_progress(key, obligation)
-                continue
-
-            if obligation.action == "reconcile":
-                self._reconcile_addr(addr)
-                self._record_obligation_progress(key, obligation)
-                continue
-
-            current_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
-            covering_nodes = [
-                node
-                for node in _covering_nodes(self.graph, self.bounds, addr)
-                if node.addr != addr and not _node_is_placeholder(node)
-            ]
-            if covering_nodes:
-                if addr in self._explicit_split_starts():
-                    # Another node still covers this forced split point. Requeue
-                    # both the covering node and the split address so the target
-                    # is revisited after the prefix block gets truncated.
-                    for node in covering_nodes:
-                        self._queue_if_needed(
-                            RepairObligation(
-                                addr=node.addr,
-                                reason=f"split_for_{addr:#x}",
-                            )
-                        )
-                    self._requeue_pending(obligation)
-                self._record_obligation_progress(key, obligation)
-                continue
-            acceptable_node = self._first_acceptable_entry(current_nodes)
-            if acceptable_node is not None:
-                self._connect_source_to_node(obligation, acceptable_node)
-                self._record_obligation_progress(key, obligation)
-                continue
-
-            block = _recover_block(
-                self.project, self.bounds, addr, self.current_stop_addrs(addr)
-            )
-            if block is None:
-                logger.warning(f"Custom CFG could not recover a block at {addr:#x}")
-                self._record_obligation_progress(key, obligation)
-                continue
-
-            recovered_node = self.splice_block(block)
-            self._connect_source_to_node(obligation, recovered_node)
+            self._process_obligation(obligation)
             self._record_obligation_progress(key, obligation)
 
         self._cleanup()

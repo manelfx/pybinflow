@@ -130,40 +130,6 @@ Rendering follow-up:
   `0x10100058`, which is an angr-internal synthetic address rather than a
   binary address. Prefer hiding it or labeling it explicitly as synthetic.
 
-=== Last-resort CFG fallback for NoDecode / AVX-512
-
-When angr-based CFG recovery still fails because VEX cannot decode one or more
-instructions (for example some AVX-512 `zmm` instructions), add a final
-fallback that builds our own CFG directly from capstone-disassembled bytes.
-
-Sketch:
-
-- Detect that the angr CFG is incomplete because of `Ijk_NoDecode` or other
-  decode failures.
-- Keep the function range bounded by symbol address + size.
-- Starting from the entry block, decode instructions with capstone only.
-- Create BB boundaries at:
-  - function entry
-  - direct branch targets inside the function range
-  - fallthrough after conditional branches and calls
-- Stop a BB on:
-  - conditional jump
-  - unconditional jump
-  - return
-  - decode failure
-- Add edges only when justified by the last decoded instruction:
-  - conditional jump target + fallthrough
-  - unconditional jump target
-  - call fallthrough
-  - straight-line fallthrough
-
-Goal:
-
-- Produce a conservative CFG that is structurally sane even when VEX cannot
-  lift the full function.
-- Prefer missing edges over malformed BBs or edges that contradict the decoded
-  instructions.
-
 === Investigate CFGEmulated 0x0 nodes in _int_malloc
 
 Observed on:
@@ -191,32 +157,10 @@ Open questions:
 - Is this node a real angr CFG node that should be filtered, or is it exposing
   a deeper CFG construction issue specific to this function?
 
-=== Detect duplicate-address CFG nodes
+=== Address comments
 
-We should investigate whether a CFG containing multiple distinct nodes with the
-same basic-block address should always be considered malformed.
-
-Questions to answer:
-
-- Should this be part of the runtime "weird graph" checks in `project.py`?
-- Or should we only detect/report it in the test suite as an additional CFG
-  quality validation?
-- Are there any legitimate angr CFG situations where repeated node addresses
-  are expected, or is this always a sign of a broken graph?
-
-=== Investigate remaining comment nondeterminism
-
-`cfg_mode_none` and `cfg_mode_none.bak` are structurally identical, but there
-are still a couple of label-only diffs. That suggests some remaining comment or
-annotation nondeterminism.
-
-Functions currently showing those diffs:
-
-- `mipsel,darpa_ping,0x4047c0,__schedule_exit`
-- `mipsel,jumptable_0,0x40bcdc,log_request`
-
-Questions:
-
+- Bring back comments by default.
+- Analyze which comments are shown, which ones could be shown.
 - Are comments/xrefs still being emitted in a nondeterministic order somewhere?
 - Does building other CFGs beforehand mutate knowledge-base state in a way that
   changes later comments?
@@ -228,18 +172,10 @@ Questions:
 The full custom-CFG corpus run currently takes more than five hours, compared
 with about six minutes for `cfg_mode_none`. The largest issue is repair
 non-convergence: 1,445 rendered artifacts failed after the custom worklist
-exceeded its 5,000-iteration safety limit. A separate `s390x` case fails with
-`ValueError: Value out of range: -1`.
+exceeded its 5,000-iteration safety limit.
 
 Prioritized work:
 
-- Diagnose repeated unrecoverable worklist entries and make the repair either
-  converge or stop with a useful, local reason. Candidate functions:
-  - `ppc64el/fauxware_static`, `__gconv_release_step` at `0x1003ac00`
-  - `armel/lwip_udpecho_bm.elf`, `dhcp_bind` at `0x5f65`
-- Validate decoded addresses and function bounds before graph construction.
-  Candidate function:
-  - `s390x/test-instr_s390x`, `_IO_vfscanf` at `0x800555f8`
 - Resolve successful repairs that still report `linear_split` anomalies after
   completion. Candidate functions:
   - `i386/bronze_ropchain`, `_dl_aux_init` at `0x806f870`
@@ -253,6 +189,10 @@ Prioritized work:
   - `i386/bronze_ropchain`, `execute_stack_op` at `0x80a7db0`
   - `x86_64/elf_with_static_libc_ubuntu_2004`, `execute_stack_op` at
     `0x48ef40`
+- Profile and reduce custom CFG repair time without changing its output.
+  Candidate function:
+  - `s390x/test-instr_s390x`, `_IO_vfscanf` at `0x800555f8` currently takes
+    about 30 seconds to render.
 
 For each candidate, inspect the repaired CFG against objdump before promoting
 its custom-mode DOT output as a golden artifact.

@@ -421,10 +421,11 @@ class InsnSemantics:
         return True
 
     def direct_target(self) -> int | None:
-        # Do not assume the branch target is always operand 0. Instructions
-        # such as Thumb `cbz r2, #0x733` place the condition source first and
-        # the branch destination second.
-        for operand in self.insn.operands:
+        # Do not assume the branch target is operand 0. Instructions such as
+        # Thumb `cbz r2, #0x733` and S390 `cije r1, -1, target` place their
+        # condition inputs before the branch destination. Capstone presents the
+        # destination as the final immediate operand for these direct branches.
+        for operand in reversed(self.insn.operands):
             if getattr(operand, "type", None) != CS_OP_IMM:
                 continue
 
@@ -758,6 +759,7 @@ def _seed_graph_direct_targets(graph: CFGGraph, node) -> tuple[int, ...]:
 
 
 def _analyze_jump_successors(
+    project: Project,
     graph: CFGGraph,
     bounds: FunctionBounds,
     node,
@@ -765,10 +767,11 @@ def _analyze_jump_successors(
     """
     Return expected vs present successors for one decoded jump block.
 
-    We classify the jump shape from VEX exit statements when possible, but we
-    keep using the decoded Capstone target as the authoritative direct target.
-    This avoids trusting stale `vex.next` values on malformed CFGFast nodes
-    while still recognizing conditional-vs-direct structure on repaired nodes.
+    VEX helps recognize conditional control flow, while Capstone remains
+    authoritative for the direct target because malformed CFGFast nodes can
+    expose stale VEX exit addresses. `InsnSemantics` selects the final immediate
+    operand so compare-and-branch instructions do not use a condition value,
+    such as S390's `-1`, as the branch address.
     """
 
     try:
@@ -796,13 +799,6 @@ def _analyze_jump_successors(
     if last.is_call() or (vex is not None and vex.jumpkind == "Ijk_Call"):
         return None
 
-    expected: list[JumpSuccessorExpectation] = []
-    kind: Literal["conditional", "direct"]
-    direct_target = last.direct_target()
-    if direct_target is None:
-        return None
-    fallthrough_addr = last_insn.address + last_insn.size
-
     exit_targets: list[int] = []
     if vex is not None:
         for ins_addr, _, stmt in vex.exit_statements:
@@ -812,7 +808,38 @@ def _analyze_jump_successors(
             if isinstance(target, int) and target not in exit_targets:
                 exit_targets.append(target)
 
-    if exit_targets or last.is_conditional_jump():
+    is_conditional = bool(exit_targets)
+    if not is_conditional and last.is_conditional_jump():
+        # A malformed CFG node can retain stale VEX without the final branch
+        # exit. Re-lift only the ambiguous terminator: this keeps genuine x86
+        # conditionals conditional, while correctly classifying S390 `j` as a
+        # direct jump instead of inventing a fallthrough edge.
+        try:
+            fresh_vex = project.factory.block(
+                last_insn.address,
+                size=last_insn.size,
+                strict_block_end=True,
+                cross_insn_opt=False,
+            ).vex
+        except Exception:
+            # Preserve the conservative Capstone classification if a fresh
+            # lift is unavailable; repair is safer than silently omitting an
+            # actual branch successor.
+            is_conditional = True
+        else:
+            is_conditional = any(
+                ins_addr == last_insn.address
+                for ins_addr, _, _ in fresh_vex.exit_statements
+            )
+
+    direct_target = last.direct_target()
+    if direct_target is None:
+        return None
+
+    expected: list[JumpSuccessorExpectation] = []
+    kind: Literal["conditional", "direct"]
+    fallthrough_addr = last_insn.address + last_insn.size
+    if is_conditional:
         expected.append(JumpSuccessorExpectation(direct_target, "Ijk_Boring", True))
         if bounds.addr <= fallthrough_addr < bounds.end_addr:
             expected.append(
@@ -834,13 +861,14 @@ def _analyze_jump_successors(
 
 
 def node_has_missing_jump_successor(
+    project: Project,
     graph: CFGGraph,
     bounds: FunctionBounds,
     node,
 ) -> bool:
     """Return True when a jump block is missing one or more successor edges."""
 
-    analysis = _analyze_jump_successors(graph, bounds, node)
+    analysis = _analyze_jump_successors(project, graph, bounds, node)
     if analysis is None:
         return False
 
@@ -859,13 +887,14 @@ def node_has_missing_jump_successor(
 
 
 def _missing_jump_successors(
+    project: Project,
     graph: CFGGraph,
     bounds: FunctionBounds,
     node,
 ) -> tuple[JumpSuccessorExpectation, ...]:
     """Return the subset of expected jump successors still missing in the graph."""
 
-    analysis = _analyze_jump_successors(graph, bounds, node)
+    analysis = _analyze_jump_successors(project, graph, bounds, node)
     if analysis is None:
         return ()
 
@@ -1024,6 +1053,7 @@ def node_has_truncated_leaf(graph: CFGGraph, func_addr: int, node) -> bool:
 
 
 def _node_needs_repair(
+    project: Project,
     graph: CFGGraph,
     bounds: FunctionBounds,
     func_addr: int,
@@ -1035,7 +1065,7 @@ def _node_needs_repair(
         node_has_decoding_coverage_mismatch(node)
         or node_has_decode_gap(node)
         or node_has_truncated_leaf(graph, func_addr, node)
-        or node_has_missing_jump_successor(graph, bounds, node)
+        or node_has_missing_jump_successor(project, graph, bounds, node)
         or node_has_linear_merge_successor(graph, node)
     )
 
@@ -1115,6 +1145,7 @@ def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
         if _has_truncated_leaf(cfg, func_addr, node):
             return True
         if project is not None and node_has_missing_jump_successor(
+            project,
             _cfg_graph(cfg),
             _lookup_function_bounds(project, func_addr),
             node,
@@ -1401,7 +1432,7 @@ def _node_is_acceptable(
     # structurally incomplete by the seed anomaly checks. Otherwise an initial
     # bad block like __strcmp_sse4_2+0x37 can survive forever just because its
     # byte coverage looks locally self-consistent.
-    if _node_needs_repair(graph, bounds, func_addr, node):
+    if _node_needs_repair(seed_cfg.project, graph, bounds, func_addr, node):
         return False
     return True
 
@@ -1869,7 +1900,9 @@ class _RepairSession:
     def _reconcile_node(self, node: CFGNode) -> None:
         """Satisfy local edge invariants before scheduling a full block recovery."""
 
-        for expectation in _missing_jump_successors(self.graph, self.bounds, node):
+        for expectation in _missing_jump_successors(
+            self.project, self.graph, self.bounds, node
+        ):
             self._resolve_successor(
                 node,
                 expectation.addr,
@@ -1881,6 +1914,7 @@ class _RepairSession:
             )
 
         if _node_needs_repair(
+            self.project,
             self.graph,
             self.bounds,
             self.func_addr,
@@ -2191,7 +2225,9 @@ class _RepairSession:
             {
                 node.addr
                 for node in _iter_seed_function_nodes(self.seed_cfg, self.func_addr)
-                if _node_needs_repair(self.graph, self.bounds, self.func_addr, node)
+                if _node_needs_repair(
+                    self.project, self.graph, self.bounds, self.func_addr, node
+                )
             }
         )
         if not initial_bad_addrs:

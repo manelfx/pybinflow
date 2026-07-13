@@ -123,6 +123,13 @@ Current conclusion:
 - It is more promising to keep unresolved indirect jumps as a known anomaly
   class and address them later in the custom CFG fallback builder.
 
+Rendering follow-up:
+
+- Review whether unresolved-target simprocedure nodes should show their CLE
+  pseudo-address. For example, `UnresolvableCallTarget` may render as
+  `0x10100058`, which is an angr-internal synthetic address rather than a
+  binary address. Prefer hiding it or labeling it explicitly as synthetic.
+
 === Last-resort CFG fallback for NoDecode / AVX-512
 
 When angr-based CFG recovery still fails because VEX cannot decode one or more

@@ -588,7 +588,9 @@ def _lift_block_terminator(
     if semantic.is_ret():
         return TerminatorInfo(jumpkind="Ijk_Ret")
 
-    if semantic.is_call():
+    # Some Capstone backends classify direct calls only as jumps. VEX is the
+    # authoritative source for this semantic distinction during repair.
+    if semantic.is_call() or vex.jumpkind == "Ijk_Call":
         direct_targets: tuple[int, ...] = ()
         if isinstance(default_target, int) and _is_direct_target_valid(
             bounds, default_target
@@ -781,8 +783,17 @@ def _analyze_jump_successors(
     if last_insn is None:
         return None
 
+    try:
+        vex = node.block.vex
+    except Exception:
+        vex = None
+
     last = InsnSemantics(last_insn)
     if not last.is_jump():
+        return None
+    # Calls may be members of Capstone's generic jump group. They have their
+    # own call/fake-return edge semantics and must not be checked as branches.
+    if last.is_call() or (vex is not None and vex.jumpkind == "Ijk_Call"):
         return None
 
     expected: list[JumpSuccessorExpectation] = []
@@ -791,11 +802,6 @@ def _analyze_jump_successors(
     if direct_target is None:
         return None
     fallthrough_addr = last_insn.address + last_insn.size
-
-    try:
-        vex = node.block.vex
-    except Exception:
-        vex = None
 
     exit_targets: list[int] = []
     if vex is not None:

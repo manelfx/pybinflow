@@ -8,7 +8,10 @@ from angr import Project
 from angr.analyses.cfg import CFGBase
 from loguru import logger
 
-from bingraph.helpers import CfgMode, get_settings  #, serialize_function, serialize_function_summary
+from bingraph.helpers import (
+    CfgMode,
+    get_settings,
+)  # , serialize_function, serialize_function_summary
 from . import get_cfg
 from .annotators import ColorSimprocedures, CommentsDataRef, ColorEdgesVex
 from .contents import NodeHead, NodeAsm
@@ -17,11 +20,9 @@ from .outputs import DotOutput
 from .sources import CFGSource
 
 
-def plot_cfg(cfg: CFGBase,
-             fname: str,
-             func_addr: int,
-             format: str,
-             comments: bool = True) -> None:
+def plot_cfg(
+    cfg: CFGBase, fname: str, func_addr: int, format: str, comments: bool = True
+) -> None:
 
     logger.info(f"Start CFG plotting function at {hex(func_addr)} as {format}")
 
@@ -33,10 +34,10 @@ def plot_cfg(cfg: CFGBase,
 
     vis = Vis(
         source=CFGSource(func_addr=func_addr),
-        output=DotOutput(fname=fname, format=format),
+        output=DotOutput(fname=fname, format=format, entry_addr=func_addr),
         transformers=[],
         contents=[NodeHead(), NodeAsm()],
-        annotators=annotators
+        annotators=annotators,
     )
 
     vis.process(cfg)
@@ -79,8 +80,8 @@ def render_cfg(
     if not function:
         raise KeyError(f"Function {func_addr:#x} not found in CFG")
 
-    #logger.info(serialize_function_summary(function))
-    #logger.info(serialize_function(function))
+    # logger.info(serialize_function_summary(function))
+    # logger.info(serialize_function(function))
 
     # Create SVG graph in temporal file
     with TemporaryDirectory() as tmp_dir:
@@ -90,12 +91,12 @@ def render_cfg(
             str(output_base),
             func_addr=func_addr,
             format=format,
-            comments=settings.comments
+            comments=settings.comments,
         )
         output_path = output_base.with_suffix(f".{format}")
         output = output_path.read_text(encoding="utf-8")
 
-    #svg_start = output.find("<svg")
-    #if svg_start != -1:
+    # svg_start = output.find("<svg")
+    # if svg_start != -1:
     #    output = output[svg_start:]
     return output

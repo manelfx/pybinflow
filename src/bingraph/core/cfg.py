@@ -60,8 +60,12 @@ High-level algorithm:
    repair state changed. A separate iteration limit protects against a graph
    that continues changing without converging.
 6. When the worklist is empty, remove unreachable stale nodes and temporary
-   placeholders, then expose the repaired graph through a small CFG-like
-   wrapper.
+   placeholders. Cleanup can expose a new local anomaly, such as a linear
+   split whose extra predecessors were stale. If cleanup changed the graph,
+   queue those newly visible anomalies for another worklist pass. If cleanup
+   made no change, report any remaining anomalies instead of retrying them
+   indefinitely.
+7. Expose the repaired graph through a small CFG-like wrapper.
 
 The implementation is intentionally conservative. It prefers localized repairs
 over whole-function reconstruction so already-correct arch-specific behavior
@@ -903,6 +907,57 @@ def _missing_jump_successors(
     )
 
 
+def _call_target_is_known_nonreturning(project: Project, node) -> bool:
+    """Return True only for a direct call to an explicitly non-returning hook."""
+
+    decoded = DecodedNode.from_node(node)
+    last_insn = decoded.last
+    if last_insn is None:
+        return False
+
+    target = InsnSemantics(last_insn).direct_target()
+    if target is None or not project.is_hooked(target):
+        return False
+
+    return bool(getattr(project.hooked_by(target), "NO_RET", False))
+
+
+def node_has_missing_call_fallthrough(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node,
+) -> bool:
+    """Return True when a returning call is missing its in-function fake return."""
+
+    if node_has_decoding_coverage_mismatch(node):
+        return False
+
+    try:
+        is_call = node.block.vex.jumpkind == "Ijk_Call"
+    except Exception:
+        return False
+    if not is_call or _call_target_is_known_nonreturning(project, node):
+        return False
+
+    fallthrough_addr = _node_range_end(node)
+    if not _is_direct_target_valid(bounds, fallthrough_addr):
+        return False
+
+    for successor in graph.successors(node):
+        if successor.addr != fallthrough_addr:
+            continue
+        edge_data = graph.get_edge_data(node, successor) or {}
+        if edge_data.get("jumpkind") == "Ijk_FakeRet":
+            return False
+
+    logger.warning(
+        f"Call node {node.addr:#x} is missing fake-return successor "
+        f"{fallthrough_addr:#x}"
+    )
+    return True
+
+
 def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
     """
     Return True when `node` should absorb its only straight-line successor.
@@ -1066,6 +1121,7 @@ def _node_needs_repair(
         or node_has_decode_gap(node)
         or node_has_truncated_leaf(graph, func_addr, node)
         or node_has_missing_jump_successor(project, graph, bounds, node)
+        or node_has_missing_call_fallthrough(project, graph, bounds, node)
         or node_has_linear_merge_successor(graph, node)
     )
 
@@ -1155,6 +1211,18 @@ def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
                 f"at {node.addr:#x}: direct jump block is missing one or more CFG edges"
             )
             return True
+        if project is not None and node_has_missing_call_fallthrough(
+            project,
+            _cfg_graph(cfg),
+            _lookup_function_bounds(project, func_addr),
+            node,
+        ):
+            logger.warning(
+                f"CFG anomaly for function {func_addr:#x}: "
+                f"missing_call_fallthrough at {node.addr:#x}: call block is missing "
+                "an in-function fake-return edge"
+            )
+            return True
         if node_has_linear_merge_successor(_cfg_graph(cfg), node):
             logger.warning(
                 f"CFG anomaly for function {func_addr:#x}: linear_split at {node.addr:#x}: "
@@ -1185,7 +1253,7 @@ def _custom_model_marker() -> SimpleNamespace:
     return SimpleNamespace(ident="CFGFastCustom")
 
 
-def _prune_orphan_simprocedures(graph: CFGGraph) -> None:
+def _prune_orphan_simprocedures(graph: CFGGraph) -> bool:
     """
     Remove simprocedure nodes that no longer have any incoming edges.
 
@@ -1196,6 +1264,7 @@ def _prune_orphan_simprocedures(graph: CFGGraph) -> None:
     case removing one orphan exposes another orphaned simprocedure behind it.
     """
 
+    changed = False
     while True:
         orphan_nodes = [
             node
@@ -1203,16 +1272,19 @@ def _prune_orphan_simprocedures(graph: CFGGraph) -> None:
             if _node_is_simprocedure(node) and graph.in_degree(node) == 0
         ]
         if not orphan_nodes:
-            return
+            return changed
         _remove_nodes(graph, orphan_nodes)
+        changed = True
 
 
-def _prune_placeholders(graph: CFGGraph) -> None:
-    """Remove any temporary placeholder nodes left after the repair pass."""
+def _prune_placeholders(graph: CFGGraph) -> bool:
+    """Remove temporary placeholder nodes and report whether the graph changed."""
 
     placeholders = [node for node in list(graph.nodes()) if _node_is_placeholder(node)]
     if placeholders:
         _remove_nodes(graph, placeholders)
+        return True
+    return False
 
 
 def _block_name(bounds: FunctionBounds, block: BlockSpec) -> str:
@@ -2148,12 +2220,66 @@ class _RepairSession:
 
         return recovered_node
 
-    def _cleanup(self) -> None:
-        """Prune temporary and unreachable nodes after the worklist finishes."""
+    def _cleanup(self) -> bool:
+        """Prune stale nodes and report whether cleanup changed the live graph."""
 
-        _cleanup_unreachable_function_nodes(self.graph, self.bounds, self.func_addr)
-        _prune_placeholders(self.graph)
-        _prune_orphan_simprocedures(self.graph)
+        changed = _cleanup_unreachable_function_nodes(
+            self.graph, self.bounds, self.func_addr
+        )
+        changed |= _prune_placeholders(self.graph)
+        changed |= _prune_orphan_simprocedures(self.graph)
+        if changed:
+            self._note_mutation()
+        return changed
+
+    def _anomalous_addrs(self) -> list[int]:
+        """Return the current in-bounds materialized block starts needing repair."""
+
+        return sorted(
+            {
+                node.addr
+                for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+                if _node_is_materialized_cfg_node(node)
+                and _node_needs_repair(
+                    self.project,
+                    self.graph,
+                    self.bounds,
+                    self.func_addr,
+                    node,
+                )
+            }
+        )
+
+    def _queue_recoveries(self, addrs: Iterable[int], reason: str) -> None:
+        """Seed ordinary recovery work for a group of anomalous block starts."""
+
+        for addr in addrs:
+            self.ensure_block_entry(RepairObligation(addr=addr, reason=reason))
+
+    def _drain_worklist(self) -> None:
+        """Process queued work while enforcing the global repair iteration limit."""
+
+        while self.queue:
+            self.iterations += 1
+            if self.iterations > MAX_CUSTOM_CFG_WORKLIST_ITERATIONS:
+                raise RuntimeError(
+                    "Custom CFG worklist exceeded "
+                    f"{MAX_CUSTOM_CFG_WORKLIST_ITERATIONS} iterations for {self.func_addr:#x}; "
+                    f"top counts: {self.processed_counts}"
+                )
+
+            key = self.queue.popleft()
+            obligation = self.pending.pop(key)
+            addr = obligation.addr
+            self.processed_counts[addr] = self.processed_counts.get(addr, 0) + 1
+            if self.processed_counts[addr] <= 5:
+                logger.info(
+                    f"Custom CFG processing {addr:#x} for function {self.func_addr:#x} "
+                    f"(visit {self.processed_counts[addr]})"
+                )
+
+            self._process_obligation(obligation)
+            self._record_obligation_progress(key, obligation)
 
     def _register_custom_graphs(self) -> None:
         """Attach the repaired live graph to every node wrapper used by rendering."""
@@ -2242,32 +2368,35 @@ class _RepairSession:
             f"{len(initial_bad_addrs)} anomalous block start(s)"
         )
 
-        for addr in initial_bad_addrs:
-            self.ensure_block_entry(RepairObligation(addr=addr, reason="seed_anomaly"))
+        self._queue_recoveries(initial_bad_addrs, "seed_anomaly")
 
-        while self.queue:
-            self.iterations += 1
-            if self.iterations > MAX_CUSTOM_CFG_WORKLIST_ITERATIONS:
-                raise RuntimeError(
-                    "Custom CFG worklist exceeded "
-                    f"{MAX_CUSTOM_CFG_WORKLIST_ITERATIONS} iterations for {self.func_addr:#x}; "
-                    f"top counts: {self.processed_counts}"
+        while True:
+            self._drain_worklist()
+
+            cleanup_changed = self._cleanup()
+            remaining_bad_addrs = self._anomalous_addrs()
+            if not remaining_bad_addrs:
+                break
+            if not cleanup_changed:
+                logger.warning(
+                    f"Custom CFG repair for {self.func_addr:#x} stopped with "
+                    f"{len(remaining_bad_addrs)} unresolved anomaly start(s): "
+                    f"{', '.join(hex(addr) for addr in remaining_bad_addrs)}"
                 )
+                break
 
-            key = self.queue.popleft()
-            obligation = self.pending.pop(key)
-            addr = obligation.addr
-            self.processed_counts[addr] = self.processed_counts.get(addr, 0) + 1
-            if self.processed_counts[addr] <= 5:
-                logger.info(
-                    f"Custom CFG processing {addr:#x} for function {self.func_addr:#x} "
-                    f"(visit {self.processed_counts[addr]})"
+            logger.info(
+                f"Cleanup exposed {len(remaining_bad_addrs)} anomaly start(s) for "
+                f"function {self.func_addr:#x}; continuing repair"
+            )
+            self._queue_recoveries(remaining_bad_addrs, "post_cleanup_anomaly")
+            if not self.queue:
+                logger.warning(
+                    f"Custom CFG repair for {self.func_addr:#x} could not queue "
+                    "cleanup-exposed anomalies"
                 )
+                break
 
-            self._process_obligation(obligation)
-            self._record_obligation_progress(key, obligation)
-
-        self._cleanup()
         self._register_custom_graphs()
         return CustomCFG(
             graph=self.graph,
@@ -2279,12 +2408,12 @@ class _RepairSession:
 
 def _cleanup_unreachable_function_nodes(
     graph: CFGGraph, bounds: FunctionBounds, func_addr: int
-) -> None:
-    """Remove nodes in one function that are unreachable from the entry node."""
+) -> bool:
+    """Remove unreachable function nodes and report whether the graph changed."""
 
     entry_nodes = _nodes_at_addr(graph, bounds, func_addr)
     if not entry_nodes:
-        return
+        return False
 
     reachable: set[CFGNode] = set()
     queue: deque[CFGNode] = deque(entry_nodes)
@@ -2305,6 +2434,8 @@ def _cleanup_unreachable_function_nodes(
     if stale_nodes:
         for node in stale_nodes:
             graph.remove_node(node)
+        return True
+    return False
 
 
 def _remove_nodes(graph: CFGGraph, nodes: Iterable[CFGNode]) -> None:

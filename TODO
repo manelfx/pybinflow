@@ -176,10 +176,6 @@ exceeded its 5,000-iteration safety limit.
 
 Prioritized work:
 
-- Resolve successful repairs that still report `linear_split` anomalies after
-  completion. Candidate functions:
-  - `i386/bronze_ropchain`, `_dl_aux_init` at `0x806f870`
-  - `x86_64/langdetect_clang`, `msort_with_tmp.part.0` at `0x408ce0`
 - Ensure external successors and later in-function reconciliation cooperate.
   Candidate functions:
   - `x86_64/langdetect_clang`, `execute_cfa_program` at `0x4741a0`
@@ -191,8 +187,9 @@ Prioritized work:
     `0x48ef40`
 - Profile and reduce custom CFG repair time without changing its output.
   Candidate function:
-  - `s390x/test-instr_s390x`, `_IO_vfscanf` at `0x800555f8` currently takes
-    about 30 seconds to render.
+  - `s390x/test-instr_s390x`, `_IO_vfscanf` at `0x800555f8` has regressed
+    significantly in rendering time. It is temporarily excluded from the
+    custom-CFG checkpoint suite until this performance regression is fixed.
 
 For each candidate, inspect the repaired CFG against objdump before promoting
 its custom-mode DOT output as a golden artifact.

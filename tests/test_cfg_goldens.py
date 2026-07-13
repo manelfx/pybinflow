@@ -136,7 +136,10 @@ def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
         for index, row in enumerate(reader, start=1):
             # Skip known-problematic binaries before counting rows toward the
             # optional local test limit.
-            if any(fnmatch.fnmatch(row["filepath"], pattern) for pattern in SKIPPED_BINARIES):
+            if any(
+                fnmatch.fnmatch(row["filepath"], pattern)
+                for pattern in SKIPPED_BINARIES
+            ):
                 continue
             if _csv_bool(row["duplicate"]):
                 continue
@@ -227,7 +230,9 @@ def _error_artifact(exc: Exception) -> str:
 
     # Persist the full traceback alongside the exception summary so a failed run
     # can be debugged directly from the generated artifact without reproducing it.
-    traceback_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    traceback_text = "".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__)
+    )
     return f"# render-error\n{type(exc).__name__}: {exc}\n\n{traceback_text}"
 
 
@@ -253,8 +258,33 @@ def _normalize_raw_dot(text: str) -> str:
     footer = [lines[-1]]
     body = lines[1:-1]
 
-    node_lines = sorted(line for line in body if "->" not in line)
-    edge_lines = sorted(line for line in body if "->" in line)
+    node_lines: list[str] = []
+    edge_lines: list[str] = []
+    index = 0
+    while index < len(body):
+        line = body[index]
+        if line.startswith("subgraph "):
+            # Layout constraints can be represented as multi-line subgraphs.
+            # Keep each one intact instead of sorting its individual lines.
+            subgraph_lines = [line]
+            brace_depth = line.count("{") - line.count("}")
+            index += 1
+            while index < len(body) and brace_depth > 0:
+                subgraph_line = body[index]
+                subgraph_lines.append(subgraph_line)
+                brace_depth += subgraph_line.count("{") - subgraph_line.count("}")
+                index += 1
+            node_lines.append("\n".join(subgraph_lines))
+            continue
+
+        if "->" in line:
+            edge_lines.append(line)
+        else:
+            node_lines.append(line)
+        index += 1
+
+    node_lines.sort()
+    edge_lines.sort()
     normalized = header + node_lines + edge_lines + footer
     return "\n".join(normalized) + "\n"
 
@@ -281,7 +311,10 @@ def _extract_render_cfg() -> Callable[[str, str, str], str]:
             continue
         for cell in route.endpoint.__closure__ or ():
             candidate = cell.cell_contents
-            if callable(candidate) and getattr(candidate, "__name__", "") == "_render_cfg":
+            if (
+                callable(candidate)
+                and getattr(candidate, "__name__", "") == "_render_cfg"
+            ):
                 return candidate
 
     raise AssertionError("Unable to extract _render_cfg from create_app()")
@@ -292,16 +325,22 @@ def _existing_files(config_dir: Path) -> set[Path]:
 
     if not config_dir.exists():
         return set()
-    return {path.relative_to(config_dir) for path in config_dir.rglob("*") if path.is_file()}
+    return {
+        path.relative_to(config_dir) for path in config_dir.rglob("*") if path.is_file()
+    }
 
 
 def _prune_stale_files(config_dir: Path, expected_files: set[Path]) -> None:
     """Delete generated files that are no longer expected for a given run."""
 
     # Keep generated directories tidy when row limits change or old artifacts disappear.
-    for stale_path in sorted(_existing_files(config_dir) - expected_files, reverse=True):
+    for stale_path in sorted(
+        _existing_files(config_dir) - expected_files, reverse=True
+    ):
         (config_dir / stale_path).unlink()
-    for directory in sorted((path for path in config_dir.rglob("*") if path.is_dir()), reverse=True):
+    for directory in sorted(
+        (path for path in config_dir.rglob("*") if path.is_dir()), reverse=True
+    ):
         try:
             directory.rmdir()
         except OSError:
@@ -427,7 +466,10 @@ def _manage_summary_files() -> Iterator[None]:
 
     limit = _env_limit()
     # Track per-config aggregate stats as the parametrized row tests execute.
-    RUN_STATE = {config.name: ConfigRunState(expected_files={Path(SUMMARY_NAME)}) for config in ACTIVE_CONFIGS}
+    RUN_STATE = {
+        config.name: ConfigRunState(expected_files={Path(SUMMARY_NAME)})
+        for config in ACTIVE_CONFIGS
+    }
 
     yield
 
@@ -461,12 +503,18 @@ def _manage_summary_files() -> Iterator[None]:
         # In full compare runs, the committed summary must match the just-computed
         # summary, and there should be no unexpected files left in the golden tree.
         if not golden_summary_path.exists():
-            failures.append(f"{config.name}: missing summary file {golden_summary_path.relative_to(TESTS_DIR)}")
+            failures.append(
+                f"{config.name}: missing summary file {golden_summary_path.relative_to(TESTS_DIR)}"
+            )
         elif golden_summary_path.read_text(encoding="utf-8") != summary_text:
-            failures.append(f"{config.name}: summary mismatch {golden_summary_path.relative_to(TESTS_DIR)}")
+            failures.append(
+                f"{config.name}: summary mismatch {golden_summary_path.relative_to(TESTS_DIR)}"
+            )
 
         unexpected_files = sorted(_existing_files(golden_dir) - state.expected_files)
-        failures.extend(f"{config.name}: unexpected golden file {path}" for path in unexpected_files)
+        failures.extend(
+            f"{config.name}: unexpected golden file {path}" for path in unexpected_files
+        )
 
     RUN_STATE = {}
     ACTIVE_CACHE_CONFIG = None
@@ -476,10 +524,13 @@ def _manage_summary_files() -> Iterator[None]:
         preview = "\n".join(failures[:20])
         remaining = len(failures) - min(len(failures), 20)
         suffix = f"\n... and {remaining} more failure(s)" if remaining else ""
-        pytest.fail(f"Summary validation had {len(failures)} issue(s).\n{preview}{suffix}")
+        pytest.fail(
+            f"Summary validation had {len(failures)} issue(s).\n{preview}{suffix}"
+        )
 
 
 if CURRENT_MODE == "compare":
+
     @pytest.fixture(scope="function")
     def _config_cache_scope(config: GoldenConfig) -> Iterator[None]:
         """Reset cached project state only when pytest switches config groups."""
@@ -494,10 +545,11 @@ if CURRENT_MODE == "compare":
 
         yield
 
-
     @pytest.mark.slow
     @pytest.mark.parametrize("row", ROWS, ids=_row_id)
-    @pytest.mark.parametrize("config", ACTIVE_CONFIGS, ids=[config.name for config in ACTIVE_CONFIGS])
+    @pytest.mark.parametrize(
+        "config", ACTIVE_CONFIGS, ids=[config.name for config in ACTIVE_CONFIGS]
+    )
     def test_render_cfg_goldens(
         config: GoldenConfig,
         row: dict[str, Any],
@@ -519,11 +571,13 @@ if CURRENT_MODE == "compare":
 
         # Patch every module that imports `get_settings()` directly so the render path
         # sees a coherent configuration from app entrypoint down to CFG generation.
-        with patch.object(settings_module, "get_settings", return_value=settings), \
-                patch.object(helpers_module, "get_settings", return_value=settings), \
-                patch.object(app_module, "get_settings", return_value=settings), \
-                patch.object(render_module, "get_settings", return_value=settings), \
-                patch.object(project_module, "get_settings", return_value=settings):
+        with (
+            patch.object(settings_module, "get_settings", return_value=settings),
+            patch.object(helpers_module, "get_settings", return_value=settings),
+            patch.object(app_module, "get_settings", return_value=settings),
+            patch.object(render_module, "get_settings", return_value=settings),
+            patch.object(project_module, "get_settings", return_value=settings),
+        ):
             render_cfg = _extract_render_cfg()
             try:
                 artifact_text = render_cfg(row["filepath"], row["function_addr"], "raw")

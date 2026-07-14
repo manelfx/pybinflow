@@ -29,6 +29,7 @@ class GlobalSettings(BaseSettings):
     root: Path = Field(..., description="The root directory for binaries")
     cfg_mode: CfgMode = Field("custom", description="CFG reconstruction mode and fallback strategy")
     comments: CliImplicitFlag[bool] = Field(True, description="Appends comments to instructions when available")
+    dfs_rank: CliImplicitFlag[bool] = Field(False, description="Improves CFG layout on loop-back")
 
     log_level: str = Field("INFO", description="Flag to define level for logging messages")  # type: ignore
     debug: CliImplicitFlag[bool] = Field(False, description="Flag to enable debug mode")

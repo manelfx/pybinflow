@@ -1,6 +1,6 @@
 from typing import Any
 from pydot import Dot, Node as PydotNode, Subgraph
-from .vis import Output, Graph, Node
+from .vis import Edge, Graph, Node, Output
 
 
 escape_map = {
@@ -37,6 +37,7 @@ default_edge_attributes = {
 class DotOutput(Output):
     fname: str
     format: str = "png"
+    dfs_rank: bool = True
     entry_addr: int | None = None
 
     def render_cell(self, key: str, data: dict[str, Any] | None) -> str:
@@ -100,8 +101,10 @@ class DotOutput(Output):
         if label:
             node.pydot.set("label", "<{ %s }>" % label)
 
-    def _pin_entry_to_source_rank(self, digraph: Dot, nodes: list[Node]) -> None:
-        """Keep the requested function entry at the top of rendered layouts."""
+    def _pin_entry_to_source_rank(
+        self, digraph: Dot, edges: list[Edge], nodes: list[Node]
+    ) -> None:
+        """Keep re-entered function entries at the top of rendered layouts."""
 
         if self.entry_addr is None:
             return
@@ -112,12 +115,51 @@ class DotOutput(Output):
         if entry_node is None:
             return
 
-        # Recursive CFGs can give the entry block predecessors, leaving
-        # Graphviz no natural source node. This rank constraint preserves the
-        # visual entry point without changing CFG nodes or control-flow edges.
+        if not any(edge.dst == entry_node for edge in edges):
+            return
+
+        # Recursive or re-entered CFGs can give the entry block predecessors,
+        # leaving Graphviz no natural source node. Ordinary entries already
+        # have that placement, and forcing a rank there distorts the layout.
         rank_group = Subgraph(graph_name="entry_rank", rank="source")
         rank_group.add_node(PydotNode(entry_node.seq))
         digraph.add_subgraph(rank_group)
+
+    def _mark_back_edges_nonconstraining(
+        self, edges: list[Edge], nodes: list[Node]
+    ) -> None:
+        """Keep DFS back-edges visible without letting them drive DOT ranks."""
+
+        outgoing: dict[Node, list[Edge]] = {node: [] for node in nodes}
+        for edge in edges:
+            outgoing.setdefault(edge.src, []).append(edge)
+
+        visited: set[Node] = set()
+        active: set[Node] = set()
+
+        def visit(node: Node) -> None:
+            """Mark edges that close this depth-first traversal as back-edges."""
+
+            visited.add(node)
+            active.add(node)
+            for edge in outgoing.get(node, []):
+                if edge.dst in active:
+                    edge.pydot.set("constraint", "false")
+                elif edge.dst not in visited:
+                    visit(edge.dst)
+            active.remove(node)
+
+        entry_node = next(
+            (node for node in nodes if node.obj.addr == self.entry_addr), None
+        )
+        if entry_node is not None:
+            visit(entry_node)
+
+        # The source may intentionally omit unreachable nodes. Lay out any
+        # remaining components deterministically without changing their edges.
+        for node in nodes:
+            if node not in visited:
+                visit(node)
 
     def generate(self, graph: Graph) -> str:
 
@@ -127,14 +169,18 @@ class DotOutput(Output):
 
         # add nodes, sorted by node (addr)
         nodes = sorted(graph.nodes, key=lambda n: n.obj.addr)
+        # Stable edge order makes Graphviz's layout tie-breaking repeatable.
+        edges = sorted(graph.edges, key=lambda e: (e.src.obj.addr, e.dst.obj.addr))
         for node in nodes:
             self.set_node_label(node)
             digraph.add_node(node.pydot)
 
-        self._pin_entry_to_source_rank(digraph, nodes)
+        self._pin_entry_to_source_rank(digraph, edges, nodes)
+        if self.dfs_rank:
+            self._mark_back_edges_nonconstraining(edges, nodes)
 
-        # add edges
-        for edge in graph.edges:
+        # Add edges in the same deterministic order used by the DFS pass.
+        for edge in edges:
             digraph.add_edge(edge.pydot)
 
         # write graph to output file

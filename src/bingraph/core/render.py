@@ -8,10 +8,7 @@ from angr import Project
 from angr.analyses.cfg import CFGBase
 from loguru import logger
 
-from bingraph.helpers import (
-    CfgMode,
-    get_settings,
-)  # , serialize_function, serialize_function_summary
+from bingraph.helpers import CfgMode
 from . import get_cfg
 from .annotators import ColorSimprocedures, CommentsDataRef, ColorEdgesVex
 from .contents import NodeHead, NodeAsm
@@ -21,7 +18,7 @@ from .sources import CFGSource
 
 
 def plot_cfg(
-    cfg: CFGBase, fname: str, func_addr: int, format: str, comments: bool = True
+    cfg: CFGBase, fname: str, func_addr: int, dfs_rank: bool, comments: bool, format: str
 ) -> None:
 
     logger.info(f"Start CFG plotting function at {hex(func_addr)} as {format}")
@@ -34,7 +31,7 @@ def plot_cfg(
 
     vis = Vis(
         source=CFGSource(func_addr=func_addr),
-        output=DotOutput(fname=fname, format=format, entry_addr=func_addr),
+        output=DotOutput(fname=fname, format=format, dfs_rank=dfs_rank, entry_addr=func_addr),
         transformers=[],
         contents=[NodeHead(), NodeAsm()],
         annotators=annotators,
@@ -47,8 +44,10 @@ def plot_cfg(
 def render_cfg(
     project: Project,
     func_addr: int,
-    format: str = "svg",
-    cfg_mode: CfgMode | None = None,
+    dfs_rank: bool,
+    comments: bool,
+    cfg_mode: CfgMode,
+    format: str,
 ) -> str:
     """
     Render the control flow graph (CFG) of a specific function as an SVG image.
@@ -73,8 +72,6 @@ def render_cfg(
     # Extract the angr CFG first. We still prefer it when the lift succeeds,
     # because it carries richer metadata than a disassembly-only graph.
     cfg = get_cfg(project, func_addr, cfg_mode)
-    settings = get_settings()
-
     # Check if function is found in CFG.
     function = cfg.functions.get(func_addr)
     if not function:
@@ -90,8 +87,9 @@ def render_cfg(
             cfg,
             str(output_base),
             func_addr=func_addr,
+            dfs_rank=dfs_rank,
+            comments=comments,
             format=format,
-            comments=settings.comments,
         )
         output_path = output_base.with_suffix(f".{format}")
         output = output_path.read_text(encoding="utf-8")

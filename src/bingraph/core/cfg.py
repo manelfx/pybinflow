@@ -83,7 +83,16 @@ from typing import Any, Literal, Protocol, cast
 from angr import KnowledgeBase, Project
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGModel, CFGNode
-from capstone import CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_OP_IMM, CsInsn
+from capstone import (
+    CS_GRP_CALL,
+    CS_GRP_INT,
+    CS_GRP_IRET,
+    CS_GRP_JUMP,
+    CS_GRP_PRIVILEGE,
+    CS_GRP_RET,
+    CS_OP_IMM,
+    CsInsn,
+)
 from capstone.arm import ARM_CC_AL, ARM_CC_INVALID
 from capstone.x86 import X86_INS_JMP, X86_INS_LJMP
 from loguru import logger
@@ -97,7 +106,13 @@ from .vis import register_custom_graph
 # repairing a CFG. These are not written directly to graph edges, because the
 # renderer and the rest of the angr-compatible pipeline only expect the usual
 # edge jumpkinds such as Ijk_Boring / Ijk_Call / Ijk_FakeRet.
-TerminatorKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_Fallthrough", "Ijk_Ret"]
+TerminatorKind = Literal[
+    "Ijk_Boring",
+    "Ijk_Call",
+    "Ijk_Fallthrough",
+    "Ijk_Ret",
+    "Ijk_Terminal",
+]
 
 # Edge jumpkinds that we actually materialize in the repaired graph. Keep this
 # aligned with the jumpkind vocabulary used by normal angr CFG edges.
@@ -392,6 +407,13 @@ class InsnSemantics:
     def is_control_transfer(self) -> bool:
         return self.is_ret() or self.is_call() or self.is_jump()
 
+    def may_have_nonfallthrough_vex_semantics(self) -> bool:
+        """Return whether this system instruction needs a narrow VEX check."""
+
+        return bool(
+            {CS_GRP_INT, CS_GRP_IRET, CS_GRP_PRIVILEGE}.intersection(self.insn.groups)
+        )
+
     def is_conditional_jump(self) -> bool:
         """
         Return True when the instruction is a direct conditional branch.
@@ -492,6 +514,37 @@ def _decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
     return capstone_insns[0].insn if capstone_insns else None
 
 
+def _instruction_has_nonfallthrough_vex_semantics(
+    project: Project, insn: CsInsn
+) -> bool:
+    """Return whether VEX models one exceptional instruction as terminal."""
+
+    semantic = InsnSemantics(insn)
+    if not semantic.may_have_nonfallthrough_vex_semantics():
+        return False
+
+    try:
+        vex = project.factory.block(
+            insn.address,
+            size=insn.size,
+            strict_block_end=True,
+            cross_insn_opt=False,
+        ).vex
+    except Exception as exc:
+        logger.warning(
+            f"Custom CFG could not lift exceptional instruction at {insn.address:#x}: {exc}"
+        )
+        return False
+
+    return _vex_jumpkind_is_terminal(vex.jumpkind)
+
+
+def _vex_jumpkind_is_terminal(jumpkind: str) -> bool:
+    """Return whether VEX marks a block as a return or a synchronous trap."""
+
+    return jumpkind == "Ijk_Ret" or jumpkind.startswith("Ijk_Sig")
+
+
 def _arch_has_delay_slot(project: Project) -> bool:
     """Return True for architectures where control transfers consume a delay slot."""
 
@@ -524,7 +577,10 @@ def _control_transfer_index(project: Project, block_insns: list[CsInsn]) -> int 
 
 
 def _lift_block_terminator(
-    project: Project, bounds: FunctionBounds, block_insns: list[CsInsn]
+    project: Project,
+    bounds: FunctionBounds,
+    block_insns: list[CsInsn],
+    has_nonfallthrough_vex_terminator: bool = False,
 ) -> TerminatorInfo:
     """
     Lift one recovered block with VEX and derive its control-flow shape.
@@ -541,6 +597,9 @@ def _lift_block_terminator(
     term_idx = _control_transfer_index(project, block_insns)
 
     if term_idx is None:
+        if has_nonfallthrough_vex_terminator:
+            return TerminatorInfo(jumpkind="Ijk_Terminal")
+
         next_addr = block_end_addr
         fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
         return TerminatorInfo(
@@ -1074,7 +1133,7 @@ def node_has_truncated_leaf(graph: CFGGraph, func_addr: int, node) -> bool:
     """Return True when a CFG node stops before a real terminator and has no exits."""
 
     try:
-        if node.block.vex.jumpkind == "Ijk_Ret":
+        if _vex_jumpkind_is_terminal(node.block.vex.jumpkind):
             return False
     except Exception:
         pass
@@ -1105,6 +1164,25 @@ def node_has_truncated_leaf(graph: CFGGraph, func_addr: int, node) -> bool:
         for other in graph.nodes()
     )
     return has_later_function_node
+
+
+def node_has_foreign_function_owner(graph: CFGGraph, func_addr: int, node) -> bool:
+    """Return True for an in-function successor mis-owned by CFGFast."""
+
+    if node.function_address == func_addr:
+        return False
+
+    if not any(
+        predecessor.function_address == func_addr
+        for predecessor in graph.predecessors(node)
+    ):
+        return False
+
+    logger.warning(
+        f"Node {node.addr:#x} is reached from function {func_addr:#x} but is "
+        f"owned by CFGFast function {node.function_address:#x}"
+    )
+    return True
 
 
 def _node_needs_repair(
@@ -1518,6 +1596,7 @@ def _recover_block(
     cur = start_addr
     insns: list[CsInsn] = []
     has_delay_slot = _arch_has_delay_slot(project)
+    has_nonfallthrough_vex_terminator = False
 
     while bounds.addr <= cur < bounds.end_addr:
         if insns and cur in stop_addrs:
@@ -1539,12 +1618,21 @@ def _recover_block(
                     insns.append(delay_insn)
             break
 
+        if _instruction_has_nonfallthrough_vex_semantics(project, insn):
+            has_nonfallthrough_vex_terminator = True
+            break
+
         cur = next_addr
 
     if not insns:
         return None
 
-    terminator = _lift_block_terminator(project, bounds, insns)
+    terminator = _lift_block_terminator(
+        project,
+        bounds,
+        insns,
+        has_nonfallthrough_vex_terminator=has_nonfallthrough_vex_terminator,
+    )
     block = BlockSpec(
         addr=insns[0].address,
         size=sum(obj.size for obj in insns),
@@ -2250,6 +2338,23 @@ class _RepairSession:
             }
         )
 
+    def _initial_anomalous_addrs(self) -> list[int]:
+        """Return seed anomalies plus in-bounds nodes mis-owned by CFGFast."""
+
+        seed_anomalies = {
+            node.addr
+            for node in _iter_seed_function_nodes(self.seed_cfg, self.func_addr)
+            if _node_needs_repair(
+                self.project, self.graph, self.bounds, self.func_addr, node
+            )
+        }
+        ownership_boundaries = {
+            node.addr
+            for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+            if node_has_foreign_function_owner(self.graph, self.func_addr, node)
+        }
+        return sorted(seed_anomalies | ownership_boundaries)
+
     def _queue_recoveries(self, addrs: Iterable[int], reason: str) -> None:
         """Seed ordinary recovery work for a group of anomalous block starts."""
 
@@ -2347,15 +2452,7 @@ class _RepairSession:
     def run(self) -> CFGBase | CustomCFG:
         """Execute the repair worklist and return the repaired CFG wrapper."""
 
-        initial_bad_addrs = sorted(
-            {
-                node.addr
-                for node in _iter_seed_function_nodes(self.seed_cfg, self.func_addr)
-                if _node_needs_repair(
-                    self.project, self.graph, self.bounds, self.func_addr, node
-                )
-            }
-        )
+        initial_bad_addrs = self._initial_anomalous_addrs()
         if not initial_bad_addrs:
             logger.info(
                 f"Seed CFG for function {self.func_addr:#x} has no known anomalies; "

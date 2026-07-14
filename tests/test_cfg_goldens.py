@@ -242,53 +242,6 @@ def _is_error_artifact(text: str) -> bool:
     return text.startswith("# render-error\n")
 
 
-def _normalize_raw_dot(text: str) -> str:
-    """Normalize raw DOT output so goldens are stable across line ordering."""
-
-    # Raw DOT edge ordering can vary between renders, especially in emulated mode.
-    # Sorting node and edge lines separately makes golden comparisons stable.
-    if not text.startswith("digraph G {\n") or not text.rstrip().endswith("}"):
-        return text
-
-    lines = text.splitlines()
-    if len(lines) < 3:
-        return text
-
-    header = [lines[0]]
-    footer = [lines[-1]]
-    body = lines[1:-1]
-
-    node_lines: list[str] = []
-    edge_lines: list[str] = []
-    index = 0
-    while index < len(body):
-        line = body[index]
-        if line.startswith("subgraph "):
-            # Layout constraints can be represented as multi-line subgraphs.
-            # Keep each one intact instead of sorting its individual lines.
-            subgraph_lines = [line]
-            brace_depth = line.count("{") - line.count("}")
-            index += 1
-            while index < len(body) and brace_depth > 0:
-                subgraph_line = body[index]
-                subgraph_lines.append(subgraph_line)
-                brace_depth += subgraph_line.count("{") - subgraph_line.count("}")
-                index += 1
-            node_lines.append("\n".join(subgraph_lines))
-            continue
-
-        if "->" in line:
-            edge_lines.append(line)
-        else:
-            node_lines.append(line)
-        index += 1
-
-    node_lines.sort()
-    edge_lines.sort()
-    normalized = header + node_lines + edge_lines + footer
-    return "\n".join(normalized) + "\n"
-
-
 def _clear_caches() -> None:
     """Reset cached CFG helpers before pytest switches to another config."""
 
@@ -300,7 +253,7 @@ def _clear_caches() -> None:
     project_module.get_cfg.cache_clear()
 
 
-def _extract_render_cfg() -> Callable[[str, str, str], str]:
+def _extract_render_cfg() -> Callable[..., str]:
     """Extract the nested `_render_cfg` callable from the real FastAPI app."""
 
     # `_render_cfg` is nested inside `create_app()`, so pull it out from the
@@ -575,13 +528,13 @@ if CURRENT_MODE == "compare":
             patch.object(settings_module, "get_settings", return_value=settings),
             patch.object(helpers_module, "get_settings", return_value=settings),
             patch.object(app_module, "get_settings", return_value=settings),
-            patch.object(render_module, "get_settings", return_value=settings),
             patch.object(project_module, "get_settings", return_value=settings),
         ):
             render_cfg = _extract_render_cfg()
             try:
-                artifact_text = render_cfg(row["filepath"], row["function_addr"], "raw")
-                artifact_text = _normalize_raw_dot(artifact_text)
+                artifact_text = render_cfg(
+                    row["filepath"], row["function_addr"], format="raw"
+                )
                 state.render_successes += 1
             except Exception as exc:  # pragma: no cover - exercised against real corpus
                 artifact_text = _error_artifact(exc)

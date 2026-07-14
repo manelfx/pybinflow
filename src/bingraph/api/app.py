@@ -147,23 +147,29 @@ def create_app() -> FastAPI:
     def _render_cfg(
         filepath: str,
         function: str,
-        format: str = "svg",
+        dfs: bool | None = None,
+        comments: bool | None = None,
         mode: CfgMode | None = None,
+        format: str = "svg",
     ) -> str:
         func_addr = _resolve_faddr(function)
         project = _get_project(filepath)
-        return render_cfg(project, func_addr, format, mode)
+        dfs = settings.dfs_rank if dfs is None else dfs
+        comments = settings.comments if comments is None else comments
+        return render_cfg(project, func_addr, dfs, comments, mode, format)
 
     @app.get("/cfg")
     def cfg(
         request: Request,
         filepath: str = Query(...),
         function: str = Query(...),
+        dfs: bool | None = Query(None),
+        comments: bool | None = Query(None),
         mode: CfgMode | None = Query(None),
     ) -> Response:
         """Endpoint to return the CFG of a specified function as an SVG image."""
 
-        svg = _render_cfg(filepath, function, mode=mode)
+        svg = _render_cfg(filepath, function, dfs, comments, mode, format="svg")
         return Response(content=svg, media_type="image/svg+xml")
 
     @app.get("/api/cfg", response_model=dict[str, str])
@@ -171,10 +177,12 @@ def create_app() -> FastAPI:
                 filepath: str = Query(...),
                 function: str = Query(...),
                 format: str = Query(...),
+                dfs: bool | None = Query(None),
+                comments: bool | None = Query(None),
                 mode: CfgMode | None = Query(None)) -> dict[str, str]:
         """Endpoint to return the CFG of a specified function."""
 
-        cfg = _render_cfg(filepath, function, format=format, mode=mode)
+        cfg = _render_cfg(filepath, function, dfs, comments, mode, format)
         return {"graph": cfg}
 
     return app

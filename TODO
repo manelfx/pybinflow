@@ -200,3 +200,46 @@ Repair invariant:
   `cfg_mode_none`. The completed corpus run observed zero successful repairs
   that left the artifact unchanged; a future no-op repair is an investigation
   candidate rather than an expected result.
+
+=== Investigate x86 REP instruction loops
+
+Observed while inspecting `x86_64/static`, function `abort` at `0x40dc00`:
+
+- angr may model an x86 `REP` string instruction as a single-instruction basic
+  block with a self-loop.
+- That loop represents the instruction's internal repetition, not a
+  control-flow edge that fetches the instruction again from the architectural
+  CFG's point of view.
+
+Investigate whether the renderer or custom CFG repair should suppress those
+micro-architectural self-loops and merge the instruction with its natural
+predecessor or successor block when no real basic-block boundary exists.
+
+=== Investigate dominator-aware CFG layout
+
+The current optional DFS layout pass marks every depth-first back-edge with
+Graphviz `constraint=false`. This can help when DOT places a loop header above
+the function entry, but it also flattens useful nested-loop structure. For
+example, the loop around `0x8060dbf` in
+`i386/bronze_ropchain:__strcmp_sse4_2` reads better with Graphviz's default
+rank constraints intact. Conversely,
+`x86_64/langdetect_clang:execute_cfa_program` at `0x4741a0` benefits when its
+outer return edge `0x474245 -> 0x4741f0` does not constrain DOT ranks.
+
+Explore a renderer-only policy that uses CFG semantics rather than DFS order:
+
+- Compute dominators from the function entry and recognize natural-loop
+  back-edges when the target dominates the source.
+- Build natural-loop bodies and their nesting relationships.
+- Preserve rank constraints for inner loops, while considering
+  `constraint=false` only for selected outer loop latches that cause DOT to
+  place a dominated loop header above the entry.
+- Consider higher Graphviz edge weights for dominator-tree edges, encouraging
+  the main layout spine to follow semantic dominance.
+- As a later refinement, use post-dominators to recognize conditional branch
+  reconvergence and improve placement of joins.
+
+Keep Graphviz responsible for layering, crossing minimization, and edge
+routing. A fully custom layout engine would duplicate substantial mature
+Graphviz functionality and should not be pursued unless this hybrid approach
+proves insufficient.

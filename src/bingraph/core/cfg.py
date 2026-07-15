@@ -42,6 +42,11 @@ Terminology used throughout the module:
   It may receive incoming edge claims, but never supplies control-flow
   semantics itself; recovery replaces it with a decoded block or cleanup
   removes it.
+- unresolved-jump fallback:
+  An `UnresolvableJumpTarget` simprocedure keeps an indirect dispatch visible
+  when static recovery cannot prove its targets. It is connected to otherwise
+  disconnected in-function blocks so cleanup preserves those CFGFast-discovered
+  regions without inventing direct case edges from the original dispatch.
 
 High-level algorithm:
 
@@ -59,12 +64,16 @@ High-level algorithm:
 5. Reject a requeued obligation when neither the graph revision nor its merged
    repair state changed. A separate iteration limit protects against a graph
    that continues changing without converging.
-6. When the worklist is empty, remove unreachable stale nodes and temporary
-   placeholders. Cleanup can expose a new local anomaly, such as a linear
-   split whose extra predecessors were stale. If cleanup changed the graph,
-   queue those newly visible anomalies for another worklist pass. If cleanup
-   made no change, report any remaining anomalies instead of retrying them
-   indefinitely.
+6. When the worklist is empty, connect any remaining unresolved indirect-jump
+   placeholder to disconnected seed blocks. A placeholder with exactly one
+   indirect source is flattened into explicitly marked unresolved candidate
+   edges, preserving uncertainty without retaining a synthetic intermediary.
+   Then remove genuinely unreachable stale nodes and temporary placeholders.
+   These preserving edges deliberately do not claim new basic-block leaders.
+   Cleanup can expose a new local anomaly, such as a linear split whose extra
+   predecessors were stale. If cleanup changed the graph, queue those newly
+   visible anomalies for another worklist pass. If cleanup made no change,
+   report any remaining anomalies instead of retrying them indefinitely.
 7. Expose the repaired graph through a small CFG-like wrapper.
 
 The implementation is intentionally conservative. It prefers localized repairs
@@ -83,23 +92,17 @@ from typing import Any, Literal, Protocol, cast
 from angr import KnowledgeBase, Project
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGModel, CFGNode
-from capstone import (
-    CS_GRP_CALL,
-    CS_GRP_INT,
-    CS_GRP_IRET,
-    CS_GRP_JUMP,
-    CS_GRP_PRIVILEGE,
-    CS_GRP_RET,
-    CS_OP_IMM,
-    CsInsn,
-)
-from capstone.arm import ARM_CC_AL, ARM_CC_INVALID
-from capstone.x86 import X86_INS_JMP, X86_INS_LJMP
+from capstone import CsInsn
 from loguru import logger
 import pyvex
 
 from .symbols import FunctionSymbol, list_function_symbols
 from .vis import register_custom_graph
+from bingraph.helpers.capstone import (
+    InsnSemantics,
+    arch_has_delay_slot,
+    control_transfer_index,
+)
 
 
 # Internal-only labels describing how a recovered block terminates while we are
@@ -127,6 +130,10 @@ EntryResolutionPolicy = Literal["queued", "immediate"]
 # converging. Stable requeues are diagnosed earlier by PendingObligation state.
 MAX_CUSTOM_CFG_WORKLIST_ITERATIONS = 5_000
 
+# Static table recovery is deliberately bounded. Larger index domains require a
+# stronger range proof than this initial local VEX matcher provides.
+MAX_STATIC_JUMPTABLE_ENTRIES = 256
+
 
 class CFGGraph(Protocol):
     """Public graph operations shared by NetworkX and angr's SpillingCFG."""
@@ -150,6 +157,8 @@ class CFGGraph(Protocol):
     def add_node(self, node: CFGNode) -> None: ...
 
     def add_edge(self, src: CFGNode, dst: CFGNode, **attrs: Any) -> None: ...
+
+    def remove_edge(self, src: CFGNode, dst: CFGNode) -> None: ...
 
     def remove_node(self, node: CFGNode) -> None: ...
 
@@ -191,6 +200,56 @@ class FunctionBounds:
     end_addr: int
     size: int
     symbol: FunctionSymbol
+
+
+@dataclass(frozen=True)
+class StaticJumpTable:
+    """A high-confidence relative jump table described by a VEX terminator."""
+
+    base_register_offset: int
+    base_bits: int
+    table_displacement: int
+    index_register_offset: int
+    index_bits: int
+    entry_size: int
+    endness: str
+    signed_entries: bool
+
+
+@dataclass
+class CustomCFGStats:
+    """Transformation and shape counters for one custom CFG repair session."""
+
+    input_blocks: int = 0
+    input_edges: int = 0
+    input_anomalies: int = 0
+    output_blocks: int = 0
+    output_edges: int = 0
+    output_anomalies: int = 0
+    worklist_obligations: int = 0
+    blocks_redecoded: int = 0
+    blocks_replaced: int = 0
+    linear_block_merges: int = 0
+    explicit_splits: int = 0
+    placeholders_created: int = 0
+    external_targets_created: int = 0
+    edges_added: int = 0
+    static_jump_tables_resolved: int = 0
+    static_jump_targets_added: int = 0
+    unresolved_jump_edges_removed: int = 0
+    unresolved_fallback_edges_added: int = 0
+    unresolved_fallbacks_flattened: int = 0
+    unresolved_candidate_edges_flattened: int = 0
+    unreachable_blocks_removed: int = 0
+    placeholders_pruned: int = 0
+    orphan_simprocedures_pruned: int = 0
+    function_owners_canonicalized: int = 0
+    cleanup_rounds: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        """Return a stable log-friendly view of the collected counters."""
+
+        return {field: getattr(self, field) for field in self.__dataclass_fields__}
 
 
 @dataclass
@@ -373,95 +432,6 @@ class CustomCFG(SimpleNamespace):
     kb: KnowledgeBase
 
 
-class InsnSemantics:
-    """
-    Small wrapper around a Capstone instruction.
-
-    The custom CFG builder uses Capstone for bounded block recovery, but wants
-    higher-level predicates such as "is this a control-transfer instruction?" in
-    a place that reads clearly. This helper intentionally stays lightweight:
-    it only exposes generic properties needed before we ask VEX for the final
-    branch shape of a recovered block.
-    """
-
-    def __init__(self, insn: CsInsn):
-        self.insn = insn
-
-    @property
-    def address(self) -> int:
-        return self.insn.address
-
-    @property
-    def size(self) -> int:
-        return self.insn.size
-
-    def is_ret(self) -> bool:
-        return CS_GRP_RET in self.insn.groups
-
-    def is_call(self) -> bool:
-        return CS_GRP_CALL in self.insn.groups
-
-    def is_jump(self) -> bool:
-        return CS_GRP_JUMP in self.insn.groups
-
-    def is_control_transfer(self) -> bool:
-        return self.is_ret() or self.is_call() or self.is_jump()
-
-    def may_have_nonfallthrough_vex_semantics(self) -> bool:
-        """Return whether this system instruction needs a narrow VEX check."""
-
-        return bool(
-            {CS_GRP_INT, CS_GRP_IRET, CS_GRP_PRIVILEGE}.intersection(self.insn.groups)
-        )
-
-    def is_conditional_jump(self) -> bool:
-        """
-        Return True when the instruction is a direct conditional branch.
-
-        We keep this heuristic intentionally narrow: only direct jumps with a
-        known branch target are considered here. Conditional branches often
-        expose their condition either through an extra operand (for example
-        Thumb `cbz r2, #target`) or through an architecture-specific condition
-        code even when the target is the only explicit operand (for example
-        x86 `jne target` or ARM `bne target`). Plain ARM `b target` carries the
-        unconditional `AL` condition code and must not be treated as
-        conditional just because it has one immediate operand.
-        """
-
-        if not self.is_jump() or self.direct_target() is None:
-            return False
-
-        if len(self.insn.operands) > 1:
-            return True
-
-        arm_cc = getattr(self.insn, "cc", ARM_CC_INVALID)
-        if arm_cc == ARM_CC_AL:
-            return False
-        if arm_cc not in {ARM_CC_INVALID, ARM_CC_AL}:
-            return True
-
-        insn_id = getattr(self.insn, "id", None)
-        if insn_id in {X86_INS_JMP, X86_INS_LJMP}:
-            return False
-
-        return True
-
-    def direct_target(self) -> int | None:
-        # Do not assume the branch target is operand 0. Instructions such as
-        # Thumb `cbz r2, #0x733` and S390 `cije r1, -1, target` place their
-        # condition inputs before the branch destination. Capstone presents the
-        # destination as the final immediate operand for these direct branches.
-        for operand in reversed(self.insn.operands):
-            if getattr(operand, "type", None) != CS_OP_IMM:
-                continue
-
-            imm = getattr(operand, "imm", None)
-            if isinstance(imm, int):
-                return imm
-
-        return None
-
-
 def _lookup_function_bounds(project: Project, func_addr: int) -> FunctionBounds:
     """
     Return function bounds from the symbol view used across bingraph.
@@ -492,6 +462,351 @@ def _is_direct_target_valid(bounds: FunctionBounds, target: int | None) -> bool:
     """Return True when a direct branch target is inside the current function."""
 
     return target is not None and bounds.addr <= target < bounds.end_addr
+
+
+def _vex_tmp_definitions(vex) -> dict[int, Any]:
+    """Return the local VEX temporary definitions used to unfold expressions."""
+
+    return {
+        stmt.tmp: stmt.data
+        for stmt in vex.statements
+        if isinstance(stmt, pyvex.stmt.WrTmp)
+    }
+
+
+def _resolve_vex_expr(expr, definitions: dict[int, Any]):
+    """Follow local VEX temporary references until reaching a concrete expression."""
+
+    seen: set[int] = set()
+    while isinstance(expr, pyvex.expr.RdTmp):
+        if expr.tmp in seen:
+            return None
+        seen.add(expr.tmp)
+        expr = definitions.get(expr.tmp)
+        if expr is None:
+            return None
+    return expr
+
+
+def _vex_const_value(expr, definitions: dict[int, Any]) -> int | None:
+    """Return a VEX constant's value after resolving local temporaries."""
+
+    expr = _resolve_vex_expr(expr, definitions)
+    if not isinstance(expr, pyvex.expr.Const):
+        return None
+    value = expr.con.value
+    return value if isinstance(value, int) else None
+
+
+def _vex_get_key(expr, definitions: dict[int, Any], vex) -> tuple[int, int] | None:
+    """Return ``(register_offset, bits)`` for a VEX register read expression."""
+
+    expr = _resolve_vex_expr(expr, definitions)
+    if not isinstance(expr, pyvex.expr.Get):
+        return None
+    return expr.offset, expr.result_size(vex.tyenv)
+
+
+def _vex_add_terms(expr, definitions: dict[int, Any]) -> list[Any] | None:
+    """Flatten a VEX integer-addition expression into its non-additive terms."""
+
+    expr = _resolve_vex_expr(expr, definitions)
+    if expr is None:
+        return None
+    if isinstance(expr, pyvex.expr.Binop) and expr.op.startswith("Iop_Add"):
+        left = _vex_add_terms(expr.args[0], definitions)
+        right = _vex_add_terms(expr.args[1], definitions)
+        if left is None or right is None:
+            return None
+        return [*left, *right]
+    return [expr]
+
+
+def _vex_index_key(expr, definitions: dict[int, Any], vex) -> tuple[int, int] | None:
+    """Return the original register identity for a zero-extended table index."""
+
+    expr = _resolve_vex_expr(expr, definitions)
+    while isinstance(expr, pyvex.expr.Unop) and "Uto" in expr.op:
+        expr = _resolve_vex_expr(expr.args[0], definitions)
+    if isinstance(expr, pyvex.expr.Binop) and expr.op.startswith("Iop_And"):
+        left = _vex_index_key(expr.args[0], definitions, vex)
+        right = _vex_index_key(expr.args[1], definitions, vex)
+        return left or right
+    key = _vex_get_key(expr, definitions, vex)
+    if key is not None and 0 < key[1] <= 8:
+        return key
+    return None
+
+
+def _vex_static_int(expr, definitions: dict[int, Any]) -> int | None:
+    """Evaluate the small constant-only VEX expressions used in branch guards."""
+
+    value = _vex_const_value(expr, definitions)
+    if value is not None:
+        return value
+
+    expr = _resolve_vex_expr(expr, definitions)
+    if not isinstance(expr, pyvex.expr.Binop):
+        return None
+    left = _vex_static_int(expr.args[0], definitions)
+    right = _vex_static_int(expr.args[1], definitions)
+    if left is None or right is None:
+        return None
+    if expr.op.startswith("Iop_And"):
+        return left & right
+    return None
+
+
+def _vex_guarded_index_upper_bound(
+    vex, target_addr: int, index_key: tuple[int, int]
+) -> int | None:
+    """Return a proven unsigned upper bound for an exit entering ``target_addr``."""
+
+    definitions = _vex_tmp_definitions(vex)
+    for stmt in vex.statements:
+        if not isinstance(stmt, pyvex.stmt.Exit):
+            continue
+        if getattr(stmt.dst, "value", None) != target_addr:
+            continue
+
+        guard = _resolve_vex_expr(stmt.guard, definitions)
+        while isinstance(guard, pyvex.expr.Unop):
+            guard = _resolve_vex_expr(guard.args[0], definitions)
+        if not isinstance(guard, pyvex.expr.Binop):
+            continue
+        if "CmpLE" not in guard.op or not guard.op.endswith("U"):
+            continue
+        if _vex_index_key(guard.args[0], definitions, vex) != index_key:
+            continue
+        bound = _vex_static_int(guard.args[1], definitions)
+        if bound is not None:
+            return bound
+    return None
+
+
+def _guarded_jump_table_entry_count(
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node,
+    table: StaticJumpTable,
+) -> int | None:
+    """Return the bounded table length proven by a predecessor branch."""
+
+    index_key = table.index_register_offset, table.index_bits
+    bounds_found: set[int] = set()
+    for predecessor in graph.predecessors(node):
+        if not _node_is_materialized_cfg_node(predecessor):
+            continue
+        if not _node_intersects_bounds(predecessor, bounds):
+            continue
+        try:
+            upper_bound = _vex_guarded_index_upper_bound(
+                predecessor.block.vex,
+                node.addr,
+                index_key,
+            )
+        except Exception:
+            continue
+        if upper_bound is not None:
+            bounds_found.add(upper_bound)
+
+    if len(bounds_found) != 1:
+        return None
+    upper_bound = next(iter(bounds_found))
+    entry_count = upper_bound + 1
+    return entry_count if entry_count <= MAX_STATIC_JUMPTABLE_ENTRIES else None
+
+
+def _vex_relative_jump_table(vex) -> StaticJumpTable | None:
+    """
+    Describe a bounded relative jump table encoded in one VEX indirect jump.
+
+    The accepted form is intentionally narrow: ``next`` must add a register
+    base to a loaded (optionally sign-extended) table entry, while the load
+    address must be that same base plus an index scaled by the entry size. This
+    covers common PIC tables without treating arbitrary computed jumps as CFG
+    targets.
+    """
+
+    if vex.jumpkind != "Ijk_Boring":
+        return None
+
+    definitions = _vex_tmp_definitions(vex)
+    next_expr = _resolve_vex_expr(vex.next, definitions)
+    if not isinstance(next_expr, pyvex.expr.Binop) or not next_expr.op.startswith(
+        "Iop_Add"
+    ):
+        return None
+
+    left, right = (
+        _resolve_vex_expr(next_expr.args[0], definitions),
+        _resolve_vex_expr(next_expr.args[1], definitions),
+    )
+    candidates = ((left, right), (right, left))
+    for entry_expr, base_expr in candidates:
+        base_key = _vex_get_key(base_expr, definitions, vex)
+        if base_key is None:
+            continue
+
+        signed_entries = False
+        entry_expr = _resolve_vex_expr(entry_expr, definitions)
+        if isinstance(entry_expr, pyvex.expr.Unop):
+            signed_entries = "Sto" in entry_expr.op
+            entry_expr = _resolve_vex_expr(entry_expr.args[0], definitions)
+        if not isinstance(entry_expr, pyvex.expr.Load):
+            continue
+
+        entry_size = entry_expr.result_size(vex.tyenv) // 8
+        if entry_size not in {1, 2, 4, 8}:
+            continue
+
+        address_terms = _vex_add_terms(entry_expr.addr, definitions)
+        if address_terms is None:
+            continue
+
+        displacement = 0
+        saw_base = False
+        index_bits: int | None = None
+        for term in address_terms:
+            value = _vex_const_value(term, definitions)
+            if value is not None:
+                displacement += value
+                continue
+            if _vex_get_key(term, definitions, vex) == base_key:
+                saw_base = True
+                continue
+            term = _resolve_vex_expr(term, definitions)
+            if not isinstance(term, pyvex.expr.Binop) or not term.op.startswith(
+                "Iop_Shl"
+            ):
+                break
+            shift = _vex_const_value(term.args[1], definitions)
+            index_key = _vex_index_key(term.args[0], definitions, vex)
+            if (
+                shift is None
+                or index_key is None
+                or 1 << shift != entry_size
+                or index_bits is not None
+            ):
+                break
+            _, index_bits = index_key
+        else:
+            if saw_base and index_bits is not None:
+                offset, bits = base_key
+                return StaticJumpTable(
+                    base_register_offset=offset,
+                    base_bits=bits,
+                    table_displacement=displacement,
+                    index_register_offset=index_key[0],
+                    index_bits=index_bits,
+                    entry_size=entry_size,
+                    endness=entry_expr.end,
+                    signed_entries=signed_entries,
+                )
+
+    return None
+
+
+def _constant_register_from_predecessors(
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node,
+    register_offset: int,
+) -> int | None:
+    """Return one unambiguous constant register definition reaching ``node``."""
+
+    definitions: set[int] = set()
+    queue: deque[CFGNode] = deque([node])
+    seen: set[CFGNode] = set()
+    while queue:
+        current = queue.popleft()
+        if current in seen:
+            continue
+        seen.add(current)
+        try:
+            vex = current.block.vex
+        except Exception:
+            return None
+
+        tmp_definitions = _vex_tmp_definitions(vex)
+        found_definition = False
+        for stmt in reversed(vex.statements):
+            if not isinstance(stmt, pyvex.stmt.Put) or stmt.offset != register_offset:
+                continue
+            value = _vex_const_value(stmt.data, tmp_definitions)
+            if value is None:
+                return None
+            definitions.add(value)
+            found_definition = True
+            break
+
+        if found_definition:
+            continue
+        queue.extend(
+            predecessor
+            for predecessor in graph.predecessors(current)
+            if _node_is_materialized_cfg_node(predecessor)
+            and _node_intersects_bounds(predecessor, bounds)
+        )
+
+    return next(iter(definitions)) if len(definitions) == 1 else None
+
+
+def _unique_static_register_value(
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    register_offset: int,
+) -> int | None:
+    """Return one in-bounds VEX-proven static value assigned to a register."""
+
+    values: set[int] = set()
+    for node in _iter_graph_bound_nodes(graph, bounds):
+        if not _node_is_materialized_cfg_node(node):
+            continue
+        try:
+            vex = node.block.vex
+        except Exception:
+            continue
+        definitions = _vex_tmp_definitions(vex)
+        for stmt in vex.statements:
+            if not isinstance(stmt, pyvex.stmt.Put) or stmt.offset != register_offset:
+                continue
+            value = _vex_static_int(stmt.data, definitions)
+            if value is not None:
+                values.add(value)
+
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _read_static_jump_table_targets(
+    project: Project,
+    table: StaticJumpTable,
+    base_addr: int,
+    entry_count: int,
+) -> tuple[int, ...]:
+    """Read all targets from one VEX-proven bounded relative jump table."""
+
+    if entry_count <= 0 or entry_count > MAX_STATIC_JUMPTABLE_ENTRIES:
+        return ()
+
+    table_addr = base_addr + table.table_displacement
+    try:
+        raw = project.loader.memory.load(table_addr, entry_count * table.entry_size)
+    except Exception as exc:
+        logger.debug(f"Custom CFG could not read jump table at {table_addr:#x}: {exc}")
+        return ()
+
+    byteorder = "little" if table.endness == "Iend_LE" else "big"
+    targets: set[int] = set()
+    for offset in range(0, len(raw), table.entry_size):
+        entry = int.from_bytes(
+            raw[offset : offset + table.entry_size],
+            byteorder=byteorder,
+            signed=table.signed_entries,
+        )
+        targets.add(base_addr + entry)
+
+    return tuple(sorted(targets))
 
 
 def _decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
@@ -545,37 +860,6 @@ def _vex_jumpkind_is_terminal(jumpkind: str) -> bool:
     return jumpkind == "Ijk_Ret" or jumpkind.startswith("Ijk_Sig")
 
 
-def _arch_has_delay_slot(project: Project) -> bool:
-    """Return True for architectures where control transfers consume a delay slot."""
-
-    return project.arch.name in {"MIPS32", "MIPS64"}
-
-
-def _control_transfer_index(project: Project, block_insns: list[CsInsn]) -> int | None:
-    """
-    Return the index of the effective control-transfer instruction in a block.
-
-    On most architectures this is simply the last instruction. On delay-slot
-    architectures it may be the penultimate instruction, with the final
-    instruction being the consumed delay slot.
-    """
-
-    has_delay_slot = _arch_has_delay_slot(project)
-
-    for idx in range(len(block_insns) - 1, -1, -1):
-        if not InsnSemantics(block_insns[idx]).is_control_transfer():
-            continue
-
-        if idx != len(block_insns) - 1 and not has_delay_slot:
-            raise RuntimeError(
-                f"Recovered non-delay block at {block_insns[0].address:#x} has trailing "
-                f"instructions after control transfer {block_insns[idx].address:#x}"
-            )
-        return idx
-
-    return None
-
-
 def _lift_block_terminator(
     project: Project,
     bounds: FunctionBounds,
@@ -594,7 +878,7 @@ def _lift_block_terminator(
 
     block_end_addr = block_insns[-1].address + block_insns[-1].size
 
-    term_idx = _control_transfer_index(project, block_insns)
+    term_idx = control_transfer_index(project.arch.name, block_insns)
 
     if term_idx is None:
         if has_nonfallthrough_vex_terminator:
@@ -1017,9 +1301,8 @@ def node_has_missing_call_fallthrough(
     return True
 
 
-def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
-    """
-    Return True when `node` should absorb its only straight-line successor.
+def _is_linear_merge_successor(graph: CFGGraph, node) -> bool:
+    """Return whether ``node`` should absorb its only straight-line successor.
 
     This targets the specific malformed shape where CFGFast left an artificial
     split inside one linear byte range: A has one `Ijk_Boring` successor B, B
@@ -1036,7 +1319,15 @@ def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
         return False
     if _node_is_placeholder(succ):
         return False
-    if graph.in_degree(succ) != 1:
+    # Synthetic unresolved-jump fallbacks preserve disconnected regions but do
+    # not represent real branch targets. They must not prevent a normal linear
+    # merge between two adjacent materialized blocks.
+    materialized_predecessors = [
+        predecessor
+        for predecessor in graph.predecessors(succ)
+        if not _node_is_simprocedure(predecessor)
+    ]
+    if len(materialized_predecessors) != 1:
         return False
 
     edge_data = graph.get_edge_data(node, succ) or {}
@@ -1059,8 +1350,18 @@ def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
     if InsnSemantics(last_insn).is_control_transfer():
         return False
 
+    return True
+
+
+def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
+    """Return True and log when ``node`` should absorb a linear successor."""
+
+    if not _is_linear_merge_successor(graph, node):
+        return False
+
+    successor = next(iter(graph.successors(node)))
     logger.warning(
-        f"Node {node.addr:#x} is split from straight-line successor {succ.addr:#x}"
+        f"Node {node.addr:#x} is split from straight-line successor {successor.addr:#x}"
     )
     return True
 
@@ -1331,7 +1632,7 @@ def _custom_model_marker() -> SimpleNamespace:
     return SimpleNamespace(ident="CFGFastCustom")
 
 
-def _prune_orphan_simprocedures(graph: CFGGraph) -> bool:
+def _prune_orphan_simprocedures(graph: CFGGraph) -> int:
     """
     Remove simprocedure nodes that no longer have any incoming edges.
 
@@ -1342,7 +1643,7 @@ def _prune_orphan_simprocedures(graph: CFGGraph) -> bool:
     case removing one orphan exposes another orphaned simprocedure behind it.
     """
 
-    changed = False
+    removed = 0
     while True:
         orphan_nodes = [
             node
@@ -1350,19 +1651,18 @@ def _prune_orphan_simprocedures(graph: CFGGraph) -> bool:
             if _node_is_simprocedure(node) and graph.in_degree(node) == 0
         ]
         if not orphan_nodes:
-            return changed
+            return removed
         _remove_nodes(graph, orphan_nodes)
-        changed = True
+        removed += len(orphan_nodes)
 
 
-def _prune_placeholders(graph: CFGGraph) -> bool:
-    """Remove temporary placeholder nodes and report whether the graph changed."""
+def _prune_placeholders(graph: CFGGraph) -> int:
+    """Remove temporary placeholder nodes and return how many were pruned."""
 
     placeholders = [node for node in list(graph.nodes()) if _node_is_placeholder(node)]
     if placeholders:
         _remove_nodes(graph, placeholders)
-        return True
-    return False
+    return len(placeholders)
 
 
 def _block_name(bounds: FunctionBounds, block: BlockSpec) -> str:
@@ -1443,6 +1743,24 @@ def _node_is_simprocedure(node) -> bool:
     return getattr(node, "is_simprocedure", False)
 
 
+def _is_unresolvable_jump_target(node) -> bool:
+    """Return True for angr's synthetic unresolved indirect-jump target node."""
+
+    return _node_is_simprocedure(node) and getattr(node, "simprocedure_name", None) == (
+        "UnresolvableJumpTarget"
+    )
+
+
+def _node_ends_in_indirect_jump(node) -> bool:
+    """Return whether VEX identifies ``node`` as an indirect boring jump."""
+
+    try:
+        vex = node.block.vex
+    except (AttributeError, KeyError):
+        return False
+    return vex.jumpkind == "Ijk_Boring" and not isinstance(vex.next, pyvex.expr.Const)
+
+
 def _node_is_materialized_cfg_node(node) -> bool:
     """Return True for normal in-graph nodes that are neither simprocs nor placeholders."""
 
@@ -1485,6 +1803,16 @@ def _make_cfg_node(
         block_id=block.addr,
         instruction_addrs=block.instruction_addrs,
         name=_block_name(bounds, block),
+    )
+
+
+def _block_has_unresolved_indirect_jump(block: BlockSpec) -> bool:
+    """Return whether a recovered block needs an unresolved indirect-jump leaf."""
+
+    return (
+        block.jumpkind == "Ijk_Boring"
+        and not block.direct_targets
+        and block.fallthrough_addr is None
     )
 
 
@@ -1595,7 +1923,7 @@ def _recover_block(
     max_inst_bytes = getattr(project.arch, "max_inst_bytes", 16)
     cur = start_addr
     insns: list[CsInsn] = []
-    has_delay_slot = _arch_has_delay_slot(project)
+    has_delay_slot = arch_has_delay_slot(project.arch.name)
     has_nonfallthrough_vex_terminator = False
 
     while bounds.addr <= cur < bounds.end_addr:
@@ -1665,14 +1993,24 @@ def _add_successor_edge(
     src: CFGNode,
     dst: CFGNode,
     jumpkind: EdgeJumpKind,
+    *,
+    unresolved_indirect: bool = False,
 ) -> bool:
     """Add one successor edge if it is not already present with the same kind."""
 
     if graph.has_edge(src, dst):
         edge_data = graph.get_edge_data(src, dst) or {}
-        if edge_data.get("jumpkind") == jumpkind:
+        if (
+            edge_data.get("jumpkind") == jumpkind
+            and edge_data.get("unresolved_indirect", False) == unresolved_indirect
+        ):
             return False
-    graph.add_edge(src, dst, jumpkind=jumpkind)
+    graph.add_edge(
+        src,
+        dst,
+        jumpkind=jumpkind,
+        unresolved_indirect=unresolved_indirect,
+    )
     return True
 
 
@@ -1688,6 +2026,8 @@ class _RepairSession:
         # API. Its private backing graph stores tuple keys that the renderer
         # cannot consume directly.
         self.graph = _cfg_graph(seed_cfg)
+        self.stats = CustomCFGStats()
+        self.stats.input_blocks, self.stats.input_edges = self._graph_shape()
         self.queue: deque[tuple[str, int]] = deque()
         self.pending: dict[tuple[str, int], PendingObligation] = {}
         self.repaired_nodes: set[CFGNode] = set()
@@ -1698,7 +2038,36 @@ class _RepairSession:
             tuple[str, int],
             tuple[int, tuple[bool, tuple[tuple[int, EdgeJumpKind], ...]]],
         ] = {}
+        self.resolved_static_table_sources: set[int] = set()
         self.iterations = 0
+
+    def _graph_shape(self) -> tuple[int, int]:
+        """Return the number of in-bounds blocks and their outgoing CFG edges."""
+
+        blocks = {
+            node
+            for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+            if _node_is_materialized_cfg_node(node)
+        }
+        edges = sum(
+            1 for source, _, _ in self.graph.edges(data=True) if source in blocks
+        )
+        return len(blocks), edges
+
+    def log_stats(self) -> None:
+        """Capture the final graph shape and emit one custom-repair summary."""
+
+        try:
+            self.stats.output_blocks, self.stats.output_edges = self._graph_shape()
+            self.stats.output_anomalies = len(self._anomalous_addrs())
+        except Exception as exc:
+            logger.warning(
+                f"Custom CFG could not finish collecting stats for {self.func_addr:#x}: "
+                f"{exc}"
+            )
+        logger.info(
+            f"Custom CFG stats for function {self.func_addr:#x}: {self.stats.as_dict()}"
+        )
 
     def _is_preservable_seed_node(self, node) -> bool:
         """
@@ -1728,13 +2097,258 @@ class _RepairSession:
         src: CFGNode,
         dst: CFGNode,
         jumpkind: EdgeJumpKind,
+        *,
+        unresolved_indirect: bool = False,
     ) -> bool:
         """Add an edge and record whether it changed the live graph."""
 
-        changed = _add_successor_edge(self.graph, src, dst, jumpkind)
+        changed = _add_successor_edge(
+            self.graph,
+            src,
+            dst,
+            jumpkind,
+            unresolved_indirect=unresolved_indirect,
+        )
         if changed:
+            self.stats.edges_added += 1
             self._note_mutation()
         return changed
+
+    def _canonicalize_function_ownership(self) -> None:
+        """Assign all in-bounds custom-CFG blocks to the requested function."""
+
+        reassigned = 0
+        for node in _iter_graph_bound_nodes(self.graph, self.bounds):
+            if not _node_is_materialized_cfg_node(node):
+                continue
+            if node.function_address == self.func_addr:
+                continue
+            # CFGFast can create provisional functions for disconnected code
+            # regions. Once custom repair includes those in the symbol-bounded
+            # graph, renderers must not hide them based on that stale owner.
+            node.function_address = self.func_addr
+            reassigned += 1
+        if reassigned:
+            self.stats.function_owners_canonicalized += reassigned
+            logger.info(
+                f"Assigned {reassigned} in-bounds CFG block(s) to function "
+                f"{self.func_addr:#x}"
+            )
+
+    def _resolve_static_jump_tables(self) -> int:
+        """Recover high-confidence relative table targets from unresolved jumps."""
+
+        resolved_sources = 0
+        for node in list(_iter_graph_bound_nodes(self.graph, self.bounds)):
+            if not _node_is_materialized_cfg_node(node):
+                continue
+
+            try:
+                vex = node.block.vex
+            except Exception:
+                continue
+            table = _vex_relative_jump_table(vex)
+            if table is None or table.base_bits != self.project.arch.bits:
+                continue
+            entry_count = _guarded_jump_table_entry_count(
+                self.graph,
+                self.bounds,
+                node,
+                table,
+            )
+            if entry_count is None:
+                continue
+            base_addr = _constant_register_from_predecessors(
+                self.graph,
+                self.bounds,
+                node,
+                table.base_register_offset,
+            )
+            if base_addr is None:
+                # A disconnected table dispatcher may not have a complete
+                # predecessor path back to its base definition. Scan the
+                # bounded VEX blocks instead, but accept a value only when all
+                # static definitions for this register agree.
+                base_addr = _unique_static_register_value(
+                    self.graph,
+                    self.bounds,
+                    table.base_register_offset,
+                )
+            if base_addr is None:
+                continue
+            targets = _read_static_jump_table_targets(
+                self.project,
+                table,
+                base_addr,
+                entry_count,
+            )
+            if not targets:
+                continue
+
+            existing_target_addrs = {
+                successor.addr for successor in self.graph.successors(node)
+            }
+            missing_targets = [
+                target for target in targets if target not in existing_target_addrs
+            ]
+            if not missing_targets:
+                unresolved_targets = []
+            else:
+                unresolved_targets = [
+                    successor
+                    for successor in self.graph.successors(node)
+                    if _is_unresolvable_jump_target(successor)
+                ]
+
+            if not missing_targets and not unresolved_targets:
+                continue
+
+            logger.info(
+                f"Resolved static jump table at {node.addr:#x} with "
+                f"{len(missing_targets)} missing target(s)"
+            )
+            for target_addr in missing_targets:
+                self._resolve_successor(
+                    node,
+                    target_addr,
+                    "Ijk_Boring",
+                    reason=f"static_jump_table_of_{node.addr:#x}",
+                    preserve_exact_addr=True,
+                    materialize_external=True,
+                )
+
+            # The guarded VEX form and every table entry have now been proven,
+            # so the original indirect-jump placeholder is no longer needed.
+            for unresolved_target in unresolved_targets:
+                self.graph.remove_edge(node, unresolved_target)
+                self._note_mutation()
+            self.stats.static_jump_targets_added += len(missing_targets)
+            self.stats.unresolved_jump_edges_removed += len(unresolved_targets)
+            self.resolved_static_table_sources.add(node.addr)
+            self.stats.static_jump_tables_resolved = len(
+                self.resolved_static_table_sources
+            )
+            resolved_sources += 1
+
+        return resolved_sources
+
+    def _unresolved_jump_fallback_nodes(self) -> list[CFGNode]:
+        """Return synthetic leaves still reached from unresolved indirect jumps."""
+
+        return sorted(
+            {
+                successor
+                for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+                if _node_is_materialized_cfg_node(node)
+                for successor in self.graph.successors(node)
+                if _is_unresolvable_jump_target(successor)
+            },
+            key=lambda node: node.addr,
+        )
+
+    def _reachable_from_entry(self) -> set[CFGNode]:
+        """Return all graph nodes reachable through the current entry edges."""
+
+        reachable: set[CFGNode] = set()
+        queue: deque[CFGNode] = deque(
+            _nodes_at_addr(self.graph, self.bounds, self.func_addr)
+        )
+        while queue:
+            node = queue.popleft()
+            if node in reachable:
+                continue
+            reachable.add(node)
+            queue.extend(self.graph.successors(node))
+        return reachable
+
+    def _disconnected_function_nodes(self) -> list[CFGNode]:
+        """Return every in-function node disconnected from the entry graph."""
+
+        reachable = self._reachable_from_entry()
+        return sorted(
+            (
+                node
+                for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+                if _node_is_materialized_cfg_node(node) and node not in reachable
+            ),
+            key=lambda node: node.addr,
+        )
+
+    def _attach_unresolved_jump_fallbacks(self) -> bool:
+        """Keep disconnected seed regions reachable through unresolved jump leaves."""
+
+        fallback_nodes = self._unresolved_jump_fallback_nodes()
+        if not fallback_nodes:
+            return False
+        disconnected_nodes = self._disconnected_function_nodes()
+        changed = False
+        for fallback in fallback_nodes:
+            for node in disconnected_nodes:
+                if self._add_edge(fallback, node, "Ijk_Boring"):
+                    self.stats.unresolved_fallback_edges_added += 1
+                    changed = True
+        if changed:
+            logger.info(
+                f"Connected {len(disconnected_nodes)} disconnected function block(s) through "
+                f"{len(fallback_nodes)} unresolved indirect-jump target(s)"
+            )
+        return changed
+
+    def _flatten_single_source_unresolved_fallback(self) -> bool:
+        """Replace one unambiguous unresolved-jump placeholder with candidate edges.
+
+        A single indirect-jump source and a single
+        ``UnresolvableJumpTarget`` form a synthetic intermediary rather than a
+        meaningful CFG block. Once its in-function candidate targets have been
+        attached, move those edges to the dispatcher itself while retaining
+        their ``unresolved_indirect`` marker for rendering. Multiple fallback
+        nodes, extra dispatcher successors, or non-local targets are left
+        untouched because the intermediary still carries useful structure.
+        """
+
+        fallbacks = self._unresolved_jump_fallback_nodes()
+        if len(fallbacks) != 1:
+            return False
+
+        fallback = fallbacks[0]
+        predecessors = list(self.graph.predecessors(fallback))
+        targets = list(self.graph.successors(fallback))
+        if len(predecessors) != 1 or not targets:
+            return False
+
+        source = predecessors[0]
+        if (
+            not _node_is_materialized_cfg_node(source)
+            or not _node_intersects_bounds(source, self.bounds)
+            or not _node_ends_in_indirect_jump(source)
+            or list(self.graph.successors(source)) != [fallback]
+            or any(
+                not _node_is_materialized_cfg_node(target)
+                or not _node_intersects_bounds(target, self.bounds)
+                for target in targets
+            )
+        ):
+            return False
+
+        for target in targets:
+            edge_data = self.graph.get_edge_data(fallback, target) or {}
+            self._add_edge(
+                source,
+                target,
+                edge_data.get("jumpkind", "Ijk_Boring"),
+                unresolved_indirect=True,
+            )
+
+        self.graph.remove_edge(source, fallback)
+        self.graph.remove_node(fallback)
+        self.stats.unresolved_fallbacks_flattened += 1
+        self.stats.unresolved_candidate_edges_flattened += len(targets)
+        self._note_mutation()
+        logger.info(
+            f"Flattened unresolved indirect jump at {source.addr:#x} to "
+            f"{len(targets)} in-function candidate target(s)"
+        )
+        return True
 
     def _record_obligation_progress(
         self,
@@ -1876,6 +2490,7 @@ class _RepairSession:
                 return node
 
             if self.leaders.add(addr, "explicit_split"):
+                self.stats.explicit_splits += 1
                 self._note_mutation()
             placeholder = self._claim_placeholder(obligation)
 
@@ -1922,6 +2537,7 @@ class _RepairSession:
                 obligation.addr,
             )
             self.graph.add_node(placeholder)
+            self.stats.placeholders_created += 1
             self._note_mutation()
         self._connect_source_to_node(obligation, placeholder)
         return placeholder
@@ -2117,6 +2733,7 @@ class _RepairSession:
             target,
         )
         if created:
+            self.stats.external_targets_created += 1
             self._note_mutation()
         self._add_edge(src, leaf, jumpkind)
         return True
@@ -2247,14 +2864,33 @@ class _RepairSession:
             or (_node_is_placeholder(node) and node.addr == recovered_start)
         ]
         removed_set = set(removed_nodes)
+        removed_blocks = [
+            node for node in removed_nodes if _node_is_materialized_cfg_node(node)
+        ]
+        linear_merges = sum(
+            1
+            for node in removed_blocks
+            if _is_linear_merge_successor(self.graph, node)
+            and any(
+                successor in removed_set for successor in self.graph.successors(node)
+            )
+        )
 
         incoming_edges = [
             (src, dst, dict(data))
             for src, dst, data in list(self.graph.edges(data=True))
             if dst in removed_set and src not in removed_set
         ]
+        unresolved_jump_edges = [
+            (dst, data.get("jumpkind", "Ijk_Boring"))
+            for src, dst, data in list(self.graph.edges(data=True))
+            if src in removed_set and _is_unresolvable_jump_target(dst)
+        ]
 
         _remove_nodes(self.graph, removed_nodes)
+        self.stats.blocks_redecoded += 1
+        self.stats.blocks_replaced += len(removed_blocks)
+        self.stats.linear_block_merges += linear_merges
 
         recovered_node = _make_cfg_node(
             self.seed_cfg, self.func_addr, self.bounds, block
@@ -2284,6 +2920,13 @@ class _RepairSession:
 
             self.ensure_expected_successors(pred)
 
+        # A recovered indirect jump has no concrete BlockSpec target. Retain
+        # CFGFast's unresolved placeholder until static table recovery proves
+        # real targets and deliberately replaces it.
+        if _block_has_unresolved_indirect_jump(block):
+            for unresolved_target, jumpkind in unresolved_jump_edges:
+                self._add_edge(recovered_node, unresolved_target, jumpkind)
+
         for target in block.direct_targets:
             edge_jumpkind = "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
             self._resolve_successor(
@@ -2311,11 +2954,20 @@ class _RepairSession:
     def _cleanup(self) -> bool:
         """Prune stale nodes and report whether cleanup changed the live graph."""
 
-        changed = _cleanup_unreachable_function_nodes(
+        self.stats.cleanup_rounds += 1
+        changed = self._attach_unresolved_jump_fallbacks()
+        changed |= self._flatten_single_source_unresolved_fallback()
+        unreachable_removed = _cleanup_unreachable_function_nodes(
             self.graph, self.bounds, self.func_addr
         )
-        changed |= _prune_placeholders(self.graph)
-        changed |= _prune_orphan_simprocedures(self.graph)
+        placeholders_pruned = _prune_placeholders(self.graph)
+        orphan_simprocedures_pruned = _prune_orphan_simprocedures(self.graph)
+        self.stats.unreachable_blocks_removed += unreachable_removed
+        self.stats.placeholders_pruned += placeholders_pruned
+        self.stats.orphan_simprocedures_pruned += orphan_simprocedures_pruned
+        changed |= bool(
+            unreachable_removed or placeholders_pruned or orphan_simprocedures_pruned
+        )
         if changed:
             self._note_mutation()
         return changed
@@ -2375,6 +3027,7 @@ class _RepairSession:
 
             key = self.queue.popleft()
             obligation = self.pending.pop(key)
+            self.stats.worklist_obligations += 1
             addr = obligation.addr
             self.processed_counts[addr] = self.processed_counts.get(addr, 0) + 1
             if self.processed_counts[addr] <= 5:
@@ -2452,23 +3105,32 @@ class _RepairSession:
     def run(self) -> CFGBase | CustomCFG:
         """Execute the repair worklist and return the repaired CFG wrapper."""
 
+        # Capture seed anomalies before any static table recovery mutates the
+        # input graph. The normal initial classification below remains in its
+        # original order so the repair behavior itself does not change.
+        self.stats.input_anomalies = len(self._initial_anomalous_addrs())
+        resolved_tables = self._resolve_static_jump_tables()
         initial_bad_addrs = self._initial_anomalous_addrs()
-        if not initial_bad_addrs:
+        if initial_bad_addrs:
             logger.info(
-                f"Seed CFG for function {self.func_addr:#x} has no known anomalies; "
-                "skipping custom repair"
+                f"Repairing seed CFG for function {self.func_addr:#x} with "
+                f"{len(initial_bad_addrs)} anomalous block start(s)"
             )
-            return self.seed_cfg
-
-        logger.info(
-            f"Repairing seed CFG for function {self.func_addr:#x} with "
-            f"{len(initial_bad_addrs)} anomalous block start(s)"
-        )
+        elif resolved_tables:
+            logger.info(
+                f"Repairing seed CFG for function {self.func_addr:#x} after resolving "
+                f"{resolved_tables} static jump table(s)"
+            )
 
         self._queue_recoveries(initial_bad_addrs, "seed_anomaly")
 
         while True:
             self._drain_worklist()
+
+            # Worklist recovery can replace an indirect-dispatch source and
+            # therefore discard table edges found before repair. Re-scan the
+            # live nodes so a recovered source receives its proven targets.
+            resolved_tables += self._resolve_static_jump_tables()
 
             cleanup_changed = self._cleanup()
             remaining_bad_addrs = self._anomalous_addrs()
@@ -2494,23 +3156,25 @@ class _RepairSession:
                 )
                 break
 
+        self._canonicalize_function_ownership()
         self._register_custom_graphs()
-        return CustomCFG(
+        result = CustomCFG(
             graph=self.graph,
             model=_custom_model_marker(),
             functions=self.seed_cfg.functions,
             kb=self.seed_cfg.kb,
         )
+        return result
 
 
 def _cleanup_unreachable_function_nodes(
     graph: CFGGraph, bounds: FunctionBounds, func_addr: int
-) -> bool:
-    """Remove unreachable function nodes and report whether the graph changed."""
+) -> int:
+    """Remove unreachable function nodes and return how many were pruned."""
 
     entry_nodes = _nodes_at_addr(graph, bounds, func_addr)
     if not entry_nodes:
-        return False
+        return 0
 
     reachable: set[CFGNode] = set()
     queue: deque[CFGNode] = deque(entry_nodes)
@@ -2531,8 +3195,7 @@ def _cleanup_unreachable_function_nodes(
     if stale_nodes:
         for node in stale_nodes:
             graph.remove_node(node)
-        return True
-    return False
+    return len(stale_nodes)
 
 
 def _remove_nodes(graph: CFGGraph, nodes: Iterable[CFGNode]) -> None:
@@ -2559,4 +3222,9 @@ def build_custom_cfg(
     """
 
     logger.info(f"Building custom CFG for function {func_addr:#x}")
-    return _RepairSession(project, seed_cfg, func_addr).run()
+    session = _RepairSession(project, seed_cfg, func_addr)
+    try:
+        return session.run()
+    finally:
+        # Keep transformation counters available even when custom repair fails.
+        session.log_stats()

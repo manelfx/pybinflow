@@ -176,15 +176,6 @@ exceeded its 5,000-iteration safety limit.
 
 Prioritized work:
 
-- Ensure external successors and later in-function reconciliation cooperate.
-  Candidate functions:
-  - `x86_64/langdetect_clang`, `execute_cfa_program` at `0x4741a0`
-  - `x86_64/static`, `abort` at `0x40dc00`
-- Use larger functions to validate convergence and repair scaling after the
-  correctness issues above are fixed. Candidate functions:
-  - `i386/bronze_ropchain`, `execute_stack_op` at `0x80a7db0`
-  - `x86_64/elf_with_static_libc_ubuntu_2004`, `execute_stack_op` at
-    `0x48ef40`
 - Profile and reduce custom CFG repair time without changing its output.
   Candidate function:
   - `s390x/test-instr_s390x`, `_IO_vfscanf` at `0x800555f8` has regressed
@@ -200,6 +191,21 @@ Repair invariant:
   `cfg_mode_none`. The completed corpus run observed zero successful repairs
   that left the artifact unchanged; a future no-op repair is an investigation
   candidate rather than an expected result.
+
+=== Review custom CFG transformation statistics
+
+`CustomCFGStats` now logs the input/output graph shape, anomaly counts, and
+every material repair action when `build_custom_cfg()` exits. Run it over the
+full corpus and aggregate these counters before adding more repair heuristics.
+
+- Treat a transformation whose counter remains zero across the corpus as
+  evidence that it is unnecessary, and consider simplifying or removing that
+  code after checking representative architectures.
+- Compare block merges, unreachable-node removals, and indirect-jump recovery
+  counters to determine whether newly restored indirect targets are correctly
+  preserving real block leaders instead of merely preventing useful merges.
+- Use large outliers such as `execute_stack_op` to identify transformations
+  that dominate custom-mode runtime or repeatedly redo the same repair work.
 
 === Investigate x86 REP instruction loops
 

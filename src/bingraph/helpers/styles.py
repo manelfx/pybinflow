@@ -6,10 +6,12 @@ STYLE_CLASSIC = {
         "EDGECOLOR_CONDITIONAL_FALSE": {"color": "red"},
         "EDGECOLOR_UNCONDITIONAL": {"color": "blue"},
         "EDGECOLOR_NEXT": {"color": "blue", "style": "dashed"},
+        "EDGECOLOR_INDIRECT": {"color": "orange"},
+        "EDGECOLOR_UNRESOLVED_INDIRECT": {"color": "orange", "style": "dashed"},
         "EDGECOLOR_CALL": {"color": "gray"},
         "EDGECOLOR_RET": {"color": "gray", "style": "dotted"},
         "EDGECOLOR_FAKE_RET": {"color": "gray", "style": "dashed"},
-        "EDGECOLOR_UNKNOWN": {"color": "orange"},
+        "EDGECOLOR_UNKNOWN": {"color": "purple"},
     }
 }
 
@@ -19,10 +21,12 @@ STYLE_THICK = {
         "EDGECOLOR_CONDITIONAL_FALSE": {"color": "red", "penwidth": "2"},
         "EDGECOLOR_UNCONDITIONAL": {"color": "blue", "penwidth": "2"},
         "EDGECOLOR_NEXT": {"color": "blue", "style": "dashed", "penwidth": "2"},
+        "EDGECOLOR_INDIRECT": {"color": "orange", "penwidth": "2"},
+        "EDGECOLOR_UNRESOLVED_INDIRECT": {"color": "orange", "style": "dashed", "penwidth": "2"},
         "EDGECOLOR_CALL": {"color": "gray", "penwidth": "2"},
         "EDGECOLOR_RET": {"color": "gray", "style": "dotted", "penwidth": "2"},
         "EDGECOLOR_FAKE_RET": {"color": "gray", "style": "dashed", "penwidth": "2"},
-        "EDGECOLOR_UNKNOWN": {"color": "orange", "penwidth": "2"},
+        "EDGECOLOR_UNKNOWN": {"color": "purple", "penwidth": "2"},
     }
 }
 
@@ -32,10 +36,12 @@ STYLE_BLACK = {
         "EDGECOLOR_CONDITIONAL_FALSE": {"color": "black"},
         "EDGECOLOR_UNCONDITIONAL": {"color": "black"},
         "EDGECOLOR_NEXT": {"color": "black", "style": "dashed"},
+        "EDGECOLOR_INDIRECT": {"color": "black"},
+        "EDGECOLOR_UNRESOLVED_INDIRECT": {"color": "black", "style": "dashed"},
         "EDGECOLOR_CALL": {"color": "gray"},
         "EDGECOLOR_RET": {"color": "gray", "style": "dotted"},
         "EDGECOLOR_FAKE_RET": {"color": "gray", "style": "dashed"},
-        "EDGECOLOR_UNKNOWN": {"color": "orange"},
+        "EDGECOLOR_UNKNOWN": {"color": "purple"},
     }
 }
 
@@ -45,10 +51,12 @@ STYLE_DARK = {
         "EDGECOLOR_CONDITIONAL_FALSE": {"color": "#8b0000"},
         "EDGECOLOR_UNCONDITIONAL": {"color": "#00008b"},
         "EDGECOLOR_NEXT": {"color": "#00008b", "style": "dashed"},
+        "EDGECOLOR_INDIRECT": {"color": "#ff8c00"},
+        "EDGECOLOR_UNRESOLVED_INDIRECT": {"color": "#ff8c00", "style": "dashed"},
         "EDGECOLOR_CALL": {"color": "#a9a9a9"},
         "EDGECOLOR_RET": {"color": "#a9a9a9", "style": "dotted"},
         "EDGECOLOR_FAKE_RET": {"color": "#a9a9a9", "style": "dashed"},
-        "EDGECOLOR_UNKNOWN": {"color": "#ff8c00"},
+        "EDGECOLOR_UNKNOWN": {"color": "#850A93"},
     }
 }
 
@@ -58,23 +66,12 @@ STYLE_LIGHT = {
         "EDGECOLOR_CONDITIONAL_FALSE": {"color": "#F08080"},
         "EDGECOLOR_UNCONDITIONAL": {"color": "#87CEFA"},
         "EDGECOLOR_NEXT": {"color": "#87CEFA", "style": "dashed"},
+        "EDGECOLOR_INDIRECT": {"color": "#FFD700"},
+        "EDGECOLOR_UNRESOLVED_INDIRECT": {"color": "#FFD700", "style": "dashed"},
         "EDGECOLOR_CALL": {"color": "#C0C0C0"},
         "EDGECOLOR_RET": {"color": "#C0C0C0", "style": "dotted"},
         "EDGECOLOR_FAKE_RET": {"color": "#C0C0C0", "style": "dashed"},
-        "EDGECOLOR_UNKNOWN": {"color": "#FFD700"},
-    }
-}
-
-STYLE_KYLE = {
-    "COLOR_SCHEME": {
-        "EDGECOLOR_CONDITIONAL_TRUE": {"color": "green"},
-        "EDGECOLOR_CONDITIONAL_FALSE": {"color": "red"},
-        "EDGECOLOR_UNCONDITIONAL": {"color": "blue"},
-        "EDGECOLOR_NEXT": {"color": "blue", "style": "dashed"},
-        "EDGECOLOR_CALL": {"color": "purple"},
-        "EDGECOLOR_RET": {"color": "purple", "style": "dotted"},
-        "EDGECOLOR_FAKE_RET": {"color": "purple", "style": "dashed"},
-        "EDGECOLOR_UNKNOWN": {"color": "yellow"},
+        "EDGECOLOR_UNKNOWN": {"color": "#BE69B9"},
     }
 }
 
@@ -105,8 +102,6 @@ def set_style(c: Union[str, Any]) -> None:
             set_style(STYLE_DARK)
         elif c == "light":
             set_style(STYLE_LIGHT)
-        elif c == "kyle":
-            set_style(STYLE_KYLE)
         else:
             raise KeyError("Style '%s' not defined" % c)
     else:

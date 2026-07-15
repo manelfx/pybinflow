@@ -4,6 +4,7 @@ from typing import Any
 from loguru import logger
 
 from bingraph.helpers import get_style
+from bingraph.helpers.capstone import control_transfer_index
 from .vis import NodeAnnotator, ContentAnnotator, EdgeAnnotator, Node
 
 
@@ -182,49 +183,139 @@ class CommentsDataRef(CommentsAnnotator):
         return comments_by_addr
 
 
-class ColorEdgesVex(EdgeAnnotator):
-    def annotate_edge(self, edge):
-        style = get_style()
+def _is_unresolvable_jump_target(node: Node) -> bool:
+    """Return whether ``node`` is angr's unresolved indirect-jump placeholder."""
 
-        if 'jumpkind' in edge.meta:
-            jk = edge.meta['jumpkind']
-            if jk == 'Ijk_Ret':
-                style.make_edge(edge, 'RET')
-            elif jk == 'Ijk_FakeRet':
-                style.make_edge(edge, 'FAKE_RET')
-            elif jk == 'Ijk_Call':
-                style.make_edge(edge, 'CALL')
-            elif jk == 'Ijk_Boring':
-                # Check if edge is a conditional jump by counting the "boring"
-                # edges exiting from source node.
-                source_node = edge.src.obj
-                out_edges = edge.src.graph.out_edges(source_node, data=True)
-                boring_edges_count = sum(1 for _, _, edge_data in out_edges
-                                         if edge_data.get('jumpkind') == 'Ijk_Boring')
-                # only one edge found, this must be unconditional
-                if boring_edges_count == 1:
-                    # check for unconditional branch or fall through edge
-                    if edge.dst.obj.addr != source_node.addr + source_node.size:
-                        style.make_edge(edge, 'UNCONDITIONAL')
-                    else:
-                        style.make_edge(edge, 'NEXT')
-                # this is a conditional jump if we find 2 edges
-                elif boring_edges_count == 2:
-                    # look at the source node to figure out the fall-through address
-                    fall_through_addr = source_node.addr + source_node.size
-                    # lood at destination node to see the branch type
-                    if edge.dst.obj.addr == fall_through_addr:
-                        style.make_edge(edge, 'CONDITIONAL_FALSE')
-                    else:
-                        style.make_edge(edge, 'CONDITIONAL_TRUE')
-                else:
-                    # this should be an indirect jump with many targets, or something else
-                    logger.info("found unconditional branch with many targets for edge"
-                                f" {source_node.addr:#x} -> {edge.dst.obj.addr:#x}")
-                    style.make_edge(edge, 'UNKNOWN')
-            else:
-                logger.warning(f"Unexpected {jk} type for edge"
-                               f" {edge.src.obj.addr:#x} -> {edge.dst.obj.addr:#x}")
-                style.make_edge(edge, 'UNKNOWN')
-        else:
-            style.make_edge(edge, 'UNKNOWN')
+    return (
+        node.obj.is_simprocedure
+        and node.obj.simprocedure_name == "UnresolvableJumpTarget"
+    )
+
+
+def _control_transfer_tail(edge):
+    """Return a block's control-transfer instruction and any delay-slot tail."""
+
+    source_node = edge.src.obj
+    try:
+        insns = [wrapped.insn for wrapped in source_node.block.capstone.insns]
+        terminator_index = control_transfer_index(edge.src.project.arch.name, insns)
+        if terminator_index is None:
+            return None
+        return insns[terminator_index:]
+    except (AttributeError, KeyError, RuntimeError):
+        return None
+
+
+def _lift_control_transfer_tail(edge, tail):
+    """Lift a Capstone-discovered control-transfer tail for classification."""
+
+    try:
+        return edge.src.project.factory.block(
+            tail[0].address,
+            size=sum(insn.size for insn in tail),
+            strict_block_end=True,
+            cross_insn_opt=False,
+        ).vex
+    except Exception:
+        # This is a presentation-only recovery attempt. A failed tail lift
+        # means the edge is genuinely unclassifiable, not a render failure.
+        return None
+
+
+def _vex_boring_edge_type(edge) -> str:
+    """Classify one ordinary edge from its source block's lifted terminator."""
+
+    source_node = edge.src.obj
+    try:
+        vex = source_node.block.vex
+    except (AttributeError, KeyError):
+        return "UNKNOWN"
+
+    if vex.jumpkind == "Ijk_NoDecode":
+        # Lift only the branch tail when preceding SIMD/extension instructions
+        # make VEX reject the complete block.
+        tail = _control_transfer_tail(edge)
+        if tail is None:
+            if edge.dst.obj.addr == source_node.addr + source_node.size:
+                return "NEXT"
+            return "UNKNOWN"
+        vex = _lift_control_transfer_tail(edge, tail)
+        if vex is None:
+            return "UNKNOWN"
+    if vex.jumpkind != "Ijk_Boring":
+        return "UNKNOWN"
+
+    try:
+        next_addr = vex.next.con.value
+    except AttributeError:
+        next_addr = None
+
+    # VEX records explicit Exit statements for conditional branches. Depending
+    # on the lifter, either the exit or the default `next` can be the taken
+    # destination, so both are valid non-fall-through successors.
+    exit_targets: set[int] = set()
+    for _, _, stmt in vex.exit_statements:
+        try:
+            target = stmt.dst.value
+        except AttributeError:
+            continue
+        if isinstance(target, int):
+            exit_targets.add(target)
+    if exit_targets:
+        fallthrough_addr = source_node.addr + source_node.size
+        if edge.dst.obj.addr == fallthrough_addr:
+            return "CONDITIONAL_FALSE"
+        if edge.dst.obj.addr in exit_targets or edge.dst.obj.addr == next_addr:
+            return "CONDITIONAL_TRUE"
+        return "UNKNOWN"
+
+    if next_addr is None:
+        # A non-constant VEX `next` is an indirect branch. Recovered table
+        # entries are concrete edges, but the dispatch itself remains indirect.
+        return "INDIRECT"
+
+    if not isinstance(next_addr, int) or edge.dst.obj.addr != next_addr:
+        return "UNKNOWN"
+    if next_addr == source_node.addr + source_node.size:
+        return "NEXT"
+    return "UNCONDITIONAL"
+
+
+def _edge_type(edge) -> str:
+    """Return the visual category for one CFG edge."""
+
+    # Custom CFG repair may flatten an UnresolvableJumpTarget placeholder into
+    # direct candidate edges. The marker keeps that unresolved semantics
+    # visible after the synthetic endpoint itself has been removed.
+    if edge.meta.get("unresolved_indirect"):
+        return "UNRESOLVED_INDIRECT"
+
+    # Both sides of this synthetic node express unresolved control flow: the
+    # incoming edge is the unresolved jump and outgoing edges are candidates.
+    if _is_unresolvable_jump_target(edge.src) or _is_unresolvable_jump_target(edge.dst):
+        return "UNRESOLVED_INDIRECT"
+
+    jumpkind = edge.meta.get("jumpkind")
+    if jumpkind == "Ijk_Ret":
+        return "RET"
+    if jumpkind == "Ijk_FakeRet":
+        return "FAKE_RET"
+    if jumpkind == "Ijk_Call":
+        return "CALL"
+    if jumpkind == "Ijk_Boring":
+        return _vex_boring_edge_type(edge)
+
+    logger.warning(
+        f"Unexpected {jumpkind!r} edge type for "
+        f"{edge.src.obj.addr:#x} -> {edge.dst.obj.addr:#x}"
+    )
+    return "UNKNOWN"
+
+
+class ColorEdgesVex(EdgeAnnotator):
+    """Apply semantic edge styles derived from VEX and repair metadata."""
+
+    def annotate_edge(self, edge) -> None:
+        """Style one edge without inferring branch kind from successor count."""
+
+        get_style().make_edge(edge, _edge_type(edge))

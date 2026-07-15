@@ -28,7 +28,7 @@ class CFGSource(Source):
                 raise VisError("Duplicate node %s" % str(n))
 
             # add node to graph
-            wn = Node(n)
+            wn = Node(n, obj)
             lookup[n] = wn
             graph.add_node(wn)
 

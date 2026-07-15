@@ -1,5 +1,4 @@
-"""
-Golden-file regression tests for CFG rendering.
+"""Golden regression tests for CFG rendering.
 
 How this module works:
 
@@ -76,7 +75,7 @@ from bingraph.core import render as render_module
 from bingraph.helpers import settings as settings_module
 
 
-TESTS_DIR = Path(__file__).resolve().parent
+TESTS_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = TESTS_DIR.parent
 CSV_PATH = TESTS_DIR / "playground_functions.csv"
 PLAYGROUND_ROOT = PROJECT_ROOT / "angr-binaries" / "tests"
@@ -107,6 +106,30 @@ CONFIGS = [
     GoldenConfig(name="cfg_mode_none", cfg_mode="none"),
     GoldenConfig(name="cfg_mode_custom", cfg_mode="custom"),
 ]
+
+# Curated regression cases that exercise repair behavior we want to protect
+# while keeping a quick developer-facing golden suite. Configuration selection
+# remains the responsibility of BINGRAPH_GOLDEN_CONFIGS.
+CHECKPOINT_ARTIFACTS = frozenset(
+    {
+        "armel,lwip_udpecho_bm.elf,0x705,__udivmoddi4.dot",
+        "armel,lwip_udpecho_bm.elf,0x5f65,dhcp_bind.dot",
+        "i386,bronze_ropchain,0x8060ca0,__strcmp_sse4_2.dot",
+        "i386,bronze_ropchain,0x806a770,__strcasecmp_l_sse4_2.dot",
+        "i386,bronze_ropchain,0x806f870,_dl_aux_init.dot",
+        "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",
+        "ppc64el,fauxware_static,0x1003ac00,__gconv_release_step.dot",
+        "x86_64,elf_with_static_libc_ubuntu_2004,0x445970,"
+        "__memset_avx512_no_vzeroupper.dot",
+        "x86_64,elf_with_static_libc_ubuntu_2004,0x48ef40,execute_stack_op.dot",
+        "x86_64,langdetect_clang,0x420c40,__memcpy_avx512_unaligned_erms.dot",
+        "x86_64,langdetect_clang,0x423590,__memset_avx512_no_vzeroupper.dot",
+        "x86_64,langdetect_clang,0x435640,__strstr_avx512.dot",
+        "x86_64,langdetect_clang,0x408ce0,msort_with_tmp.part.0.dot",
+        "x86_64,langdetect_clang,0x4741a0,execute_cfa_program.dot",
+        "x86_64,static,0x40dc00,abort.dot",
+    }
+)
 
 
 @dataclass
@@ -191,6 +214,12 @@ def _artifact_relative_path(row: dict[str, Any]) -> Path:
     funcaddr_part = _sanitize_flat_artifact_part(row["function_addr"])
     funcname_part = _sanitize_flat_artifact_part(row["function_name"])
     return Path(f"{filepath_part},{funcaddr_part},{funcname_part}.dot")
+
+
+def _is_checkpoint(row: dict[str, Any]) -> bool:
+    """Return whether one corpus row belongs to the curated smoke suite."""
+
+    return _artifact_relative_path(row).as_posix() in CHECKPOINT_ARTIFACTS
 
 
 def _summary_payload(
@@ -401,6 +430,24 @@ def _build_test_settings(config: GoldenConfig) -> settings_module.Settings:
 CURRENT_MODE = _golden_mode()
 ACTIVE_CONFIGS = _selected_configs()
 ROWS = tuple(_iter_rows(_env_limit())) if CURRENT_MODE == "compare" else ()
+
+
+def _golden_cases():
+    """Build ordered `(config, row)` cases with checkpoint marks where needed."""
+
+    return tuple(
+        pytest.param(
+            config,
+            row,
+            id=f"{config.name}-{_row_id(row)}",
+            marks=pytest.mark.checkpoint if _is_checkpoint(row) else (),
+        )
+        for config in ACTIVE_CONFIGS
+        for row in ROWS
+    )
+
+
+GOLDEN_CASES = _golden_cases()
 RUN_STATE: dict[str, ConfigRunState] = {}
 ACTIVE_CACHE_CONFIG: str | None = None
 
@@ -499,10 +546,7 @@ if CURRENT_MODE == "compare":
         yield
 
     @pytest.mark.slow
-    @pytest.mark.parametrize("row", ROWS, ids=_row_id)
-    @pytest.mark.parametrize(
-        "config", ACTIVE_CONFIGS, ids=[config.name for config in ACTIVE_CONFIGS]
-    )
+    @pytest.mark.parametrize(("config", "row"), GOLDEN_CASES)
     def test_render_cfg_goldens(
         config: GoldenConfig,
         row: dict[str, Any],

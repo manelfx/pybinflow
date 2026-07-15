@@ -40,6 +40,8 @@ build-backend = "hatchling.build"
 packages = ["src/bingraph"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests/units"]
 markers = [
+    "checkpoint: curated CFG golden regression cases",
     "slow: integration tests that require playground binaries",
 ]

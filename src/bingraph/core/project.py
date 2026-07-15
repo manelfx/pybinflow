@@ -8,7 +8,7 @@ from angr.analyses.cfg import CFGBase
 from loguru import logger
 
 from bingraph.helpers import time_it, get_settings, CfgMode
-from .cfg import (
+from bingraph.cfg import (
     build_custom_cfg,
     log_cfg_status,
 )
@@ -19,7 +19,7 @@ from .symbols import list_function_symbols
 def _get_project(spath: str, mtime: float) -> Project:
     """
     Return an angr project from a cached binary image.
-    
+
     Args:
         spath (str): The file path of the binary to analyze.
         mtime (float): Binary modification time -- note this is not used but is still cached,
@@ -57,11 +57,15 @@ def _get_fast_cfg(project: Project, kb: KnowledgeBase, func_addr: int) -> CFGFas
         CFGFast: The fast control flow graph of the project.
     """
     # Find the function symbol first so we can bound CFGFast to its address range.
-    function = next((sym for sym in list_function_symbols(project) if sym.addr == func_addr), None)
+    function = next(
+        (sym for sym in list_function_symbols(project) if sym.addr == func_addr), None
+    )
     if not function:
         raise KeyError(f"Function {func_addr:#x} not found binary")
     regions = [(func_addr, func_addr + function.size)]
-    logger.info(f"Region for CFG reconstruct will be {[(hex(a), hex(b)) for a, b in regions]}") 
+    logger.info(
+        f"Region for CFG reconstruct will be {[(hex(a), hex(b)) for a, b in regions]}"
+    )
 
     def _should_retry_cfgfast_with_safer_settings(exc: Exception) -> bool:
         """
@@ -84,7 +88,6 @@ def _get_fast_cfg(project: Project, kb: KnowledgeBase, func_addr: int) -> CFGFas
 
         return isinstance(exc, KeyError)
 
-
     # Create a fresh knowledge base so this analysis does not pollute the project state.
     def build_cfg(*, force_smart_scan: bool) -> CFGFast:
         return project.analyses.CFGFast(
@@ -106,7 +109,7 @@ def _get_fast_cfg(project: Project, kb: KnowledgeBase, func_addr: int) -> CFGFas
             force_smart_scan=force_smart_scan,
             resolve_indirect_jumps=True,
             # stable, clean function graphs for rendering
-            normalize=True
+            normalize=True,
         )
 
     # Prefer the smarter region-bounded scan, but retry without it for the
@@ -122,7 +125,9 @@ def _get_fast_cfg(project: Project, kb: KnowledgeBase, func_addr: int) -> CFGFas
         return build_cfg(force_smart_scan=False)
 
 
-def _get_emu_cfg(project: Project, kb: KnowledgeBase, func_addr: int, keep_state: bool) -> CFGEmulated:
+def _get_emu_cfg(
+    project: Project, kb: KnowledgeBase, func_addr: int, keep_state: bool
+) -> CFGEmulated:
     """
     Build or retrieve the emulated control flow graph (CFGEmulated) for a given function.
 
@@ -135,19 +140,22 @@ def _get_emu_cfg(project: Project, kb: KnowledgeBase, func_addr: int, keep_state
     Returns:
         CFGEmulated: The emulated control flow graph of the project.
     """
-    return project.analyses.CFGEmulated(kb=kb,
-                                        starts=[func_addr],
-                                        call_depth=0,
-                                        keep_state=keep_state,
-                                        normalize=True)
+    return project.analyses.CFGEmulated(
+        kb=kb, starts=[func_addr], call_depth=0, keep_state=keep_state, normalize=True
+    )
+
 
 @lru_cache
 @time_it
-def get_cfg(project: Project, func_addr: int, cfg_mode: CfgMode | None = None) -> CFGBase:
+def get_cfg(
+    project: Project, func_addr: int, cfg_mode: CfgMode | None = None
+) -> CFGBase:
     """Return the CFG for one function according to the configured fallback mode."""
 
     resolved_cfg_mode = cfg_mode or get_settings().cfg_mode
-    logger.info(f"Getting CFG for function {func_addr:#x} with mode '{resolved_cfg_mode}'")
+    logger.info(
+        f"Getting CFG for function {func_addr:#x} with mode '{resolved_cfg_mode}'"
+    )
     # Keep one KB per high-level CFG request so a fallback CFGEmulated run can
     # reuse the metadata already discovered by CFGFast, especially comments and
     # related knowledge attached during the fast analysis.

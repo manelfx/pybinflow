@@ -1,7 +1,7 @@
 """Core analysis helpers for bingraph."""
 
 from .project import get_cfg, load_project
-from .symbols import list_function_symbols, FunctionSymbol
+from .symbols import FunctionSymbol, list_function_symbols
 from .render import render_cfg
 
 __all__ = [
@@ -9,5 +9,5 @@ __all__ = [
     "list_function_symbols",
     "FunctionSymbol",
     "load_project",
-    "render_cfg"
+    "render_cfg",
 ]

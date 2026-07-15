@@ -15,7 +15,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from loguru import logger
 
 from bingraph.helpers import CfgMode, get_settings, resolve_under_root, MODULE_NAME
-from bingraph.core import load_project, list_function_symbols, render_cfg, FunctionSymbol
+from bingraph.core import (
+    load_project,
+    list_function_symbols,
+    render_cfg,
+    FunctionSymbol,
+)
 
 
 ItemT = TypeVar("ItemT")
@@ -36,6 +41,7 @@ def create_app() -> FastAPI:
         Custom routing gatekeeper that captures exceptions directly at the execution
         boundary, bypassing Starlette's noisy middleware streaming panics.
         """
+
         def get_route_handler(self) -> Callable:
             original_handler = super().get_route_handler()
 
@@ -43,7 +49,6 @@ def create_app() -> FastAPI:
                 try:
                     return await original_handler(request)
                 except Exception as exc:
-
                     # CLI Client Debug Mode Branch
                     if settings.debug and settings.client:
                         # Let it leak naturally out to cli.py's TestClient
@@ -62,30 +67,39 @@ def create_app() -> FastAPI:
                     if settings.debug:
                         # here, this is server mode for sure.
                         # log the exception beautifully with Loguru exactly ONCE
-                        logger.exception(f"Error [{status_code}] across {request.url.path}: {str(exc)}")
+                        logger.exception(
+                            f"Error [{status_code}] across {request.url.path}: {str(exc)}"
+                        )
 
                         # In debug server mode, raise the error *after* logging with Loguru
                         # so the interactive yellow webpage can still load in the browser.
                         raise exc
 
                     # from here, we are in non-debug mode
-                    logger.error(f"Error [{status_code}] across {request.url.path}: {str(exc)}")
+                    logger.error(
+                        f"Error [{status_code}] across {request.url.path}: {str(exc)}"
+                    )
 
                     # format UI routes vs API paths smoothly
                     if request.url.path.startswith("/api"):
-                        return JSONResponse(status_code=status_code, content={"error": str(exc)})
+                        return JSONResponse(
+                            status_code=status_code, content={"error": str(exc)}
+                        )
 
                     # show error message in browser.
                     # note this implies a non-/api endpoint, since client mode doesn't allow to query those.
                     return HTMLResponse(
                         status_code=status_code,
-                        content=f"<html><body><h1>Error {status_code}</h1><p>{str(exc)}</p></body></html>"
+                        content=f"<html><body><h1>Error {status_code}</h1><p>{str(exc)}</p></body></html>",
                     )
 
             return custom_route_handler
 
     # Enable debug mode on the FastAPI app context if set via CLI
-    app = FastAPI(title="bingraph", debug=settings.server and settings.debug)
+    app = FastAPI(
+        title="bingraph",
+        debug=settings.server is not None and settings.debug,
+    )
 
     # Force the app router to process all endpoints through our interceptor class
     app.router.route_class = RouteInterceptor
@@ -104,7 +118,9 @@ def create_app() -> FastAPI:
             sys.__excepthook__(exctype, value, traceback)
             return
         # Render the raw uncaught panic through Loguru
-        logger.opt(exception=(exctype, value, traceback)).critical("Unhandled application panic encountered:")
+        logger.opt(exception=(exctype, value, traceback)).critical(
+            "Unhandled application panic encountered:"
+        )
 
     sys.excepthook = execution_crash_hook
 
@@ -130,7 +146,9 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/api/symtab", response_model=ItemsList[FunctionSymbol])
-    def api_symtab(request: Request, filepath: str = Query(...)) -> ItemsList[FunctionSymbol]:
+    def api_symtab(
+        request: Request, filepath: str = Query(...)
+    ) -> ItemsList[FunctionSymbol]:
 
         return ItemsList(items=_get_symbols(filepath))
 
@@ -173,13 +191,15 @@ def create_app() -> FastAPI:
         return Response(content=svg, media_type="image/svg+xml")
 
     @app.get("/api/cfg", response_model=dict[str, str])
-    def api_cfg(request: Request,
-                filepath: str = Query(...),
-                function: str = Query(...),
-                format: str = Query(...),
-                dfs: bool | None = Query(None),
-                comments: bool | None = Query(None),
-                mode: CfgMode | None = Query(None)) -> dict[str, str]:
+    def api_cfg(
+        request: Request,
+        filepath: str = Query(...),
+        function: str = Query(...),
+        format: str = Query(...),
+        dfs: bool | None = Query(None),
+        comments: bool | None = Query(None),
+        mode: CfgMode | None = Query(None),
+    ) -> dict[str, str]:
         """Endpoint to return the CFG of a specified function."""
 
         cfg = _render_cfg(filepath, function, dfs, comments, mode, format)

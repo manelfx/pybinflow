@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 
 from fastapi.testclient import TestClient
+from fastapi.routing import APIRoute
 from pydantic_settings import CliApp
 import uvicorn
 
@@ -33,29 +34,39 @@ def main() -> None:
             port=settings.server.port,
             reload=settings.debug,
             factory=settings.debug,
-            log_config=log_config)
+            log_config=log_config,
+        )
     else:
+        client_settings = settings.client
+        if client_settings is None:
+            raise RuntimeError(
+                "Client settings are required when server mode is disabled"
+            )
+
         app = create_app()
         client = TestClient(app, raise_server_exceptions=settings.debug)
 
         # build correct endpoint path
-        api_endpoint = settings.client.endpoint
+        api_endpoint = client_settings.endpoint
         if not api_endpoint.startswith("/"):
             api_endpoint = f"/{api_endpoint}"
         if not api_endpoint.startswith("/api"):
             api_endpoint = f"/api{api_endpoint}"
-        assert api_endpoint in [route.path for route in app.routes], f"Invalid endpoint {api_endpoint}"
+        route_paths = [
+            route.path for route in app.routes if isinstance(route, APIRoute)
+        ]
+        assert api_endpoint in route_paths, f"Invalid endpoint {api_endpoint}"
 
         # build query parameters
         # all client settings attributes except endpoint and payload are considered parameters
         query_params = {
             key: value
-            for key, value in vars(settings.client).items()
+            for key, value in vars(client_settings).items()
             if value is not None and key not in ["endpoint", "payload"]
         }
 
         # build payload info (if needed)
-        body_data = settings.client.payload
+        body_data = client_settings.payload
         if body_data:
             try:
                 body_data = json.loads(body_data)
@@ -68,6 +79,7 @@ def main() -> None:
         # data=body_data if isinstance(body_data, str) else None
         response = client.get(api_endpoint, params=query_params)
         print(json.dumps(response.json()))
+
 
 if __name__ == "__main__":
     main()

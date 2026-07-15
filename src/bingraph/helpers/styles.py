@@ -22,7 +22,11 @@ STYLE_THICK = {
         "EDGECOLOR_UNCONDITIONAL": {"color": "blue", "penwidth": "2"},
         "EDGECOLOR_NEXT": {"color": "blue", "style": "dashed", "penwidth": "2"},
         "EDGECOLOR_INDIRECT": {"color": "orange", "penwidth": "2"},
-        "EDGECOLOR_UNRESOLVED_INDIRECT": {"color": "orange", "style": "dashed", "penwidth": "2"},
+        "EDGECOLOR_UNRESOLVED_INDIRECT": {
+            "color": "orange",
+            "style": "dashed",
+            "penwidth": "2",
+        },
         "EDGECOLOR_CALL": {"color": "gray", "penwidth": "2"},
         "EDGECOLOR_RET": {"color": "gray", "style": "dotted", "penwidth": "2"},
         "EDGECOLOR_FAKE_RET": {"color": "gray", "style": "dashed", "penwidth": "2"},

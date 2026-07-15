@@ -87,7 +87,7 @@ from collections import deque
 from collections.abc import Iterable
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from angr import KnowledgeBase, Project
 from angr.analyses.cfg import CFGBase
@@ -130,6 +130,15 @@ from .models import (
 # Last-resort protection for repair loops that keep mutating the graph without
 # converging. Stable requeues are diagnosed earlier by PendingObligation state.
 MAX_CUSTOM_CFG_WORKLIST_ITERATIONS = 5_000
+
+
+def _node_vex(node: CFGNode) -> Any | None:
+    """Return VEX for a native CFG node, hiding angr's broad block union."""
+
+    try:
+        return cast(Any, node.block).vex
+    except (AttributeError, KeyError, RuntimeError):
+        return None
 
 
 def _lookup_function_bounds(project: Project, func_addr: int) -> FunctionBounds:
@@ -293,14 +302,10 @@ def _guarded_jump_table_entry_count(
             continue
         if not _node_intersects_bounds(predecessor, bounds):
             continue
-        try:
-            upper_bound = _vex_guarded_index_upper_bound(
-                predecessor.block.vex,
-                node.addr,
-                index_key,
-            )
-        except Exception:
+        vex = _node_vex(predecessor)
+        if vex is None:
             continue
+        upper_bound = _vex_guarded_index_upper_bound(vex, node.addr, index_key)
         if upper_bound is not None:
             bounds_found.add(upper_bound)
 
@@ -385,7 +390,7 @@ def _vex_relative_jump_table(vex) -> StaticJumpTable | None:
                 break
             _, index_bits = index_key
         else:
-            if saw_base and index_bits is not None:
+            if saw_base and index_key is not None and index_bits is not None:
                 offset, bits = base_key
                 return StaticJumpTable(
                     base_register_offset=offset,
@@ -417,9 +422,8 @@ def _constant_register_from_predecessors(
         if current in seen:
             continue
         seen.add(current)
-        try:
-            vex = current.block.vex
-        except Exception:
+        vex = _node_vex(current)
+        if vex is None:
             return None
 
         tmp_definitions = _vex_tmp_definitions(vex)

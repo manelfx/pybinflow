@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any
 from pydot import Dot, Node as PydotNode, Subgraph
 from .vis import Edge, Graph, Node, Output
@@ -34,6 +35,7 @@ default_edge_attributes = {
 }
 
 
+@dataclass
 class DotOutput(Output):
     fname: str
     format: str = "png"

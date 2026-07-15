@@ -12,18 +12,23 @@ from bingraph.helpers import CfgMode
 from . import get_cfg
 from .annotators import ColorSimprocedures, CommentsDataRef, ColorEdgesVex
 from .contents import NodeHead, NodeAsm
-from .vis import Vis
+from .vis import Annotator, Vis
 from .outputs import DotOutput
 from .sources import CFGSource
 
 
 def plot_cfg(
-    cfg: CFGBase, fname: str, func_addr: int, dfs_rank: bool, comments: bool, format: str
+    cfg: CFGBase,
+    fname: str,
+    func_addr: int,
+    dfs_rank: bool,
+    comments: bool,
+    format: str,
 ) -> None:
 
     logger.info(f"Start CFG plotting function at {hex(func_addr)} as {format}")
 
-    annotators = []
+    annotators: list[Annotator] = []
     annotators.append(ColorSimprocedures())
     if comments:
         annotators.append(CommentsDataRef())
@@ -31,7 +36,9 @@ def plot_cfg(
 
     vis = Vis(
         source=CFGSource(func_addr=func_addr),
-        output=DotOutput(fname=fname, format=format, dfs_rank=dfs_rank, entry_addr=func_addr),
+        output=DotOutput(
+            fname=fname, format=format, dfs_rank=dfs_rank, entry_addr=func_addr
+        ),
         transformers=[],
         contents=[NodeHead(), NodeAsm()],
         annotators=annotators,

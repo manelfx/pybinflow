@@ -101,27 +101,8 @@ test outputs show such cases across at least:
 - `mipsel`
 - `x86_64`
 
-Example:
-
-- `i386/bronze_ropchain`, function `__memset_sse2` at `0x805ec40`
-
-Findings so far:
-
-- Enabling fallback to `CFGEmulated` when `UnresolvableJumpTarget` is present
-  does not reliably improve the resulting CFG.
-- Trying stronger angr options such as `cross_references=True` or
-  `force_complete_scan=True` did not help on `__memset_sse2`.
-- The problematic x86 example is a PIC jump-table dispatch
-  (`get_pc_thunk.bx` + table lookup + `jmp *%ebx`), but similar unresolved
-  patterns appear on many other architectures.
-
-Current conclusion:
-
-- A custom angr indirect-jump resolver is probably not the best next
-  investment, because the issue appears to be cross-architecture and would
-  likely duplicate a large part of CFG recovery logic.
-- It is more promising to keep unresolved indirect jumps as a known anomaly
-  class and address them later in the custom CFG fallback builder.
+We might have fixe the i386/x86_64 cases, but we need to revisit other
+architectures.
 
 Rendering follow-up:
 
@@ -129,33 +110,6 @@ Rendering follow-up:
   pseudo-address. For example, `UnresolvableCallTarget` may render as
   `0x10100058`, which is an angr-internal synthetic address rather than a
   binary address. Prefer hiding it or labeling it explicitly as synthetic.
-
-=== Investigate CFGEmulated 0x0 nodes in _int_malloc
-
-Observed on:
-
-- `x86_64/langdetect_clang`, function `_int_malloc` at `0x41b300`
-
-Current status:
-
-- Only reproduced in `cfg_mode_stateless` / `cfg_mode_stateful` test outputs.
-- `cfg_mode_none` does not show the issue.
-- It is the only known current CFG in the generated corpus with nodes at
-  address `0x0`.
-- The CFG also contains multiple distinct nodes with the same basic-block
-  address (for example repeated nodes at `0x41b300`), which is another clear
-  sign that this graph is malformed.
-- Filtering `PathTerminator` nodes removed the fake `0x4` node, but not the
-  remaining `0x0` node.
-
-Open questions:
-
-- Why does CFGEmulated introduce a node labeled `_nl_current_LC_CTYPE` at
-  address `0x0` for this function?
-- Why does the direct CLI inspection not make this node obvious while the
-  persisted golden-test artifact does?
-- Is this node a real angr CFG node that should be filtered, or is it exposing
-  a deeper CFG construction issue specific to this function?
 
 === Address comments
 

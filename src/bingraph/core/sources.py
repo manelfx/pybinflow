@@ -1,8 +1,10 @@
+from dataclasses import dataclass
 
 from angr.analyses.cfg import CFGBase
 from .vis import Source, VisError, Node, Edge, Graph
 
 
+@dataclass
 class CFGSource(Source):
     func_addr: int | None = None
 
@@ -19,7 +21,7 @@ class CFGSource(Source):
             # - nodes of given function (if provided)
             # - simbolic procedures (except PathTerminators)
             if n.is_simprocedure:
-                if n.simprocedure_name == 'PathTerminator':
+                if n.simprocedure_name == "PathTerminator":
                     continue
             elif self.func_addr and n.function_address != self.func_addr:
                 continue

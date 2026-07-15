@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from dataclasses import dataclass, field
+from typing import Any, Callable, cast
 
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGNode
-from pydantic import BaseModel, model_validator
 from pydot import Node as PydotNode, Edge as PydotEdge
 
 from bingraph.helpers import time_it
+
 
 class VisError(Exception):
     pass
@@ -21,7 +22,9 @@ class Node:
         # graph wrapper in place, so rendering must receive that live graph
         # explicitly instead of consulting process-global node registration.
         self._graph = graph
-        self.pydot = PydotNode(self.seq)
+        # Pydot creates dynamic ``set_<attribute>`` methods at runtime that
+        # are absent from its static stub surface.
+        self.pydot: Any = PydotNode(self.seq)
         self.content = {}
 
     @property
@@ -37,7 +40,8 @@ class Node:
     @property
     def kb(self):
         """Returns Angr Knowledge base info, analysis dependent."""
-        return self.obj._cfg_model._cfg_manager._kb
+        cfg_manager = cast(Any, self.obj._cfg_model._cfg_manager)
+        return cfg_manager._kb
 
     @property
     def seq(self):
@@ -48,7 +52,9 @@ class Node:
             return hex(block_id)
         return str(block_id)
 
-    def __eq__(self, other: "Node") -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Node):
+            return False
         return self.obj == other.obj  # and self.seq == other.seq
 
     def __hash__(self) -> int:
@@ -64,14 +70,16 @@ class Edge:
         self.pydot = PydotEdge(src.seq, dst.seq)
         self.meta = meta or {}
 
-    def __eq__(self, other: "Edge") -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Edge):
+            return False
         return self.src == other.src and self.dst == other.dst
 
     def __hash__(self) -> int:
         return hash((self.src, self.dst))
 
 
-class Annotator(ABC, BaseModel):
+class Annotator(ABC):
     """Base class for all annotators."""
 
     pass
@@ -98,10 +106,17 @@ class ContentAnnotator(Annotator):
         pass
 
 
-class Content(ABC, BaseModel):
+class Content(ABC):
     name: str
     columns: list[str]
-    annotators: list[Any] = []
+
+    def __init__(self) -> None:
+        """Create per-render mutable state from subclass metadata."""
+
+        # Subclasses declare their columns as class-level presentation metadata.
+        # Copy it so annotators never modify another Content instance's schema.
+        self.columns = list(self.columns)
+        self.annotators: list[ContentAnnotator] = []
 
     def append_column(self, column: str) -> None:
         if column not in self.columns:
@@ -124,12 +139,15 @@ class Content(ABC, BaseModel):
 
 class Graph:
     def __init__(
-        self, cfg: CFGBase, nodes: list[Node] = None, edges: list[Edge] = None
+        self,
+        cfg: CFGBase,
+        nodes: set[Node] | None = None,
+        edges: list[Edge] | None = None,
     ) -> None:
         self.cfg = cfg
         self.obj = cfg.graph
-        self.nodes = nodes if nodes else set()
-        self.edges = edges if edges else []
+        self.nodes = nodes if nodes is not None else set()
+        self.edges = edges if edges is not None else []
 
     def add_node(self, node: Node) -> None:
         self.nodes.add(node)
@@ -152,7 +170,7 @@ class Graph:
         self.edges = new_graph.edges
 
     def filtered_view(self, node_filter: Callable[[Node], bool]) -> "Graph":
-        nodes = list(filter(lambda _: node_filter(_), self.nodes))
+        nodes = {node for node in self.nodes if node_filter(node)}
         edges = list(
             filter(
                 lambda edge: node_filter(edge.src) and node_filter(edge.dst), self.edges
@@ -161,34 +179,40 @@ class Graph:
         return Graph(self.cfg, nodes, edges)
 
 
-class Source(BaseModel, ABC):
+class Source(ABC):
     @abstractmethod
     def parse(self, cfg: CFGBase) -> Graph:
         pass
 
 
-class Transformer(BaseModel, ABC):
+class Transformer(ABC):
     @abstractmethod
     def transform(self, graph: Graph) -> None:
         pass
 
 
-class Output(BaseModel, ABC):
+class Output(ABC):
     @abstractmethod
     def generate(self, graph: Graph) -> str:
         pass
 
 
-class Vis(BaseModel):
+@dataclass
+class Vis:
     source: Source
     output: Output
 
-    transformers: list[Transformer]
-    contents: list[Content]
-    annotators: list[Annotator]
+    transformers: list[Transformer] = field(default_factory=list)
+    contents: list[Content] = field(default_factory=list)
+    annotators: list[Annotator] = field(default_factory=list)
 
-    @model_validator(mode="after")
-    def setup(self):
+    def __post_init__(self) -> None:
+        """Build render-time lookup tables after constructing the pipeline."""
+
+        self.setup()
+
+    def setup(self) -> None:
+        """Validate and categorize the configured content and annotators."""
 
         # create a content dictionary out of the content list
         self._contents = {obj.name: obj for obj in self.contents}
@@ -211,8 +235,6 @@ class Vis(BaseModel):
                 self._contents[annotator.name].add_annotator(annotator)
             else:
                 VisError(f"Unexpected annotator of type {type(annotator)}")
-
-        return self
 
     @time_it
     def process(self, cfg: CFGBase) -> str:

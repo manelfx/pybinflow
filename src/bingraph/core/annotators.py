@@ -1,4 +1,3 @@
-
 from abc import abstractmethod
 from typing import Any
 from loguru import logger
@@ -14,7 +13,11 @@ class ColorSimprocedures(NodeAnnotator):
             return
 
         node.pydot.set_style("filled")
-        if node.obj.simprocedure_name in ['PathTerminator','ReturnUnconstrained','UnresolvableTarget']:
+        if node.obj.simprocedure_name in [
+            "PathTerminator",
+            "ReturnUnconstrained",
+            "UnresolvableTarget",
+        ]:
             node.pydot.set_fillcolor("#ffcccc")
         else:
             node.pydot.set_fillcolor("#dddddd")
@@ -34,16 +37,17 @@ class CommentsAnnotator(ContentAnnotator):
 
         comments_by_addr = self.get_comments_by_addr(node)
 
-        for k in content['data']:
-            ins = k['_ins']
+        for k in content["data"]:
+            ins = k["_ins"]
             if ins.address in comments_by_addr:
-                k['comment'] = {'content': " ; " + "\n".join(comments_by_addr[ins.address])}
-                k['comment']['color'] = 'gray'
-                k['comment']['align'] = 'LEFT'
+                k["comment"] = {
+                    "content": " ; " + "\n".join(comments_by_addr[ins.address])
+                }
+                k["comment"]["color"] = "gray"
+                k["comment"]["align"] = "LEFT"
 
 
 class CommentsDataRef(CommentsAnnotator):
-
     @staticmethod
     def _symbol_name_at(node: Node, addr: int) -> str | None:
 
@@ -131,7 +135,7 @@ class CommentsDataRef(CommentsAnnotator):
         return None
 
     def get_comments_by_addr(self, node: Node) -> dict[int, list[str]]:
-        comments_by_addr: dict[int, str] = {}
+        comments_by_addr: dict[int, list[str]] = {}
 
         kb_xrefs = getattr(node.kb, "xrefs", None)
         if kb_xrefs is None:
@@ -147,7 +151,9 @@ class CommentsDataRef(CommentsAnnotator):
             for instr_addr in node.obj.instruction_addrs:
                 xrefs.update(kb_xrefs.get_xrefs_by_ins_addr(instr_addr))
         if len(xrefs):
-            logger.info(f"Found {len(xrefs)} reference(s) in block {hex(block_start)}-{hex(block_end)}")
+            logger.info(
+                f"Found {len(xrefs)} reference(s) in block {hex(block_start)}-{hex(block_end)}"
+            )
 
         def _xref_sort_key(xref):
             md = getattr(xref, "memory_data", None)

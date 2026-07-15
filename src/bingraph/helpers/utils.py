@@ -16,14 +16,18 @@ def time_it(func: Callable[..., Any]) -> Callable[..., Any]:
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         start_time = perf_counter()  # Highest resolution clock available
 
-        result = func(*args, **kwargs)   # Execute the actual function
+        result = func(*args, **kwargs)  # Execute the actual function
 
         end_time = perf_counter()
         execution_time = end_time - start_time
 
         # Log the result
-        logger.info(f"Function '{func.__name__}' executed in {execution_time:.4f} seconds")
+        function_name = getattr(func, "__name__", type(func).__name__)
+        logger.info(
+            f"Function '{function_name}' executed in {execution_time:.4f} seconds"
+        )
         return result
+
     return wrapper
 
 

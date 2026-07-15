@@ -1,6 +1,7 @@
 from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, cast
 
 from angr import Project, KnowledgeBase
 from angr.analyses import CFGFast, CFGEmulated
@@ -140,7 +141,8 @@ def _get_emu_cfg(
     Returns:
         CFGEmulated: The emulated control flow graph of the project.
     """
-    return project.analyses.CFGEmulated(
+    cfg_emulated = cast(Any, project.analyses.CFGEmulated)
+    return cfg_emulated(
         kb=kb, starts=[func_addr], call_depth=0, keep_state=keep_state, normalize=True
     )
 
@@ -166,7 +168,9 @@ def get_cfg(
     if resolved_cfg_mode == "none":
         cfg = fast_cfg
     elif resolved_cfg_mode == "custom":
-        cfg = build_custom_cfg(project, kb, func_addr, fast_cfg)
+        # CustomCFG intentionally exposes the CFGBase subset consumed by the
+        # rest of bingraph, but angr's nominal type hierarchy cannot express it.
+        cfg = cast(CFGBase, build_custom_cfg(project, kb, func_addr, fast_cfg))
     else:
         raise ValueError(f"Unsupported cfg mode: {resolved_cfg_mode}")
 

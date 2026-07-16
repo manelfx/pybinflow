@@ -13,7 +13,7 @@ from bingraph.cfg import (
     build_custom_cfg,
     log_cfg_status,
 )
-from .symbols import list_function_symbols
+from bingraph.helpers.symbols import list_function_symbols
 
 
 @lru_cache

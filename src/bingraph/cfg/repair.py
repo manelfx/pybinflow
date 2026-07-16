@@ -86,23 +86,35 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import replace
+from functools import lru_cache
 from types import SimpleNamespace
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from angr import KnowledgeBase, Project
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGNode
-from capstone import CsInsn
 from loguru import logger
 import pyvex
 
 from bingraph.helpers.symbols import list_function_symbols
-from bingraph.helpers.capstone import (
-    InsnSemantics,
-    arch_has_delay_slot,
-    control_transfer_index,
+from bingraph.helpers.capstone import InsnSemantics
+from .graph import (
+    CFGGraph,
+    add_successor_edge as _add_successor_edge,
+    cfg_graph as _cfg_graph,
+    cleanup_unreachable_function_nodes as _cleanup_unreachable_function_nodes,
+    is_unresolvable_jump_target as _is_unresolvable_jump_target,
+    iter_graph_bound_nodes as _iter_graph_bound_nodes,
+    node_ends_in_indirect_jump as _node_ends_in_indirect_jump,
+    node_intersects_bounds as _node_intersects_bounds,
+    node_is_materialized_cfg_node as _node_is_materialized_cfg_node,
+    node_is_placeholder as _node_is_placeholder,
+    node_is_simprocedure as _node_is_simprocedure,
+    node_range_end as _node_range_end,
+    node_vex as _node_vex,
+    ranges_overlap as _ranges_overlap,
+    remove_nodes as _remove_nodes,
 )
-from .graph import CFGGraph, cfg_graph as _cfg_graph
 from .jumps import (
     MAX_STATIC_JUMPTABLE_ENTRIES,
     is_direct_target_valid as _is_direct_target_valid,
@@ -123,24 +135,16 @@ from .models import (
     PendingObligation,
     RepairObligation,
     StaticJumpTable,
-    TerminatorInfo,
+)
+from .recovery import (
+    recover_block as _recover_block,
+    vex_jumpkind_is_terminal as _vex_jumpkind_is_terminal,
 )
 
 
 # Last-resort protection for repair loops that keep mutating the graph without
 # converging. Stable requeues are diagnosed earlier by PendingObligation state.
 MAX_CUSTOM_CFG_WORKLIST_ITERATIONS = 5_000
-
-
-def _node_vex(node: CFGNode) -> Any | None:
-    """Return VEX for a native CFG node, or None when angr cannot lift it."""
-
-    try:
-        return cast(Any, node.block).vex
-    # CFGFast can retain zero-sized or otherwise unliftable seed nodes. VEX is
-    # optional for the callers of this helper, so preserve their skip behavior.
-    except Exception:
-        return None
 
 
 def _lookup_function_bounds(project: Project, func_addr: int) -> FunctionBounds:
@@ -509,247 +513,6 @@ def _read_static_jump_table_targets(
     return tuple(sorted(targets))
 
 
-def _decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
-    """
-    Decode one instruction using angr's block factory but only consume the
-    Capstone view.
-
-    This preserves architecture mode details such as Thumb decoding while still
-    avoiding a dependency on the full VEX lift for ordinary instruction
-    discovery.
-    """
-
-    block = project.factory.block(
-        addr,
-        size=size,
-        strict_block_end=True,
-        cross_insn_opt=False,
-    )
-    capstone_insns = block.capstone.insns
-    return capstone_insns[0].insn if capstone_insns else None
-
-
-def _instruction_has_nonfallthrough_vex_semantics(
-    project: Project, insn: CsInsn
-) -> bool:
-    """Return whether VEX models one exceptional instruction as terminal."""
-
-    semantic = InsnSemantics(insn)
-    if not semantic.may_have_nonfallthrough_vex_semantics():
-        return False
-
-    try:
-        vex = project.factory.block(
-            insn.address,
-            size=insn.size,
-            strict_block_end=True,
-            cross_insn_opt=False,
-        ).vex
-    except Exception as exc:
-        logger.warning(
-            f"Custom CFG could not lift exceptional instruction at {insn.address:#x}: {exc}"
-        )
-        return False
-
-    return _vex_jumpkind_is_terminal(vex.jumpkind)
-
-
-def _instruction_has_unclassified_vex_transfer(project: Project, insn: CsInsn) -> bool:
-    """Return whether VEX identifies an executable direct target as control flow.
-
-    Capstone normally provides generic call/jump groups, but a few backends do
-    not.  S390's ``brasl`` is one example: it carries an executable immediate
-    target yet exposes no call or jump group.  Restricting the VEX check to
-    that narrow shape avoids lifting every ordinary instruction during custom
-    recovery while still letting VEX provide the architecture-specific answer.
-    """
-
-    semantic = InsnSemantics(insn)
-    if semantic.is_control_transfer():
-        return False
-
-    target = semantic.direct_target()
-    if target is None:
-        return False
-
-    obj = project.loader.find_object_containing(target)
-    if obj is None:
-        return False
-    section = obj.find_section_containing(target)
-    if section is None or not section.is_executable:
-        return False
-
-    try:
-        vex = project.factory.block(
-            insn.address,
-            size=insn.size,
-            strict_block_end=True,
-            cross_insn_opt=False,
-        ).vex
-    except Exception as exc:
-        logger.warning(
-            f"Custom CFG could not lift possible control transfer at "
-            f"{insn.address:#x}: {exc}"
-        )
-        return False
-
-    return vex.jumpkind == "Ijk_Call" or _vex_jumpkind_is_terminal(vex.jumpkind)
-
-
-def _vex_jumpkind_is_terminal(jumpkind: str) -> bool:
-    """Return whether VEX marks a block as a return or a synchronous trap."""
-
-    return jumpkind == "Ijk_Ret" or jumpkind.startswith("Ijk_Sig")
-
-
-def _lift_block_terminator(
-    project: Project,
-    bounds: FunctionBounds,
-    block_insns: list[CsInsn],
-    has_nonfallthrough_vex_terminator: bool = False,
-    unclassified_vex_terminator_addr: int | None = None,
-) -> TerminatorInfo:
-    """
-    Lift one recovered block with VEX and derive its control-flow shape.
-
-    Capstone is used to recover the bounded instruction stream, but we defer the
-    final branch classification to VEX so we can reuse the same arch-specific
-    semantics that CFGFast relies on for conditional-vs-unconditional structure.
-    If a recovered control-transfer block cannot be lifted, we raise instead of
-    silently falling back to heuristics.
-    """
-
-    block_end_addr = block_insns[-1].address + block_insns[-1].size
-
-    term_idx = control_transfer_index(project.arch.name, block_insns)
-    if term_idx is None and unclassified_vex_terminator_addr is not None:
-        term_idx = next(
-            (
-                index
-                for index, insn in enumerate(block_insns)
-                if insn.address == unclassified_vex_terminator_addr
-            ),
-            None,
-        )
-
-    if term_idx is None:
-        if has_nonfallthrough_vex_terminator:
-            return TerminatorInfo(jumpkind="Ijk_Terminal")
-
-        next_addr = block_end_addr
-        fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
-        return TerminatorInfo(
-            jumpkind="Ijk_Fallthrough", fallthrough_addr=fallthrough_addr
-        )
-
-    tail_insns = block_insns[term_idx:]
-    last = tail_insns[0]
-    semantic = InsnSemantics(last)
-    next_addr = block_end_addr
-
-    tail_addr = tail_insns[0].address
-    tail_size = sum(insn.size for insn in tail_insns)
-    block_addr = block_insns[0].address
-    block_size = sum(insn.size for insn in block_insns)
-
-    def _lift(addr: int, size: int):
-        return project.factory.block(
-            addr,
-            size=size,
-            strict_block_end=True,
-            cross_insn_opt=False,
-        ).vex
-
-    try:
-        vex = _lift(tail_addr, tail_size)
-    except Exception:
-        try:
-            vex = _lift(block_addr, block_size)
-        except Exception as exc:
-            raise RuntimeError(
-                f"Custom CFG failed lifting control-transfer block at {block_addr:#x} "
-                f"(terminator {last.address:#x}: {last.mnemonic} {last.op_str})"
-            ) from exc
-
-    exit_targets: list[int] = []
-    for ins_addr, _, stmt in vex.exit_statements:
-        if ins_addr != last.address:
-            continue
-        target = getattr(stmt.dst, "value", None)
-        if isinstance(target, int):
-            exit_targets.append(target)
-
-    default_target: int | None = None
-    if isinstance(vex.next, pyvex.expr.Const):
-        target = vex.next.con.value
-        if isinstance(target, int):
-            default_target = target
-
-    if semantic.is_ret():
-        return TerminatorInfo(jumpkind="Ijk_Ret")
-
-    # Some Capstone backends classify direct calls only as jumps. VEX is the
-    # authoritative source for this semantic distinction during repair.
-    if semantic.is_call() or vex.jumpkind == "Ijk_Call":
-        direct_targets: tuple[int, ...] = ()
-        if isinstance(default_target, int) and _is_direct_target_valid(
-            bounds, default_target
-        ):
-            direct_targets = (default_target,)
-        fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
-        return TerminatorInfo(
-            jumpkind="Ijk_Call",
-            direct_targets=direct_targets,
-            fallthrough_addr=fallthrough_addr,
-        )
-
-    # For jumps, prefer the VEX control-flow shape when it is available:
-    # conditional branches produce exit statements, while direct
-    # unconditional jumps do not. However, the concrete branch target still
-    # comes from Capstone because malformed seed nodes can expose a stale
-    # VEX `next` value even when the decoded terminator target is correct.
-    if exit_targets or semantic.is_conditional_jump():
-        all_targets: list[int] = list(exit_targets)
-        if isinstance(default_target, int) and default_target not in all_targets:
-            all_targets.append(default_target)
-        fallthrough_addr = (
-            next_addr
-            if next_addr in all_targets and next_addr < bounds.end_addr
-            else None
-        )
-        return TerminatorInfo(
-            jumpkind="Ijk_Boring",
-            direct_targets=tuple(
-                target for target in all_targets if target != fallthrough_addr
-            ),
-            fallthrough_addr=fallthrough_addr,
-        )
-
-    if (
-        semantic.is_jump()
-        and isinstance(default_target, int)
-        and _is_direct_target_valid(bounds, default_target)
-    ):
-        return TerminatorInfo(
-            jumpkind="Ijk_Boring",
-            direct_targets=(default_target,),
-        )
-
-    direct_target = semantic.direct_target()
-    if semantic.is_jump() and direct_target is not None:
-        return TerminatorInfo(
-            jumpkind="Ijk_Boring",
-            direct_targets=(direct_target,),
-        )
-
-    direct_targets: tuple[int, ...] = ()
-    if isinstance(default_target, int) and _is_direct_target_valid(
-        bounds, default_target
-    ):
-        direct_targets = (default_target,)
-    return TerminatorInfo(jumpkind="Ijk_Boring", direct_targets=direct_targets)
-
-
 def _iter_seed_function_nodes(seed_cfg: CFGBase, func_addr: int):
     """Yield non-simprocedure nodes from the seed CFG for one function."""
 
@@ -940,7 +703,7 @@ def _analyze_jump_successors(
     fallthrough_addr = last_insn.address + last_insn.size
     if is_conditional:
         expected.append(JumpSuccessorExpectation(direct_target, "Ijk_Boring", True))
-        if bounds.addr <= fallthrough_addr < bounds.end_addr:
+        if _can_decode_block_at(project, bounds, fallthrough_addr):
             expected.append(
                 JumpSuccessorExpectation(fallthrough_addr, "Ijk_Boring", False)
             )
@@ -1010,16 +773,20 @@ def _call_target_is_known_nonreturning(project: Project, node) -> bool:
     return bool(getattr(project.hooked_by(target), "NO_RET", False))
 
 
-def _can_decode_fallthrough(
-    project: Project, bounds: FunctionBounds, addr: int
+@lru_cache(maxsize=10_000)
+def _can_decode_block_at_cached(
+    project: Project,
+    start_addr: int,
+    end_addr: int,
+    addr: int,
 ) -> bool:
-    """Return whether an in-function call fall-through starts decodable code."""
+    """Return whether ``addr`` begins decodable code within fixed bounds."""
 
-    if not _is_direct_target_valid(bounds, addr):
+    if not start_addr <= addr < end_addr:
         return False
 
     try:
-        block = project.factory.block(addr, size=bounds.end_addr - addr)
+        block = project.factory.block(addr, size=end_addr - addr)
         block_size = block.size
         return (
             isinstance(block_size, int)
@@ -1028,6 +795,12 @@ def _can_decode_fallthrough(
         )
     except Exception:
         return False
+
+
+def _can_decode_block_at(project: Project, bounds: FunctionBounds, addr: int) -> bool:
+    """Return cached decodeability for one address in a function's bounds."""
+
+    return _can_decode_block_at_cached(project, bounds.addr, bounds.end_addr, addr)
 
 
 def node_has_missing_call_fallthrough(
@@ -1051,7 +824,7 @@ def node_has_missing_call_fallthrough(
     fallthrough_addr = _node_range_end(node)
     # Symbol sizes can include architecture-specific function metadata. Do not
     # require a fake return into bytes that the project cannot decode as code.
-    if not _can_decode_fallthrough(project, bounds, fallthrough_addr):
+    if not _can_decode_block_at(project, bounds, fallthrough_addr):
         return False
 
     for successor in graph.successors(node):
@@ -1200,7 +973,13 @@ def node_has_decode_gap(node) -> bool:
         return False
 
 
-def node_has_truncated_leaf(graph: CFGGraph, func_addr: int, node) -> bool:
+def node_has_truncated_leaf(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    func_addr: int,
+    node,
+) -> bool:
     """Return True when a CFG node stops before a real terminator and has no exits."""
 
     try:
@@ -1225,6 +1004,9 @@ def node_has_truncated_leaf(graph: CFGGraph, func_addr: int, node) -> bool:
         return False
 
     if any(True for _ in graph.successors(node)):
+        return False
+
+    if not _can_decode_block_at(project, bounds, _node_range_end(node)):
         return False
 
     has_later_function_node = any(
@@ -1378,7 +1160,9 @@ class CFGAnomalyDetector:
         return (
             self.node_has_decoding_coverage_mismatch(node)
             or node_has_decode_gap(node)
-            or node_has_truncated_leaf(self.graph, self.func_addr, node)
+            or node_has_truncated_leaf(
+                self.project, self.graph, self.bounds, self.func_addr, node
+            )
             or self.node_has_missing_jump_successor(node)
             or self.node_has_missing_call_fallthrough(node)
             or self.node_has_linear_merge_successor(node)
@@ -1413,7 +1197,19 @@ def _has_decoding_coverage_mismatch(cfg: CFGBase, node) -> bool:
 def _has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
     """Return True when a block stops before a real terminator and has no exits."""
 
-    if not node_has_truncated_leaf(_cfg_graph(cfg), func_addr, node):
+    project = getattr(cfg, "project", None)
+    if project is None:
+        project = getattr(getattr(cfg, "kb", None), "_project", None)
+    if project is None:
+        return False
+
+    if not node_has_truncated_leaf(
+        project,
+        _cfg_graph(cfg),
+        _lookup_function_bounds(project, func_addr),
+        func_addr,
+        node,
+    ):
         return False
 
     try:
@@ -1564,100 +1360,6 @@ def _block_name(bounds: FunctionBounds, block: BlockSpec) -> str:
     return f"{bounds.symbol.name}+0x{block.addr - bounds.addr:x}"
 
 
-def _node_intersects_bounds(node, bounds: FunctionBounds) -> bool:
-    """Return True when a node overlaps the current function address range."""
-
-    if _node_is_simprocedure(node):
-        return False
-    return _ranges_overlap(
-        node.addr, _node_range_end(node), bounds.addr, bounds.end_addr
-    )
-
-
-def _iter_graph_bound_nodes(graph: CFGGraph, bounds: FunctionBounds):
-    """
-    Yield live graph nodes that overlap the current function bounds.
-
-    Seed CFGFast nodes may carry an incorrect `function_address` once the graph
-    goes malformed. The custom repair pass therefore keys all live-graph lookups
-    off address bounds, not off the stored function tag.
-    """
-
-    for node in graph.nodes():
-        if _node_intersects_bounds(node, bounds):
-            yield node
-
-
-def _nodes_at_addr(graph: CFGGraph, bounds: FunctionBounds, addr: int) -> list[CFGNode]:
-    """Return all non-simprocedure nodes in the function bounds that start at addr."""
-
-    return [
-        node for node in _iter_graph_bound_nodes(graph, bounds) if node.addr == addr
-    ]
-
-
-def _covering_nodes(
-    graph: CFGGraph, bounds: FunctionBounds, addr: int
-) -> list[CFGNode]:
-    """Return all non-simprocedure nodes in bounds whose range covers addr."""
-
-    return [
-        node
-        for node in _iter_graph_bound_nodes(graph, bounds)
-        if node.addr <= addr < _node_range_end(node)
-    ]
-
-
-def _node_range_end(node) -> int:
-    """Return the closed-open end address of one node."""
-
-    return node.addr + max(getattr(node, "size", 0), 0)
-
-
-def _ranges_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
-    """Return True when two closed-open address ranges overlap."""
-
-    return start_a < end_b and start_b < end_a
-
-
-def _node_is_placeholder(node) -> bool:
-    """Return True when the node is a custom placeholder awaiting repair."""
-
-    return getattr(node, "size", 0) == 0 and str(getattr(node, "name", "")).startswith(
-        "placeholder_"
-    )
-
-
-def _node_is_simprocedure(node) -> bool:
-    """Return True when `node` is a synthetic/simprocedure CFG node."""
-
-    return getattr(node, "is_simprocedure", False)
-
-
-def _is_unresolvable_jump_target(node) -> bool:
-    """Return True for angr's synthetic unresolved indirect-jump target node."""
-
-    return _node_is_simprocedure(node) and getattr(node, "simprocedure_name", None) == (
-        "UnresolvableJumpTarget"
-    )
-
-
-def _node_ends_in_indirect_jump(node) -> bool:
-    """Return whether VEX identifies ``node`` as an indirect boring jump."""
-
-    try:
-        vex = node.block.vex
-    except (AttributeError, KeyError):
-        return False
-    return vex.jumpkind == "Ijk_Boring" and not isinstance(vex.next, pyvex.expr.Const)
-
-
-def _node_is_materialized_cfg_node(node) -> bool:
-    """Return True for normal in-graph nodes that are neither simprocs nor placeholders."""
-
-    return not _node_is_simprocedure(node) and not _node_is_placeholder(node)
-
-
 def _node_has_forced_split(node, forced_block_starts: set[int]) -> bool:
     """Return True when a known block start falls inside this node's range."""
 
@@ -1775,111 +1477,6 @@ def _ensure_external_target_node(
     node = _make_external_target_node(seed_cfg, func_addr, addr)
     graph.add_node(node)
     return node, True
-
-
-def _recover_block(
-    project: Project, bounds: FunctionBounds, start_addr: int, stop_addrs: set[int]
-) -> BlockSpec | None:
-    """Decode one block starting at addr and stop on control flow or known block starts."""
-
-    max_inst_bytes = getattr(project.arch, "max_inst_bytes", 16)
-    cur = start_addr
-    insns: list[CsInsn] = []
-    has_delay_slot = arch_has_delay_slot(project.arch.name)
-    has_nonfallthrough_vex_terminator = False
-    unclassified_vex_terminator_addr: int | None = None
-
-    while bounds.addr <= cur < bounds.end_addr:
-        if insns and cur in stop_addrs:
-            break
-
-        insn = _decode_one(project, cur, max_inst_bytes)
-        if insn is None:
-            logger.warning(f"Custom CFG could not decode instruction at {cur:#x}")
-            break
-
-        insns.append(insn)
-        semantic = InsnSemantics(insn)
-        next_addr = insn.address + insn.size
-
-        if semantic.is_control_transfer():
-            if has_delay_slot and bounds.addr <= next_addr < bounds.end_addr:
-                delay_insn = _decode_one(project, next_addr, max_inst_bytes)
-                if delay_insn is not None:
-                    insns.append(delay_insn)
-            break
-
-        if _instruction_has_nonfallthrough_vex_semantics(project, insn):
-            has_nonfallthrough_vex_terminator = True
-            break
-
-        if _instruction_has_unclassified_vex_transfer(project, insn):
-            unclassified_vex_terminator_addr = insn.address
-            break
-
-        cur = next_addr
-
-    if not insns:
-        return None
-
-    terminator = _lift_block_terminator(
-        project,
-        bounds,
-        insns,
-        has_nonfallthrough_vex_terminator=has_nonfallthrough_vex_terminator,
-        unclassified_vex_terminator_addr=unclassified_vex_terminator_addr,
-    )
-    block = BlockSpec(
-        addr=insns[0].address,
-        size=sum(obj.size for obj in insns),
-        instruction_addrs=tuple(obj.address for obj in insns),
-        jumpkind=terminator.jumpkind,
-        direct_targets=terminator.direct_targets,
-        fallthrough_addr=terminator.fallthrough_addr,
-    )
-
-    block_end = block.addr + block.size
-    internal_targets = sorted(
-        target
-        for target in block.direct_targets
-        if block.addr < target < block_end and target not in stop_addrs
-    )
-    if internal_targets:
-        # A direct branch target that lands inside the bytes we just recovered
-        # identifies a missing basic-block leader, typically a loop header that
-        # CFGFast failed to seed. Re-run bounded recovery with that leader as a
-        # hard stop so we do not absorb the target block into its predecessor.
-        return _recover_block(
-            project, bounds, start_addr, stop_addrs | {internal_targets[0]}
-        )
-
-    return block
-
-
-def _add_successor_edge(
-    graph: CFGGraph,
-    src: CFGNode,
-    dst: CFGNode,
-    jumpkind: EdgeJumpKind,
-    *,
-    unresolved_indirect: bool = False,
-) -> bool:
-    """Add one successor edge if it is not already present with the same kind."""
-
-    if graph.has_edge(src, dst):
-        edge_data = graph.get_edge_data(src, dst) or {}
-        if (
-            edge_data.get("jumpkind") == jumpkind
-            and edge_data.get("unresolved_indirect", False) == unresolved_indirect
-        ):
-            return False
-    graph.add_edge(
-        src,
-        dst,
-        jumpkind=jumpkind,
-        unresolved_indirect=unresolved_indirect,
-    )
-    return True
 
 
 class _RepairSession:
@@ -3029,44 +2626,6 @@ class _RepairSession:
             kb=self.seed_cfg.kb,
         )
         return result
-
-
-def _cleanup_unreachable_function_nodes(
-    graph: CFGGraph, bounds: FunctionBounds, func_addr: int
-) -> int:
-    """Remove unreachable function nodes and return how many were pruned."""
-
-    entry_nodes = _nodes_at_addr(graph, bounds, func_addr)
-    if not entry_nodes:
-        return 0
-
-    reachable: set[CFGNode] = set()
-    queue: deque[CFGNode] = deque(entry_nodes)
-
-    while queue:
-        node = queue.popleft()
-        if node in reachable:
-            continue
-        reachable.add(node)
-        for succ in graph.successors(node):
-            queue.append(succ)
-
-    stale_nodes = [
-        node
-        for node in list(graph.nodes())
-        if _node_intersects_bounds(node, bounds) and node not in reachable
-    ]
-    if stale_nodes:
-        for node in stale_nodes:
-            graph.remove_node(node)
-    return len(stale_nodes)
-
-
-def _remove_nodes(graph: CFGGraph, nodes: Iterable[CFGNode]) -> None:
-    """Remove a batch of nodes through the graph wrapper's public API."""
-
-    for node in nodes:
-        graph.remove_node(node)
 
 
 def build_custom_cfg(

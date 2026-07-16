@@ -113,11 +113,13 @@ CONFIGS = [
 CHECKPOINT_ARTIFACTS = frozenset(
     {
         "armel,lwip_udpecho_bm.elf,0x705,__udivmoddi4.dot",
+        "armel,lwip_udpecho_bm.elf,0x39f1,tcp_alloc.dot",
         "armel,lwip_udpecho_bm.elf,0x5f65,dhcp_bind.dot",
         "i386,bronze_ropchain,0x8060ca0,__strcmp_sse4_2.dot",
         "i386,bronze_ropchain,0x806a770,__strcasecmp_l_sse4_2.dot",
         "i386,bronze_ropchain,0x806f870,_dl_aux_init.dot",
         "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",
+        "ppc64el,fauxware_static,0x1000ed70,abort.dot",
         "ppc64el,fauxware_static,0x1001e4c0,malloc_consolidate.dot",
         "ppc64el,fauxware_static,0x1003ac00,__gconv_release_step.dot",
         "s390x,test-instr_s390x,0x800555f8,_IO_vfscanf.dot",

@@ -133,11 +133,13 @@ MAX_CUSTOM_CFG_WORKLIST_ITERATIONS = 5_000
 
 
 def _node_vex(node: CFGNode) -> Any | None:
-    """Return VEX for a native CFG node, hiding angr's broad block union."""
+    """Return VEX for a native CFG node, or None when angr cannot lift it."""
 
     try:
         return cast(Any, node.block).vex
-    except (AttributeError, KeyError, RuntimeError):
+    # CFGFast can retain zero-sized or otherwise unliftable seed nodes. VEX is
+    # optional for the callers of this helper, so preserve their skip behavior.
+    except Exception:
         return None
 
 
@@ -552,6 +554,48 @@ def _instruction_has_nonfallthrough_vex_semantics(
     return _vex_jumpkind_is_terminal(vex.jumpkind)
 
 
+def _instruction_has_unclassified_vex_transfer(project: Project, insn: CsInsn) -> bool:
+    """Return whether VEX identifies an executable direct target as control flow.
+
+    Capstone normally provides generic call/jump groups, but a few backends do
+    not.  S390's ``brasl`` is one example: it carries an executable immediate
+    target yet exposes no call or jump group.  Restricting the VEX check to
+    that narrow shape avoids lifting every ordinary instruction during custom
+    recovery while still letting VEX provide the architecture-specific answer.
+    """
+
+    semantic = InsnSemantics(insn)
+    if semantic.is_control_transfer():
+        return False
+
+    target = semantic.direct_target()
+    if target is None:
+        return False
+
+    obj = project.loader.find_object_containing(target)
+    if obj is None:
+        return False
+    section = obj.find_section_containing(target)
+    if section is None or not section.is_executable:
+        return False
+
+    try:
+        vex = project.factory.block(
+            insn.address,
+            size=insn.size,
+            strict_block_end=True,
+            cross_insn_opt=False,
+        ).vex
+    except Exception as exc:
+        logger.warning(
+            f"Custom CFG could not lift possible control transfer at "
+            f"{insn.address:#x}: {exc}"
+        )
+        return False
+
+    return vex.jumpkind == "Ijk_Call" or _vex_jumpkind_is_terminal(vex.jumpkind)
+
+
 def _vex_jumpkind_is_terminal(jumpkind: str) -> bool:
     """Return whether VEX marks a block as a return or a synchronous trap."""
 
@@ -563,6 +607,7 @@ def _lift_block_terminator(
     bounds: FunctionBounds,
     block_insns: list[CsInsn],
     has_nonfallthrough_vex_terminator: bool = False,
+    unclassified_vex_terminator_addr: int | None = None,
 ) -> TerminatorInfo:
     """
     Lift one recovered block with VEX and derive its control-flow shape.
@@ -577,6 +622,15 @@ def _lift_block_terminator(
     block_end_addr = block_insns[-1].address + block_insns[-1].size
 
     term_idx = control_transfer_index(project.arch.name, block_insns)
+    if term_idx is None and unclassified_vex_terminator_addr is not None:
+        term_idx = next(
+            (
+                index
+                for index, insn in enumerate(block_insns)
+                if insn.address == unclassified_vex_terminator_addr
+            ),
+            None,
+        )
 
     if term_idx is None:
         if has_nonfallthrough_vex_terminator:
@@ -1711,6 +1765,7 @@ def _recover_block(
     insns: list[CsInsn] = []
     has_delay_slot = arch_has_delay_slot(project.arch.name)
     has_nonfallthrough_vex_terminator = False
+    unclassified_vex_terminator_addr: int | None = None
 
     while bounds.addr <= cur < bounds.end_addr:
         if insns and cur in stop_addrs:
@@ -1736,6 +1791,10 @@ def _recover_block(
             has_nonfallthrough_vex_terminator = True
             break
 
+        if _instruction_has_unclassified_vex_transfer(project, insn):
+            unclassified_vex_terminator_addr = insn.address
+            break
+
         cur = next_addr
 
     if not insns:
@@ -1746,6 +1805,7 @@ def _recover_block(
         bounds,
         insns,
         has_nonfallthrough_vex_terminator=has_nonfallthrough_vex_terminator,
+        unclassified_vex_terminator_addr=unclassified_vex_terminator_addr,
     )
     block = BlockSpec(
         addr=insns[0].address,
@@ -1813,6 +1873,9 @@ class _RepairSession:
         # cannot consume directly.
         self.graph = _cfg_graph(seed_cfg)
         self.anomalies = CFGAnomalyDetector(project, self.graph, self.bounds, func_addr)
+        self.mutation_revision = 0
+        self._bound_nodes_revision = -1
+        self._bound_nodes_snapshot: tuple[CFGNode, ...] = ()
         self.stats = CustomCFGStats()
         self.stats.input_blocks, self.stats.input_edges = self._graph_shape()
         self.queue: deque[tuple[str, int]] = deque()
@@ -1820,26 +1883,49 @@ class _RepairSession:
         self.repaired_nodes: set[CFGNode] = set()
         self.leaders = BlockLeaderRegistry({func_addr: {"function_entry"}})
         self.processed_counts: dict[int, int] = {}
-        self.mutation_revision = 0
         self.last_requeue_states: dict[
             tuple[str, int],
             tuple[int, tuple[bool, tuple[tuple[int, EdgeJumpKind], ...]]],
         ] = {}
         self.resolved_static_table_sources: set[int] = set()
         self.iterations = 0
+        self._stop_starts_revision = -1
+        self._stop_starts: set[int] = set()
 
     def _graph_shape(self) -> tuple[int, int]:
         """Return the number of in-bounds blocks and their outgoing CFG edges."""
 
         blocks = {
-            node
-            for node in _iter_graph_bound_nodes(self.graph, self.bounds)
-            if _node_is_materialized_cfg_node(node)
+            node for node in self._bound_nodes() if _node_is_materialized_cfg_node(node)
         }
         edges = sum(
             1 for source, _, _ in self.graph.edges(data=True) if source in blocks
         )
         return len(blocks), edges
+
+    def _bound_nodes(self) -> tuple[CFGNode, ...]:
+        """Return a revision-scoped snapshot of live in-bounds CFG nodes."""
+
+        if self._bound_nodes_revision != self.mutation_revision:
+            self._bound_nodes_snapshot = tuple(
+                _iter_graph_bound_nodes(self.graph, self.bounds)
+            )
+            self._bound_nodes_revision = self.mutation_revision
+        return self._bound_nodes_snapshot
+
+    def _nodes_at_addr(self, addr: int) -> list[CFGNode]:
+        """Return cached in-bounds nodes beginning at ``addr``."""
+
+        return [node for node in self._bound_nodes() if node.addr == addr]
+
+    def _covering_nodes(self, addr: int) -> list[CFGNode]:
+        """Return cached in-bounds nodes whose byte range covers ``addr``."""
+
+        return [
+            node
+            for node in self._bound_nodes()
+            if node.addr <= addr < _node_range_end(node)
+        ]
 
     def log_stats(self) -> None:
         """Capture the final graph shape and emit one custom-repair summary."""
@@ -1901,7 +1987,7 @@ class _RepairSession:
         """Assign all in-bounds custom-CFG blocks to the requested function."""
 
         reassigned = 0
-        for node in _iter_graph_bound_nodes(self.graph, self.bounds):
+        for node in self._bound_nodes():
             if not _node_is_materialized_cfg_node(node):
                 continue
             if node.function_address == self.func_addr:
@@ -1922,13 +2008,12 @@ class _RepairSession:
         """Recover high-confidence relative table targets from unresolved jumps."""
 
         resolved_sources = 0
-        for node in list(_iter_graph_bound_nodes(self.graph, self.bounds)):
+        for node in self._bound_nodes():
             if not _node_is_materialized_cfg_node(node):
                 continue
 
-            try:
-                vex = node.block.vex
-            except Exception:
+            vex = _node_vex(node)
+            if vex is None:
                 continue
             table = _vex_relative_jump_table(vex)
             if table is None or table.base_bits != self.project.arch.bits:
@@ -2021,7 +2106,7 @@ class _RepairSession:
         return sorted(
             {
                 successor
-                for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+                for node in self._bound_nodes()
                 if _node_is_materialized_cfg_node(node)
                 for successor in self.graph.successors(node)
                 if _is_unresolvable_jump_target(successor)
@@ -2033,9 +2118,7 @@ class _RepairSession:
         """Return all graph nodes reachable through the current entry edges."""
 
         reachable: set[CFGNode] = set()
-        queue: deque[CFGNode] = deque(
-            _nodes_at_addr(self.graph, self.bounds, self.func_addr)
-        )
+        queue: deque[CFGNode] = deque(self._nodes_at_addr(self.func_addr))
         while queue:
             node = queue.popleft()
             if node in reachable:
@@ -2051,7 +2134,7 @@ class _RepairSession:
         return sorted(
             (
                 node
-                for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+                for node in self._bound_nodes()
                 if _node_is_materialized_cfg_node(node) and node not in reachable
             ),
             key=lambda node: node.addr,
@@ -2178,28 +2261,6 @@ class _RepairSession:
 
         return self.leaders.starts_with_reason("explicit_split")
 
-    def _current_leaders(self) -> BlockLeaderRegistry:
-        """Build the leader snapshot that bounds one local block recovery."""
-
-        leaders = self.leaders.copy()
-        for node in _iter_graph_bound_nodes(self.graph, self.bounds):
-            if not _node_is_materialized_cfg_node(node):
-                continue
-            if not self._is_preservable_seed_node(node):
-                continue
-
-            direct_targets, fallthrough_addr = self._preserved_successor_starts(node)
-            for target in direct_targets:
-                if self.bounds.addr <= target < self.bounds.end_addr:
-                    leaders.add(target, "direct_target")
-            if (
-                fallthrough_addr is not None
-                and self.bounds.addr <= fallthrough_addr < self.bounds.end_addr
-            ):
-                leaders.add(fallthrough_addr, "fallthrough")
-
-        return leaders
-
     def ensure_block_entry(
         self,
         obligation: RepairObligation,
@@ -2229,7 +2290,7 @@ class _RepairSession:
         if covering_entry is not None:
             return covering_entry
 
-        for node in _nodes_at_addr(self.graph, self.bounds, addr):
+        for node in self._nodes_at_addr(addr):
             if self._is_preservable_seed_node(node):
                 self._connect_source_to_node(obligation, node)
                 return node
@@ -2245,7 +2306,7 @@ class _RepairSession:
         """Resolve an entry covered by an existing node, or leave it deferred."""
 
         addr = obligation.addr
-        for node in _covering_nodes(self.graph, self.bounds, addr):
+        for node in self._covering_nodes(addr):
             if node.addr == addr or _node_is_placeholder(node):
                 continue
 
@@ -2308,7 +2369,7 @@ class _RepairSession:
         placeholder = next(
             (
                 node
-                for node in _nodes_at_addr(self.graph, self.bounds, obligation.addr)
+                for node in self._nodes_at_addr(obligation.addr)
                 if _node_is_placeholder(node)
             ),
             None,
@@ -2330,7 +2391,7 @@ class _RepairSession:
 
         exact_nodes = [
             node
-            for node in _nodes_at_addr(self.graph, self.bounds, obligation.addr)
+            for node in self._nodes_at_addr(obligation.addr)
             if _node_is_materialized_cfg_node(node)
         ]
         acceptable_node = self._first_acceptable_entry(exact_nodes)
@@ -2477,7 +2538,7 @@ class _RepairSession:
     def _reconcile_addr(self, addr: int) -> None:
         """Reconcile every materialized node currently starting at ``addr``."""
 
-        for node in _nodes_at_addr(self.graph, self.bounds, addr):
+        for node in self._nodes_at_addr(addr):
             if _node_is_materialized_cfg_node(node):
                 self._reconcile_node(node)
 
@@ -2578,40 +2639,54 @@ class _RepairSession:
     def current_stop_addrs(self, addr: int) -> set[int]:
         """Return the hard stop addresses used for bounded recovery at `addr`."""
 
-        leaders = self._current_leaders()
+        if self._stop_starts_revision != self.mutation_revision:
+            self._stop_starts = self._current_stop_starts()
+            self._stop_starts_revision = self.mutation_revision
+
         return {
             target
-            for target in leaders.starts()
+            for target in self._stop_starts
             if addr < target < self.bounds.end_addr
-            if not self._addr_is_linear_tail_start(target)
         }
 
-    def _addr_is_linear_tail_start(self, addr: int) -> bool:
+    def _current_stop_starts(self) -> set[int]:
         """
-        Return True when `addr` is only the straight-line tail of a predecessor.
+        Return the live leader starts that must bound recovered blocks.
 
-        Such addresses should not act as hard recovery boundaries: if the live
-        graph currently has `A -> B` as a linear split candidate, revisiting A
-        should be allowed to absorb B into one larger block even when other
-        stop-set sources still mention B.
+        A linear split candidate ``A -> B`` must not make ``B`` a hard stop:
+        revisiting ``A`` needs to absorb its straight-line tail.  Collecting
+        every such tail in one pass is equivalent to checking each leader
+        separately, but avoids repeatedly iterating angr's spilled CFG nodes.
+        The result is invalidated by ``mutation_revision`` whenever the graph
+        or leader set changes.
         """
 
-        nodes = [
-            node
-            for node in _nodes_at_addr(self.graph, self.bounds, addr)
-            if _node_is_materialized_cfg_node(node)
-        ]
-        for node in nodes:
-            preds = [
-                pred
-                for pred in self.graph.predecessors(node)
-                if _node_is_materialized_cfg_node(pred)
-            ]
-            if len(preds) != 1:
+        leaders = self.leaders.copy()
+        linear_tail_starts: set[int] = set()
+        for node in self._bound_nodes():
+            if not _node_is_materialized_cfg_node(node):
                 continue
-            if self.anomalies.node_has_linear_merge_successor(preds[0]):
-                return True
-        return False
+
+            if self._is_preservable_seed_node(node):
+                direct_targets, fallthrough_addr = self._preserved_successor_starts(
+                    node
+                )
+                for target in direct_targets:
+                    if self.bounds.addr <= target < self.bounds.end_addr:
+                        leaders.add(target, "direct_target")
+                if (
+                    fallthrough_addr is not None
+                    and self.bounds.addr <= fallthrough_addr < self.bounds.end_addr
+                ):
+                    leaders.add(fallthrough_addr, "fallthrough")
+
+            if not self.anomalies.node_has_linear_merge_successor(node):
+                continue
+            linear_tail_starts.update(
+                successor.addr for successor in self.graph.successors(node)
+            )
+
+        return leaders.starts() - linear_tail_starts
 
     def splice_block(self, block: BlockSpec) -> CFGNode:
         """
@@ -2627,7 +2702,7 @@ class _RepairSession:
 
         removed_nodes = [
             node
-            for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+            for node in self._bound_nodes()
             if node.addr == recovered_start
             or _ranges_overlap(
                 node.addr, _node_range_end(node), recovered_start, recovered_end
@@ -2745,7 +2820,7 @@ class _RepairSession:
         return sorted(
             {
                 node.addr
-                for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+                for node in self._bound_nodes()
                 if _node_is_materialized_cfg_node(node)
                 and self.anomalies.node_needs_repair(node)
             }
@@ -2761,7 +2836,7 @@ class _RepairSession:
         }
         ownership_boundaries = {
             node.addr
-            for node in _iter_graph_bound_nodes(self.graph, self.bounds)
+            for node in self._bound_nodes()
             if self.anomalies.node_has_foreign_function_owner(node)
         }
         return sorted(seed_anomalies | ownership_boundaries)
@@ -2807,10 +2882,10 @@ class _RepairSession:
         """Recover a queued address or requeue the work needed to expose it."""
 
         addr = obligation.addr
-        current_nodes = _nodes_at_addr(self.graph, self.bounds, addr)
+        current_nodes = self._nodes_at_addr(addr)
         covering_nodes = [
             node
-            for node in _covering_nodes(self.graph, self.bounds, addr)
+            for node in self._covering_nodes(addr)
             if node.addr != addr and not _node_is_placeholder(node)
         ]
         if covering_nodes:

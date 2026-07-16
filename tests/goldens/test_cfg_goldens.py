@@ -119,6 +119,7 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "i386,bronze_ropchain,0x806f870,_dl_aux_init.dot",
         "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",
         "ppc64el,fauxware_static,0x1003ac00,__gconv_release_step.dot",
+        "s390x,test-instr_s390x,0x800555f8,_IO_vfscanf.dot",
         "x86_64,elf_with_static_libc_ubuntu_2004,0x445970,"
         "__memset_avx512_no_vzeroupper.dot",
         "x86_64,elf_with_static_libc_ubuntu_2004,0x48ef40,execute_stack_op.dot",

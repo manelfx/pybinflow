@@ -1,0 +1,151 @@
+"""Fast tests for control-flow edge classification used by render styles."""
+
+from types import SimpleNamespace
+
+import pytest
+
+from bingraph.core.annotators import _edge_type
+
+
+def _node(
+    addr: int,
+    *,
+    size: int = 0,
+    vex: SimpleNamespace | None = None,
+    is_simprocedure: bool = False,
+    simprocedure_name: str | None = None,
+) -> SimpleNamespace:
+    """Return the minimal visualization-node shape consumed by ``_edge_type``."""
+
+    block = SimpleNamespace(vex=vex) if vex is not None else None
+    return SimpleNamespace(
+        obj=SimpleNamespace(
+            addr=addr,
+            size=size,
+            block=block,
+            is_simprocedure=is_simprocedure,
+            simprocedure_name=simprocedure_name,
+        )
+    )
+
+
+def _edge(
+    source: SimpleNamespace,
+    destination: SimpleNamespace,
+    *,
+    jumpkind: str,
+    **meta: object,
+) -> SimpleNamespace:
+    """Return the minimal visualization-edge shape consumed by ``_edge_type``."""
+
+    return SimpleNamespace(
+        meta={"jumpkind": jumpkind, **meta},
+        src=source,
+        dst=destination,
+    )
+
+
+def _vex(
+    jumpkind: str,
+    *,
+    next_addr: int | None = None,
+    exit_targets: tuple[int, ...] = (),
+) -> SimpleNamespace:
+    """Build the subset of VEX state used to classify ordinary edges."""
+
+    if next_addr is None:
+        next_expression = SimpleNamespace()
+    else:
+        next_expression = SimpleNamespace(con=SimpleNamespace(value=next_addr))
+    return SimpleNamespace(
+        jumpkind=jumpkind,
+        next=next_expression,
+        exit_statements=[
+            (None, None, SimpleNamespace(dst=SimpleNamespace(value=target)))
+            for target in exit_targets
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ("jumpkind", "expected"),
+    [
+        ("Ijk_Ret", "RET"),
+        ("Ijk_FakeRet", "FAKE_RET"),
+        ("Ijk_Call", "CALL"),
+        ("Ijk_Sys_syscall", "CALL"),
+    ],
+)
+def test_direct_vex_jumpkinds_use_expected_style(jumpkind: str, expected: str) -> None:
+    """Map direct VEX control-flow jump kinds to stable render styles."""
+
+    edge = _edge(_node(0x1000), _node(0x2000), jumpkind=jumpkind)
+
+    assert _edge_type(edge) == expected
+
+
+def test_explicit_unresolved_indirect_metadata_has_highest_precedence() -> None:
+    """Keep repaired unresolved-indirect edges visible despite their jump kind."""
+
+    edge = _edge(
+        _node(0x1000),
+        _node(0x2000),
+        jumpkind="Ijk_Ret",
+        unresolved_indirect=True,
+    )
+
+    assert _edge_type(edge) == "UNRESOLVED_INDIRECT"
+
+
+@pytest.mark.parametrize("placeholder_side", ["source", "destination"])
+def test_unresolvable_jump_target_edges_remain_unresolved(
+    placeholder_side: str,
+) -> None:
+    """Classify both directions of angr's indirect-jump placeholder equally."""
+
+    placeholder = _node(
+        0x80100000,
+        is_simprocedure=True,
+        simprocedure_name="UnresolvableJumpTarget",
+    )
+    normal_node = _node(0x1000)
+    source, destination = (
+        (placeholder, normal_node)
+        if placeholder_side == "source"
+        else (normal_node, placeholder)
+    )
+
+    assert _edge_type(_edge(source, destination, jumpkind="Ijk_Boring")) == (
+        "UNRESOLVED_INDIRECT"
+    )
+
+
+@pytest.mark.parametrize(
+    ("vex", "destination", "expected"),
+    [
+        (_vex("Ijk_Boring", next_addr=0x1004), 0x1004, "NEXT"),
+        (_vex("Ijk_Boring", next_addr=0x2000), 0x2000, "UNCONDITIONAL"),
+        (
+            _vex("Ijk_Boring", next_addr=0x1004, exit_targets=(0x2000,)),
+            0x2000,
+            "CONDITIONAL_TRUE",
+        ),
+        (
+            _vex("Ijk_Boring", next_addr=0x2000, exit_targets=(0x2000,)),
+            0x1004,
+            "CONDITIONAL_FALSE",
+        ),
+        (_vex("Ijk_Boring"), 0x2000, "INDIRECT"),
+        (_vex("Ijk_Boring", next_addr=0x2000), 0x3000, "UNKNOWN"),
+    ],
+)
+def test_boring_edges_use_vex_terminator_semantics(
+    vex: SimpleNamespace, destination: int, expected: str
+) -> None:
+    """Distinguish ordinary fall-through, branch, and indirect CFG edges."""
+
+    source = _node(0x1000, size=4, vex=vex)
+
+    assert (
+        _edge_type(_edge(source, _node(destination), jumpkind="Ijk_Boring")) == expected
+    )

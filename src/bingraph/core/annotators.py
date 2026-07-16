@@ -306,7 +306,9 @@ def _edge_type(edge) -> str:
         return "RET"
     if jumpkind == "Ijk_FakeRet":
         return "FAKE_RET"
-    if jumpkind == "Ijk_Call":
+    # A syscall transfers control to an OS service just like a call crosses a
+    # function boundary. Keep its explicit fake-return edge distinct below.
+    if jumpkind in {"Ijk_Call", "Ijk_Sys_syscall"}:
         return "CALL"
     if jumpkind == "Ijk_Boring":
         return _vex_boring_edge_type(edge)

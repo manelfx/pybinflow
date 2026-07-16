@@ -139,7 +139,7 @@ def test_immediate_entry_downgrades_to_queued_work(
 
     monkeypatch.setattr(session, "_recover_entry_now", lambda obligation: None)
     monkeypatch.setattr(session, "_resolve_covering_entry", lambda obligation: None)
-    monkeypatch.setattr(cfg_module, "_nodes_at_addr", lambda *args: [])
+    monkeypatch.setattr(session, "_nodes_at_addr", lambda addr: [])
     monkeypatch.setattr(session, "_claim_placeholder", lambda obligation: placeholder)
     monkeypatch.setattr(session, "_queue_if_needed", queued.append)
 
@@ -197,11 +197,7 @@ def test_covered_entry_queues_covering_repair_before_split_target(
     placeholder = cast(CFGNode, object())
     queued: list[cfg_module.RepairObligation] = []
 
-    monkeypatch.setattr(
-        cfg_module,
-        "_covering_nodes",
-        lambda *args: [covering_node],
-    )
+    monkeypatch.setattr(session, "_covering_nodes", lambda addr: [covering_node])
     monkeypatch.setattr(
         cfg_module,
         "_addr_is_mid_instruction_start",
@@ -234,7 +230,7 @@ def test_mid_instruction_entry_repairs_the_covering_node_without_a_split(
     )
     queued: list[cfg_module.RepairObligation] = []
 
-    monkeypatch.setattr(cfg_module, "_covering_nodes", lambda *args: [covering_node])
+    monkeypatch.setattr(session, "_covering_nodes", lambda addr: [covering_node])
     monkeypatch.setattr(
         cfg_module,
         "_addr_is_mid_instruction_start",

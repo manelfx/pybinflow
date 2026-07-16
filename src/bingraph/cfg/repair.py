@@ -1010,6 +1010,26 @@ def _call_target_is_known_nonreturning(project: Project, node) -> bool:
     return bool(getattr(project.hooked_by(target), "NO_RET", False))
 
 
+def _can_decode_fallthrough(
+    project: Project, bounds: FunctionBounds, addr: int
+) -> bool:
+    """Return whether an in-function call fall-through starts decodable code."""
+
+    if not _is_direct_target_valid(bounds, addr):
+        return False
+
+    try:
+        block = project.factory.block(addr, size=bounds.end_addr - addr)
+        block_size = block.size
+        return (
+            isinstance(block_size, int)
+            and block_size > 0
+            and bool(block.capstone.insns)
+        )
+    except Exception:
+        return False
+
+
 def node_has_missing_call_fallthrough(
     project: Project,
     graph: CFGGraph,
@@ -1029,7 +1049,9 @@ def node_has_missing_call_fallthrough(
         return False
 
     fallthrough_addr = _node_range_end(node)
-    if not _is_direct_target_valid(bounds, fallthrough_addr):
+    # Symbol sizes can include architecture-specific function metadata. Do not
+    # require a fake return into bytes that the project cannot decode as code.
+    if not _can_decode_fallthrough(project, bounds, fallthrough_addr):
         return False
 
     for successor in graph.successors(node):
@@ -2845,7 +2867,9 @@ class _RepairSession:
         """Seed ordinary recovery work for a group of anomalous block starts."""
 
         for addr in addrs:
-            self.ensure_block_entry(RepairObligation(addr=addr, reason=reason))
+            # These addresses were already classified as anomalous. Queue them
+            # directly instead of treating a preserved seed node as acceptable.
+            self._queue_if_needed(RepairObligation(addr=addr, reason=reason))
 
     def _drain_worklist(self) -> None:
         """Process queued work while enforcing the global repair iteration limit."""
@@ -2939,6 +2963,7 @@ class _RepairSession:
         self.stats.input_anomalies = len(self._initial_anomalous_addrs())
         resolved_tables = self._resolve_static_jump_tables()
         initial_bad_addrs = self._initial_anomalous_addrs()
+        attempted_anomaly_addrs = set(initial_bad_addrs)
         if initial_bad_addrs:
             logger.info(
                 f"Repairing seed CFG for function {self.func_addr:#x} with "
@@ -2965,6 +2990,17 @@ class _RepairSession:
             if not remaining_bad_addrs:
                 break
             if not cleanup_changed:
+                newly_exposed_addrs = sorted(
+                    set(remaining_bad_addrs) - attempted_anomaly_addrs
+                )
+                if newly_exposed_addrs:
+                    logger.info(
+                        f"Repair discovered {len(newly_exposed_addrs)} new anomaly "
+                        f"start(s) for function {self.func_addr:#x}; continuing repair"
+                    )
+                    attempted_anomaly_addrs.update(newly_exposed_addrs)
+                    self._queue_recoveries(newly_exposed_addrs, "post_repair_anomaly")
+                    continue
                 logger.warning(
                     f"Custom CFG repair for {self.func_addr:#x} stopped with "
                     f"{len(remaining_bad_addrs)} unresolved anomaly start(s): "
@@ -2976,6 +3012,7 @@ class _RepairSession:
                 f"Cleanup exposed {len(remaining_bad_addrs)} anomaly start(s) for "
                 f"function {self.func_addr:#x}; continuing repair"
             )
+            attempted_anomaly_addrs.update(remaining_bad_addrs)
             self._queue_recoveries(remaining_bad_addrs, "post_cleanup_anomaly")
             if not self.queue:
                 logger.warning(

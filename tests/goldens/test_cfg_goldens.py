@@ -118,8 +118,10 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "i386,bronze_ropchain,0x806a770,__strcasecmp_l_sse4_2.dot",
         "i386,bronze_ropchain,0x806f870,_dl_aux_init.dot",
         "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",
+        "ppc64el,fauxware_static,0x1001e4c0,malloc_consolidate.dot",
         "ppc64el,fauxware_static,0x1003ac00,__gconv_release_step.dot",
         "s390x,test-instr_s390x,0x800555f8,_IO_vfscanf.dot",
+        "x86_64,cvs,0x485f00,vasnprintf.dot",
         "x86_64,elf_with_static_libc_ubuntu_2004,0x445970,"
         "__memset_avx512_no_vzeroupper.dot",
         "x86_64,elf_with_static_libc_ubuntu_2004,0x48ef40,execute_stack_op.dot",
@@ -151,6 +153,7 @@ def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
 
     min_bbs = _env_min_bbs()
     yielded = 0
+    seen_function_formats: set[tuple[str, str]] = set()
 
     # Only non-duplicate rows take part in the golden suite. Apply the BB-count
     # filter before the optional smoke-test limit so the limit reflects the
@@ -170,14 +173,28 @@ def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
             if int(row["num_bbs"]) < min_bbs:
                 continue
 
-            yielded += 1
-            yield {
+            normalized_row = {
                 "index": index,
                 "filepath": row["filepath"],
                 "function_name": row["funcname"],
                 "function_addr": row["funcaddr"],
                 "num_bbs": int(row["num_bbs"]),
             }
+
+            # Keep one deterministic representative for each format/name pair.
+            # This runs after the BB threshold so a small first variant cannot
+            # hide a later variant that is otherwise eligible for CFG testing.
+            # Curated checkpoint cases remain selected in addition to the
+            # ordinary representative for their format/name group.
+            function_format = (row["fileformat"], row["funcname"])
+            if function_format in seen_function_formats and not _is_checkpoint(
+                normalized_row
+            ):
+                continue
+            seen_function_formats.add(function_format)
+
+            yielded += 1
+            yield normalized_row
             if limit is not None and yielded >= limit:
                 return
 

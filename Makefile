@@ -2,10 +2,10 @@ UV := uv run
 
 # These are commands, not filesystem targets. Declaring them phony prevents
 # existing directories such as `tests/` from making Make skip their recipes.
-.PHONY: tests format format-check lint typecheck check goldens goldens-checkpoint goldens-promote
+.PHONY: units format format-check lint typecheck check coverage goldens goldens-checkpoint goldens-promote
 
 # Run the default fast unit-test suite selected by pytest's `testpaths` setting.
-tests:
+units:
 	$(UV) pytest -v
 
 # Rewrite Python source and test files into Ruff's canonical formatting style.
@@ -26,7 +26,18 @@ typecheck:
 	$(UV) ty check src
 
 # Run the regular non-golden development checks without changing source files.
-check: format-check lint typecheck tests
+check: format-check lint typecheck units
+
+# Combine unit and curated golden coverage, then write a browsable report to
+# htmlcov/index.html. BINGRAPH_GOLDEN_CONFIGS remains configurable from the
+# environment, just like the standalone golden targets.
+coverage:
+	$(UV) coverage erase
+	$(UV) pytest -v --cov=bingraph --cov-append --cov-report= tests/units
+	$(UV) pytest -v -m checkpoint --cov=bingraph --cov-append --cov-report= \
+		tests/goldens/test_cfg_goldens.py
+	$(UV) coverage report
+	$(UV) coverage html
 
 # Render and compare the complete golden matrix. This can be expensive and
 # writes fresh candidate artifacts under `tests/_actual/`.

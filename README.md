@@ -135,8 +135,12 @@ The commands behind `make check` are also available independently:
 make format-check
 make lint
 make typecheck
-make tests
+make units
+make coverage
 ```
+
+`make coverage` runs both unit tests and curated golden checkpoints, prints a
+terminal summary, and writes a browsable report to `htmlcov/index.html`.
 
 ### Golden CFG regression tests
 

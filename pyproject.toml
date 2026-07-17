@@ -45,3 +45,10 @@ markers = [
     "checkpoint: curated CFG golden regression cases",
     "slow: integration tests that require playground binaries",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["src/bingraph"]
+
+[tool.coverage.html]
+directory = "htmlcov"

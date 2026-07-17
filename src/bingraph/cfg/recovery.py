@@ -13,26 +13,9 @@ from bingraph.helpers.capstone import (
     control_transfer_index,
 )
 
+from .decode import decode_one
 from .jumps import is_direct_target_valid
 from .models import BlockSpec, FunctionBounds, TerminatorInfo
-
-
-def decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
-    """
-    Decode one instruction using angr's block factory but only consume Capstone.
-
-    This preserves architecture mode details such as Thumb decoding while still
-    avoiding a dependency on a full VEX lift for ordinary instruction discovery.
-    """
-
-    block = project.factory.block(
-        addr,
-        size=size,
-        strict_block_end=True,
-        cross_insn_opt=False,
-    )
-    capstone_insns = block.capstone.insns
-    return capstone_insns[0].insn if capstone_insns else None
 
 
 def vex_jumpkind_is_terminal(jumpkind: str) -> bool:
@@ -84,10 +67,22 @@ def _instruction_has_unclassified_vex_transfer(project: Project, insn: CsInsn) -
     if section is None or not section.is_executable:
         return False
 
+    lift_size = insn.size
+    if arch_has_delay_slot(project.arch.name):
+        # VEX needs the executed delay-slot instruction to classify MIPS BAL
+        # and similar branch-and-link instructions as calls.
+        delay_insn = decode_one(
+            project,
+            insn.address + insn.size,
+            getattr(project.arch, "max_inst_bytes", 16),
+        )
+        if delay_insn is not None:
+            lift_size += delay_insn.size
+
     try:
         vex = project.factory.block(
             insn.address,
-            size=insn.size,
+            size=lift_size,
             strict_block_end=True,
             cross_insn_opt=False,
         ).vex
@@ -288,6 +283,10 @@ def recover_block(
 
         if _instruction_has_unclassified_vex_transfer(project, insn):
             unclassified_vex_terminator_addr = insn.address
+            if has_delay_slot and bounds.addr <= next_addr < bounds.end_addr:
+                delay_insn = decode_one(project, next_addr, max_inst_bytes)
+                if delay_insn is not None:
+                    insns.append(delay_insn)
             break
 
         cur = next_addr

@@ -23,11 +23,15 @@ How this module works:
    Instead, it copies the already generated files from `tests/_actual/...`
    into the committed golden directories under `tests/goldens/<config-name>/...`.
    This keeps promotion fast and makes it an explicit "accept what compare mode
-   already produced" workflow.
+   already produced" workflow. Promotion normalizes the transient comparison
+   counters in `summary.json`, so one promotion is sufficient after adding a
+   previously missing golden.
 
 5. Summary files
    At the end of the module run, one `summary.json` file is written per config
-   under `tests/_actual/<config-name>/...`. In promote mode, that summary is
+   under `tests/_actual/<config-name>/...`. A dedicated per-config test then
+   compares it with the committed summary, so summary failures are not
+   attributed to the final rendered artifact. In promote mode, that summary is
    also copied into the golden directory.
 
 6. First-time bootstrap
@@ -115,23 +119,33 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "armel,lwip_udpecho_bm.elf,0x705,__udivmoddi4.dot",
         "armel,lwip_udpecho_bm.elf,0x39f1,tcp_alloc.dot",
         "armel,lwip_udpecho_bm.elf,0x5f65,dhcp_bind.dot",
+        "i386,bronze_ropchain,0x80572f0,_IO_list_lock.dot",
         "i386,bronze_ropchain,0x8060ca0,__strcmp_sse4_2.dot",
         "i386,bronze_ropchain,0x806a770,__strcasecmp_l_sse4_2.dot",
         "i386,bronze_ropchain,0x806f870,_dl_aux_init.dot",
         "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",
+        "mipsel,mips_syscall_demo,0x401390,__libc_setup_tls.dot",
+        "mipsel,mips_syscall_demo,0x420240,__gconv_db_freemem.dot",
+        # fmt: skip (line too long)
+        "mipsel,btrfs-tools_btrfs-calc-size,0x4162c8,btrfs_find_block_group.isra.14.dot",
         "ppc64el,fauxware_static,0x1000ed70,abort.dot",
         "ppc64el,fauxware_static,0x1001e4c0,malloc_consolidate.dot",
         "ppc64el,fauxware_static,0x1003ac00,__gconv_release_step.dot",
+        "riscv,server_eapp.eapp_riscv,0x1830,channel_init.dot",
+        # fmt: skip (line too long)
+        "riscv,server_eapp.eapp_riscv,0xe60c,crypto_generichash_blake2b__init_salt_personal.dot",
         "s390x,test-instr_s390x,0x800555f8,_IO_vfscanf.dot",
         "x86_64,cvs,0x485f00,vasnprintf.dot",
-        "x86_64,elf_with_static_libc_ubuntu_2004,0x445970,"
-        "__memset_avx512_no_vzeroupper.dot",
+        # fmt: skip (line too long)
+        "x86_64,elf_with_static_libc_ubuntu_2004,0x445970,__memset_avx512_no_vzeroupper.dot",
         "x86_64,elf_with_static_libc_ubuntu_2004,0x48ef40,execute_stack_op.dot",
+        "x86_64,langdetect_clang,0x408ce0,msort_with_tmp.part.0.dot",
         "x86_64,langdetect_clang,0x420c40,__memcpy_avx512_unaligned_erms.dot",
         "x86_64,langdetect_clang,0x423590,__memset_avx512_no_vzeroupper.dot",
+        "x86_64,langdetect_clang,0x420450,__memcpy_avx512_no_vzeroupper.dot",
         "x86_64,langdetect_clang,0x435640,__strstr_avx512.dot",
-        "x86_64,langdetect_clang,0x408ce0,msort_with_tmp.part.0.dot",
         "x86_64,langdetect_clang,0x4741a0,execute_cfa_program.dot",
+        "x86_64,langdetect_clang,0x475e90,_Unwind_Resume_or_Rethrow.dot",
         "x86_64,static,0x40dc00,abort.dot",
     }
 )
@@ -426,8 +440,39 @@ def _copy_tree_contents(src_dir: Path, dst_dir: Path) -> None:
     for relpath in expected_files:
         target = dst_dir / relpath
         target.parent.mkdir(parents=True, exist_ok=True)
+        if relpath == Path(SUMMARY_NAME):
+            target.write_text(
+                _normalized_promoted_summary_text(src_dir / relpath),
+                encoding="utf-8",
+            )
+            continue
         shutil.copy2(src_dir / relpath, target)
     _prune_stale_files(dst_dir, expected_files)
+
+
+def _normalized_promoted_summary_text(actual_summary_path: Path) -> str:
+    """Return a summary representing the successful run promotion establishes."""
+
+    payload = json.loads(actual_summary_path.read_text(encoding="utf-8"))
+    entries = payload.get("entries")
+    if not isinstance(entries, int):
+        raise ValueError(
+            f"Cannot promote malformed summary without integer entries: "
+            f"{actual_summary_path}"
+        )
+
+    # `_actual` records the comparison result of the run that produced it.
+    # Once its artifacts become goldens, the next equivalent run must instead
+    # report an all-matching comparison. Preserve render results (including
+    # expected error artifacts), but reset only golden-comparison counters.
+    payload.update(
+        golden_matches=entries,
+        golden_mismatches=0,
+        missing_goldens=0,
+        render_crashes=0,
+        render_recoveries=0,
+    )
+    return _serialize_summary(payload)
 
 
 def _build_test_settings(config: GoldenConfig) -> settings_module.Settings:
@@ -474,7 +519,7 @@ ACTIVE_CACHE_CONFIG: str | None = None
 
 @pytest.fixture(scope="module", autouse=True)
 def _manage_summary_files() -> Iterator[None]:
-    """Track per-config run stats and write summary files after the module finishes."""
+    """Initialize run state and always materialize actual summaries at teardown."""
 
     global RUN_STATE, ACTIVE_CACHE_CONFIG
 
@@ -484,7 +529,6 @@ def _manage_summary_files() -> Iterator[None]:
         yield
         return
 
-    limit = _env_limit()
     # Track per-config aggregate stats as the parametrized row tests execute.
     RUN_STATE = {
         config.name: ConfigRunState(expected_files={Path(SUMMARY_NAME)})
@@ -493,60 +537,48 @@ def _manage_summary_files() -> Iterator[None]:
 
     yield
 
-    failures: list[str] = []
     for config in ACTIVE_CONFIGS:
-        # After all row tests finish, materialize the summary that describes the
-        # aggregate status for this config and keep `_actual` pruned to exactly
-        # the files produced in the current run.
-        state = RUN_STATE[config.name]
-        golden_dir = GOLDENS_ROOT / config.name
-        actual_dir = ACTUAL_ROOT / config.name
-        actual_summary_path = actual_dir / SUMMARY_NAME
-        golden_summary_path = golden_dir / SUMMARY_NAME
-        summary_text = _serialize_summary(
-            _summary_payload(
-                config=config,
-                state=state,
-                limit=limit,
-            )
-        )
-
-        actual_dir.mkdir(parents=True, exist_ok=True)
-        actual_summary_path.write_text(summary_text, encoding="utf-8")
-        _prune_stale_files(actual_dir, state.expected_files)
-
-        if limit is not None:
-            # Limited smoke runs intentionally do not validate committed summary
-            # files because their counts are only a partial view of the corpus.
-            continue
-
-        # In full compare runs, the committed summary must match the just-computed
-        # summary, and there should be no unexpected files left in the golden tree.
-        if not golden_summary_path.exists():
-            failures.append(
-                f"{config.name}: missing summary file {golden_summary_path.relative_to(TESTS_DIR)}"
-            )
-        elif golden_summary_path.read_text(encoding="utf-8") != summary_text:
-            failures.append(
-                f"{config.name}: summary mismatch {golden_summary_path.relative_to(TESTS_DIR)}"
-            )
-
-        unexpected_files = sorted(_existing_files(golden_dir) - state.expected_files)
-        failures.extend(
-            f"{config.name}: unexpected golden file {path}" for path in unexpected_files
-        )
+        _write_config_summary(config, validate=False)
 
     RUN_STATE = {}
     ACTIVE_CACHE_CONFIG = None
     _clear_caches()
 
-    if failures:
-        preview = "\n".join(failures[:20])
-        remaining = len(failures) - min(len(failures), 20)
-        suffix = f"\n... and {remaining} more failure(s)" if remaining else ""
-        pytest.fail(
-            f"Summary validation had {len(failures)} issue(s).\n{preview}{suffix}"
+
+def _write_config_summary(config: GoldenConfig, *, validate: bool) -> list[str]:
+    """Write one actual summary and optionally return committed-summary differences."""
+
+    state = RUN_STATE[config.name]
+    golden_dir = GOLDENS_ROOT / config.name
+    actual_dir = ACTUAL_ROOT / config.name
+    actual_summary_path = actual_dir / SUMMARY_NAME
+    golden_summary_path = golden_dir / SUMMARY_NAME
+    summary_text = _serialize_summary(
+        _summary_payload(
+            config=config,
+            state=state,
+            limit=_env_limit(),
         )
+    )
+
+    actual_dir.mkdir(parents=True, exist_ok=True)
+    actual_summary_path.write_text(summary_text, encoding="utf-8")
+    _prune_stale_files(actual_dir, state.expected_files)
+
+    if not validate or _env_limit() is not None:
+        # Limited smoke runs intentionally do not validate committed summaries:
+        # their counters represent only a partial view of the selected corpus.
+        return []
+
+    failures: list[str] = []
+    if not golden_summary_path.exists():
+        failures.append(f"missing {golden_summary_path.relative_to(TESTS_DIR)}")
+    elif golden_summary_path.read_text(encoding="utf-8") != summary_text:
+        failures.append(f"mismatch in {golden_summary_path.relative_to(TESTS_DIR)}")
+
+    unexpected_files = sorted(_existing_files(golden_dir) - state.expected_files)
+    failures.extend(f"unexpected golden file {path}" for path in unexpected_files)
+    return failures
 
 
 if CURRENT_MODE == "compare":
@@ -642,6 +674,24 @@ if CURRENT_MODE == "compare":
             )
         # Only exact output matches count as successful golden comparisons.
         state.golden_matches += 1
+
+    @pytest.mark.slow
+    @pytest.mark.checkpoint
+    @pytest.mark.parametrize("config", ACTIVE_CONFIGS, ids=lambda config: config.name)
+    def test_config_summary_matches_golden(config: GoldenConfig) -> None:
+        """Compare one config summary after all of its artifact cases complete."""
+
+        failures = _write_config_summary(config, validate=True)
+        if not failures:
+            return
+
+        details = "\n".join(f"- {failure}" for failure in failures)
+        pytest.fail(
+            f"Golden summary validation failed for {config.name}.\n"
+            "This usually follows a corpus or checkpoint selection change; "
+            "inspect the generated summary and promote it with the artifacts if intended.\n"
+            f"{details}"
+        )
 
 
 @pytest.mark.slow

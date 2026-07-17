@@ -4,7 +4,53 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from angr import Project
 from capstone import CsInsn
+
+
+_DECODED_NODE_CACHE: dict[object, DecodedNode] = {}
+
+
+def clear_decoded_node_cache() -> None:
+    """Discard decoded-node views from the preceding custom CFG build."""
+
+    _DECODED_NODE_CACHE.clear()
+
+
+def decode_raw_capstone_insns(
+    project: Project,
+    addr: int,
+    size: int,
+    *,
+    count: int = 0,
+) -> tuple[CsInsn, ...]:
+    """Decode bytes directly through the project's architecture Capstone engine."""
+
+    try:
+        data = project.loader.memory.load(addr, size)
+        return tuple(project.arch.capstone.disasm(data, addr, count=count))
+    except Exception:
+        return ()
+
+
+def decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
+    """Decode one instruction with mode-aware Capstone and a raw fallback."""
+
+    try:
+        block = project.factory.block(
+            addr,
+            size=size,
+            strict_block_end=True,
+            cross_insn_opt=False,
+        )
+        capstone_insns = block.capstone.insns
+        if capstone_insns:
+            return capstone_insns[0].insn
+    except Exception:
+        pass
+
+    fallback_insns = decode_raw_capstone_insns(project, addr, size, count=1)
+    return fallback_insns[0] if fallback_insns else None
 
 
 @dataclass(frozen=True)
@@ -16,12 +62,43 @@ class DecodedNode:
 
     @classmethod
     def from_node(cls, node) -> DecodedNode:
-        """Read a node's Capstone instructions with the usual fallback."""
+        """Read and cache Capstone instructions for one live CFG node.
+
+        Anomaly checks inspect the same CFGFast nodes repeatedly while the
+        worklist repairs nearby blocks. ``node.block.capstone`` constructs a
+        fresh angr Block each time, so retaining this immutable view avoids
+        repeatedly disassembling unchanged node bytes. angr CFG nodes compare
+        by their stable block identity, so equivalent wrappers materialized by
+        its spilled graph reuse one entry until the next custom build resets
+        the cache.
+        """
 
         try:
-            return cls(tuple(item.insn for item in node.block.capstone.insns))
-        except (AttributeError, KeyError) as exc:
-            return cls(None, exc)
+            cached = _DECODED_NODE_CACHE.get(node)
+        except TypeError:
+            cached = None
+        if cached is not None:
+            return cached
+
+        try:
+            block = node.block
+            insns = tuple(item.insn for item in block.capstone.insns)
+            if insns:
+                decoded = cls(insns)
+            else:
+                project = block._project
+                decoded = cls(decode_raw_capstone_insns(project, node.addr, node.size))
+
+        except Exception as exc:
+            decoded = cls(None, exc)
+
+        try:
+            _DECODED_NODE_CACHE[node] = decoded
+        except TypeError:
+            # Lightweight test doubles need not implement the CFGNode hash
+            # contract; decode them normally without retaining an entry.
+            pass
+        return decoded
 
     @property
     def is_empty(self) -> bool:

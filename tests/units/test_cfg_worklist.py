@@ -10,7 +10,10 @@ import pytest
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGNode
 
+from bingraph.cfg import nodes as nodes_module
 from bingraph.cfg import repair as cfg_module
+from bingraph.cfg import graph as graph_module
+from bingraph.cfg import models as models_module
 
 
 def _bare_session() -> cfg_module._RepairSession:
@@ -19,12 +22,12 @@ def _bare_session() -> cfg_module._RepairSession:
     session = object.__new__(cfg_module._RepairSession)
     session.queue = deque()
     session.pending = {}
-    session.leaders = cfg_module.BlockLeaderRegistry({})
+    session.leaders = models_module.BlockLeaderRegistry({})
     session.mutation_revision = 0
     session.last_requeue_states = {}
-    session.stats = cfg_module.CustomCFGStats()
+    session.stats = models_module.CustomCFGStats()
     session.bounds = cast(
-        cfg_module.FunctionBounds,
+        models_module.FunctionBounds,
         SimpleNamespace(addr=0x1000, end_addr=0x2000),
     )
     session.graph = object()
@@ -216,10 +219,10 @@ def test_covered_entry_queues_covering_repair_before_split_target(
     ]
 
 
-def test_mid_instruction_entry_repairs_the_covering_node_without_a_split(
+def test_mid_instruction_entry_preserves_a_valid_covering_node_without_a_split(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Do not preserve a synthetic leader in the middle of a valid instruction."""
+    """Do not create or repair a synthetic leader inside a valid instruction."""
 
     session = _bare_session()
     covering_node = cast(CFGNode, SimpleNamespace(addr=0x1100, size=16))
@@ -246,12 +249,7 @@ def test_mid_instruction_entry_repairs_the_covering_node_without_a_split(
 
     assert session._resolve_covering_entry(request) is covering_node
     assert session.leaders.starts_with_reason("explicit_split") == set()
-    assert queued == [
-        cfg_module.RepairObligation(
-            addr=0x1100,
-            reason="covering_node_for_0x1108",
-        )
-    ]
+    assert queued == []
 
 
 def test_stalled_requeue_fails_when_pending_state_is_unchanged() -> None:
@@ -349,20 +347,20 @@ def test_external_target_node_is_created_once(
     seed_cfg = cast(CFGBase, object())
     external_node = SimpleNamespace(addr=0x4000, is_simprocedure=True)
     monkeypatch.setattr(
-        cfg_module,
-        "_make_external_target_node",
+        nodes_module,
+        "make_external_target_node",
         lambda *args: external_node,
     )
 
-    first, first_created = cfg_module._ensure_external_target_node(
+    first, first_created = nodes_module.ensure_external_target_node(
         seed_cfg,
-        cast(cfg_module.CFGGraph, graph),
+        cast(graph_module.CFGGraph, graph),
         0x1000,
         0x4000,
     )
-    second, second_created = cfg_module._ensure_external_target_node(
+    second, second_created = nodes_module.ensure_external_target_node(
         seed_cfg,
-        cast(cfg_module.CFGGraph, graph),
+        cast(graph_module.CFGGraph, graph),
         0x1000,
         0x4000,
     )

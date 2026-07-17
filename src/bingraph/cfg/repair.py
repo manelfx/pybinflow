@@ -86,20 +86,14 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import replace
-from functools import lru_cache
 from types import SimpleNamespace
-from typing import Any, Literal
 
 from angr import KnowledgeBase, Project
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGNode
 from loguru import logger
-import pyvex
 
-from bingraph.helpers.symbols import list_function_symbols
-from bingraph.helpers.capstone import InsnSemantics
 from .graph import (
-    CFGGraph,
     add_successor_edge as _add_successor_edge,
     cfg_graph as _cfg_graph,
     cleanup_unreachable_function_nodes as _cleanup_unreachable_function_nodes,
@@ -109,36 +103,54 @@ from .graph import (
     node_intersects_bounds as _node_intersects_bounds,
     node_is_materialized_cfg_node as _node_is_materialized_cfg_node,
     node_is_placeholder as _node_is_placeholder,
-    node_is_simprocedure as _node_is_simprocedure,
     node_range_end as _node_range_end,
     node_vex as _node_vex,
     ranges_overlap as _ranges_overlap,
     remove_nodes as _remove_nodes,
 )
 from .jumps import (
-    MAX_STATIC_JUMPTABLE_ENTRIES,
     is_direct_target_valid as _is_direct_target_valid,
 )
-from .decode import DecodedNode
+from .decode import (
+    DecodedNode,
+    clear_decoded_node_cache as _clear_decoded_node_cache,
+    decode_one as _decode_one,
+)
 from .models import (
     BlockLeaderRegistry,
     BlockSpec,
-    CFGAnomaly,
     CustomCFG,
     CustomCFGStats,
     EdgeClaim,
     EdgeJumpKind,
     EntryResolutionPolicy,
-    FunctionBounds,
-    JumpSuccessorAnalysis,
-    JumpSuccessorExpectation,
     PendingObligation,
     RepairObligation,
-    StaticJumpTable,
+)
+from .anomalies import (
+    CFGAnomalyDetector,
+    _iter_seed_function_nodes,
+    _lookup_function_bounds,
+    node_has_linear_merge_successor,
+)
+from .jumps import (
+    _constant_register_from_predecessors,
+    _guarded_jump_table_entry_count,
+    _read_static_jump_table_targets,
+    _seed_graph_direct_targets,
+    _seed_node_expected_successors,
+    _unique_static_register_value,
+    _vex_relative_jump_table,
+)
+from .nodes import (
+    ensure_external_target_node as _ensure_external_target_node,
+    make_cfg_node as _make_cfg_node,
+    make_placeholder_node as _make_placeholder_node,
+    prune_orphan_simprocedures as _prune_orphan_simprocedures,
+    prune_placeholders as _prune_placeholders,
 )
 from .recovery import (
     recover_block as _recover_block,
-    vex_jumpkind_is_terminal as _vex_jumpkind_is_terminal,
 )
 
 
@@ -147,1217 +159,10 @@ from .recovery import (
 MAX_CUSTOM_CFG_WORKLIST_ITERATIONS = 5_000
 
 
-def _lookup_function_bounds(project: Project, func_addr: int) -> FunctionBounds:
-    """
-    Return function bounds from the symbol view used across bingraph.
-
-    The custom repair pass needs a stable upper bound even when CFGFast itself
-    missed blocks. `kb.functions[addr].size` is derived from currently
-    discovered CFG blocks, so it can shrink along with a malformed CFG. By
-    reusing `list_function_symbols()` we inherit the project's existing symbol
-    parsing and size-inference logic instead.
-    """
-
-    function = next(
-        (sym for sym in list_function_symbols(project) if sym.addr == func_addr), None
-    )
-    if function is None:
-        raise KeyError(f"Function {func_addr:#x} not found in binary")
-
-    end_addr = func_addr + function.size
-    return FunctionBounds(
-        addr=func_addr,
-        end_addr=end_addr,
-        size=end_addr - func_addr,
-        symbol=function,
-    )
-
-
-def _vex_tmp_definitions(vex) -> dict[int, Any]:
-    """Return the local VEX temporary definitions used to unfold expressions."""
-
-    return {
-        stmt.tmp: stmt.data
-        for stmt in vex.statements
-        if isinstance(stmt, pyvex.stmt.WrTmp)
-    }
-
-
-def _resolve_vex_expr(expr, definitions: dict[int, Any]):
-    """Follow local VEX temporary references until reaching a concrete expression."""
-
-    seen: set[int] = set()
-    while isinstance(expr, pyvex.expr.RdTmp):
-        if expr.tmp in seen:
-            return None
-        seen.add(expr.tmp)
-        expr = definitions.get(expr.tmp)
-        if expr is None:
-            return None
-    return expr
-
-
-def _vex_const_value(expr, definitions: dict[int, Any]) -> int | None:
-    """Return a VEX constant's value after resolving local temporaries."""
-
-    expr = _resolve_vex_expr(expr, definitions)
-    if not isinstance(expr, pyvex.expr.Const):
-        return None
-    value = expr.con.value
-    return value if isinstance(value, int) else None
-
-
-def _vex_get_key(expr, definitions: dict[int, Any], vex) -> tuple[int, int] | None:
-    """Return ``(register_offset, bits)`` for a VEX register read expression."""
-
-    expr = _resolve_vex_expr(expr, definitions)
-    if not isinstance(expr, pyvex.expr.Get):
-        return None
-    return expr.offset, expr.result_size(vex.tyenv)
-
-
-def _vex_add_terms(expr, definitions: dict[int, Any]) -> list[Any] | None:
-    """Flatten a VEX integer-addition expression into its non-additive terms."""
-
-    expr = _resolve_vex_expr(expr, definitions)
-    if expr is None:
-        return None
-    if isinstance(expr, pyvex.expr.Binop) and expr.op.startswith("Iop_Add"):
-        left = _vex_add_terms(expr.args[0], definitions)
-        right = _vex_add_terms(expr.args[1], definitions)
-        if left is None or right is None:
-            return None
-        return [*left, *right]
-    return [expr]
-
-
-def _vex_index_key(expr, definitions: dict[int, Any], vex) -> tuple[int, int] | None:
-    """Return the original register identity for a zero-extended table index."""
-
-    expr = _resolve_vex_expr(expr, definitions)
-    while isinstance(expr, pyvex.expr.Unop) and "Uto" in expr.op:
-        expr = _resolve_vex_expr(expr.args[0], definitions)
-    if isinstance(expr, pyvex.expr.Binop) and expr.op.startswith("Iop_And"):
-        left = _vex_index_key(expr.args[0], definitions, vex)
-        right = _vex_index_key(expr.args[1], definitions, vex)
-        return left or right
-    key = _vex_get_key(expr, definitions, vex)
-    if key is not None and 0 < key[1] <= 8:
-        return key
-    return None
-
-
-def _vex_static_int(expr, definitions: dict[int, Any]) -> int | None:
-    """Evaluate the small constant-only VEX expressions used in branch guards."""
-
-    value = _vex_const_value(expr, definitions)
-    if value is not None:
-        return value
-
-    expr = _resolve_vex_expr(expr, definitions)
-    if not isinstance(expr, pyvex.expr.Binop):
-        return None
-    left = _vex_static_int(expr.args[0], definitions)
-    right = _vex_static_int(expr.args[1], definitions)
-    if left is None or right is None:
-        return None
-    if expr.op.startswith("Iop_And"):
-        return left & right
-    return None
-
-
-def _vex_guarded_index_upper_bound(
-    vex, target_addr: int, index_key: tuple[int, int]
-) -> int | None:
-    """Return a proven unsigned upper bound for an exit entering ``target_addr``."""
-
-    definitions = _vex_tmp_definitions(vex)
-    for stmt in vex.statements:
-        if not isinstance(stmt, pyvex.stmt.Exit):
-            continue
-        if getattr(stmt.dst, "value", None) != target_addr:
-            continue
-
-        guard = _resolve_vex_expr(stmt.guard, definitions)
-        while isinstance(guard, pyvex.expr.Unop):
-            guard = _resolve_vex_expr(guard.args[0], definitions)
-        if not isinstance(guard, pyvex.expr.Binop):
-            continue
-        if "CmpLE" not in guard.op or not guard.op.endswith("U"):
-            continue
-        if _vex_index_key(guard.args[0], definitions, vex) != index_key:
-            continue
-        bound = _vex_static_int(guard.args[1], definitions)
-        if bound is not None:
-            return bound
-    return None
-
-
-def _guarded_jump_table_entry_count(
-    graph: CFGGraph,
-    bounds: FunctionBounds,
-    node,
-    table: StaticJumpTable,
-) -> int | None:
-    """Return the bounded table length proven by a predecessor branch."""
-
-    index_key = table.index_register_offset, table.index_bits
-    bounds_found: set[int] = set()
-    for predecessor in graph.predecessors(node):
-        if not _node_is_materialized_cfg_node(predecessor):
-            continue
-        if not _node_intersects_bounds(predecessor, bounds):
-            continue
-        vex = _node_vex(predecessor)
-        if vex is None:
-            continue
-        upper_bound = _vex_guarded_index_upper_bound(vex, node.addr, index_key)
-        if upper_bound is not None:
-            bounds_found.add(upper_bound)
-
-    if len(bounds_found) != 1:
-        return None
-    upper_bound = next(iter(bounds_found))
-    entry_count = upper_bound + 1
-    return entry_count if entry_count <= MAX_STATIC_JUMPTABLE_ENTRIES else None
-
-
-def _vex_relative_jump_table(vex) -> StaticJumpTable | None:
-    """
-    Describe a bounded relative jump table encoded in one VEX indirect jump.
-
-    The accepted form is intentionally narrow: ``next`` must add a register
-    base to a loaded (optionally sign-extended) table entry, while the load
-    address must be that same base plus an index scaled by the entry size. This
-    covers common PIC tables without treating arbitrary computed jumps as CFG
-    targets.
-    """
-
-    if vex.jumpkind != "Ijk_Boring":
-        return None
-
-    definitions = _vex_tmp_definitions(vex)
-    next_expr = _resolve_vex_expr(vex.next, definitions)
-    if not isinstance(next_expr, pyvex.expr.Binop) or not next_expr.op.startswith(
-        "Iop_Add"
-    ):
-        return None
-
-    left, right = (
-        _resolve_vex_expr(next_expr.args[0], definitions),
-        _resolve_vex_expr(next_expr.args[1], definitions),
-    )
-    candidates = ((left, right), (right, left))
-    for entry_expr, base_expr in candidates:
-        base_key = _vex_get_key(base_expr, definitions, vex)
-        if base_key is None:
-            continue
-
-        signed_entries = False
-        entry_expr = _resolve_vex_expr(entry_expr, definitions)
-        if isinstance(entry_expr, pyvex.expr.Unop):
-            signed_entries = "Sto" in entry_expr.op
-            entry_expr = _resolve_vex_expr(entry_expr.args[0], definitions)
-        if not isinstance(entry_expr, pyvex.expr.Load):
-            continue
-
-        entry_size = entry_expr.result_size(vex.tyenv) // 8
-        if entry_size not in {1, 2, 4, 8}:
-            continue
-
-        address_terms = _vex_add_terms(entry_expr.addr, definitions)
-        if address_terms is None:
-            continue
-
-        displacement = 0
-        saw_base = False
-        index_bits: int | None = None
-        for term in address_terms:
-            value = _vex_const_value(term, definitions)
-            if value is not None:
-                displacement += value
-                continue
-            if _vex_get_key(term, definitions, vex) == base_key:
-                saw_base = True
-                continue
-            term = _resolve_vex_expr(term, definitions)
-            if not isinstance(term, pyvex.expr.Binop) or not term.op.startswith(
-                "Iop_Shl"
-            ):
-                break
-            shift = _vex_const_value(term.args[1], definitions)
-            index_key = _vex_index_key(term.args[0], definitions, vex)
-            if (
-                shift is None
-                or index_key is None
-                or 1 << shift != entry_size
-                or index_bits is not None
-            ):
-                break
-            _, index_bits = index_key
-        else:
-            if saw_base and index_key is not None and index_bits is not None:
-                offset, bits = base_key
-                return StaticJumpTable(
-                    base_register_offset=offset,
-                    base_bits=bits,
-                    table_displacement=displacement,
-                    index_register_offset=index_key[0],
-                    index_bits=index_bits,
-                    entry_size=entry_size,
-                    endness=entry_expr.end,
-                    signed_entries=signed_entries,
-                )
-
-    return None
-
-
-def _constant_register_from_predecessors(
-    graph: CFGGraph,
-    bounds: FunctionBounds,
-    node,
-    register_offset: int,
-) -> int | None:
-    """Return one unambiguous constant register definition reaching ``node``."""
-
-    definitions: set[int] = set()
-    queue: deque[CFGNode] = deque([node])
-    seen: set[CFGNode] = set()
-    while queue:
-        current = queue.popleft()
-        if current in seen:
-            continue
-        seen.add(current)
-        vex = _node_vex(current)
-        if vex is None:
-            return None
-
-        tmp_definitions = _vex_tmp_definitions(vex)
-        found_definition = False
-        for stmt in reversed(vex.statements):
-            if not isinstance(stmt, pyvex.stmt.Put) or stmt.offset != register_offset:
-                continue
-            value = _vex_const_value(stmt.data, tmp_definitions)
-            if value is None:
-                return None
-            definitions.add(value)
-            found_definition = True
-            break
-
-        if found_definition:
-            continue
-        queue.extend(
-            predecessor
-            for predecessor in graph.predecessors(current)
-            if _node_is_materialized_cfg_node(predecessor)
-            and _node_intersects_bounds(predecessor, bounds)
-        )
-
-    return next(iter(definitions)) if len(definitions) == 1 else None
-
-
-def _unique_static_register_value(
-    graph: CFGGraph,
-    bounds: FunctionBounds,
-    register_offset: int,
-) -> int | None:
-    """Return one in-bounds VEX-proven static value assigned to a register."""
-
-    values: set[int] = set()
-    for node in _iter_graph_bound_nodes(graph, bounds):
-        if not _node_is_materialized_cfg_node(node):
-            continue
-        try:
-            vex = node.block.vex
-        except Exception:
-            continue
-        definitions = _vex_tmp_definitions(vex)
-        for stmt in vex.statements:
-            if not isinstance(stmt, pyvex.stmt.Put) or stmt.offset != register_offset:
-                continue
-            value = _vex_static_int(stmt.data, definitions)
-            if value is not None:
-                values.add(value)
-
-    return next(iter(values)) if len(values) == 1 else None
-
-
-def _read_static_jump_table_targets(
-    project: Project,
-    table: StaticJumpTable,
-    base_addr: int,
-    entry_count: int,
-) -> tuple[int, ...]:
-    """Read all targets from one VEX-proven bounded relative jump table."""
-
-    if entry_count <= 0 or entry_count > MAX_STATIC_JUMPTABLE_ENTRIES:
-        return ()
-
-    table_addr = base_addr + table.table_displacement
-    try:
-        raw = project.loader.memory.load(table_addr, entry_count * table.entry_size)
-    except Exception as exc:
-        logger.debug(f"Custom CFG could not read jump table at {table_addr:#x}: {exc}")
-        return ()
-
-    byteorder = "little" if table.endness == "Iend_LE" else "big"
-    targets: set[int] = set()
-    for offset in range(0, len(raw), table.entry_size):
-        entry = int.from_bytes(
-            raw[offset : offset + table.entry_size],
-            byteorder=byteorder,
-            signed=table.signed_entries,
-        )
-        targets.add(base_addr + entry)
-
-    return tuple(sorted(targets))
-
-
-def _iter_seed_function_nodes(seed_cfg: CFGBase, func_addr: int):
-    """Yield non-simprocedure nodes from the seed CFG for one function."""
-
-    for node in _cfg_graph(seed_cfg).nodes():
-        if getattr(node, "function_address", None) != func_addr:
-            continue
-        if getattr(node, "is_simprocedure", False):
-            continue
-        yield node
-
-
-def iter_function_nodes(cfg: CFGBase, func_addr: int):
-    """Yield non-simprocedure nodes that belong to one function."""
-
-    yield from _iter_seed_function_nodes(cfg, func_addr)
-
-
-def _seed_node_expected_successors(node) -> tuple[tuple[int, ...], int | None]:
-    """
-    Return the local direct targets and fallthrough encoded in one seed node.
-
-    CFGFast may already have stitched a malformed region incorrectly, so when we
-    reconnect a preserved predecessor into repaired blocks we prefer the
-    predecessor's own lifted block semantics over the old graph edges.
-    """
-
-    try:
-        decoded = DecodedNode.from_node(node)
-    except Exception:
-        return (), None
-    if decoded.insns is None:
-        return (), None
-
-    try:
-        vex = node.block.vex
-    except Exception:
-        return (), None
-
-    if decoded.is_empty:
-        return (), None
-
-    last_insn = decoded.last
-    if last_insn is None:
-        return (), None
-
-    last_semantic = InsnSemantics(last_insn)
-    if not last_semantic.is_control_transfer():
-        return (), None
-
-    last_addrs = {last_insn.address}
-
-    direct_targets: list[int] = []
-    for ins_addr, _, stmt in vex.exit_statements:
-        if ins_addr not in last_addrs:
-            continue
-        target = getattr(stmt.dst, "value", None)
-        if isinstance(target, int):
-            direct_targets.append(target)
-
-    fallthrough_addr = None
-    if isinstance(vex.next, pyvex.expr.Const):
-        target = vex.next.con.value
-        if isinstance(target, int):
-            fallthrough_addr = target
-
-    return tuple(direct_targets), fallthrough_addr
-
-
-def _seed_graph_direct_targets(graph: CFGGraph, node) -> tuple[int, ...]:
-    """
-    Return direct branch targets that are explicitly present in the seed graph.
-
-    For unrepaired seed nodes we only want to preserve leaders that are backed
-    by a concrete branch edge already materialized in CFGFast. This is narrower
-    than trusting the node's fallthrough layout and avoids swallowing real
-    branch-target leaders such as `0x806a85a` in `__strcasecmp_l_sse4_2`.
-    """
-
-    try:
-        decoded = DecodedNode.from_node(node)
-    except Exception:
-        return ()
-
-    if decoded.is_empty:
-        return ()
-
-    last_insn = decoded.last
-    if last_insn is None:
-        return ()
-
-    last = InsnSemantics(last_insn)
-    if not last.is_jump():
-        return ()
-
-    target = last.direct_target()
-    if not isinstance(target, int):
-        return ()
-
-    successor_addrs = {
-        succ.addr for succ in graph.successors(node) if hasattr(succ, "addr")
-    }
-    if target not in successor_addrs:
-        return ()
-
-    return (target,)
-
-
-def _analyze_jump_successors(
-    project: Project,
-    graph: CFGGraph,
-    bounds: FunctionBounds,
-    node,
-) -> JumpSuccessorAnalysis | None:
-    """
-    Return expected vs present successors for one decoded jump block.
-
-    VEX helps recognize conditional control flow, while Capstone remains
-    authoritative for the direct target because malformed CFGFast nodes can
-    expose stale VEX exit addresses. `InsnSemantics` selects the final immediate
-    operand so compare-and-branch instructions do not use a condition value,
-    such as S390's `-1`, as the branch address.
-    """
-
-    try:
-        decoded = DecodedNode.from_node(node)
-    except Exception:
-        return None
-
-    if decoded.is_empty or node_has_decoding_coverage_mismatch(node):
-        return None
-
-    last_insn = decoded.last
-    if last_insn is None:
-        return None
-
-    try:
-        vex = node.block.vex
-    except Exception:
-        vex = None
-
-    last = InsnSemantics(last_insn)
-    if not last.is_jump():
-        return None
-    # Calls may be members of Capstone's generic jump group. They have their
-    # own call/fake-return edge semantics and must not be checked as branches.
-    if last.is_call() or (vex is not None and vex.jumpkind == "Ijk_Call"):
-        return None
-
-    exit_targets: list[int] = []
-    if vex is not None:
-        for ins_addr, _, stmt in vex.exit_statements:
-            if ins_addr != last_insn.address:
-                continue
-            target = getattr(stmt.dst, "value", None)
-            if isinstance(target, int) and target not in exit_targets:
-                exit_targets.append(target)
-
-    is_conditional = bool(exit_targets)
-    if not is_conditional and last.is_conditional_jump():
-        # A malformed CFG node can retain stale VEX without the final branch
-        # exit. Re-lift only the ambiguous terminator: this keeps genuine x86
-        # conditionals conditional, while correctly classifying S390 `j` as a
-        # direct jump instead of inventing a fallthrough edge.
-        try:
-            fresh_vex = project.factory.block(
-                last_insn.address,
-                size=last_insn.size,
-                strict_block_end=True,
-                cross_insn_opt=False,
-            ).vex
-        except Exception:
-            # Preserve the conservative Capstone classification if a fresh
-            # lift is unavailable; repair is safer than silently omitting an
-            # actual branch successor.
-            is_conditional = True
-        else:
-            is_conditional = any(
-                ins_addr == last_insn.address
-                for ins_addr, _, _ in fresh_vex.exit_statements
-            )
-
-    direct_target = last.direct_target()
-    if direct_target is None:
-        return None
-
-    expected: list[JumpSuccessorExpectation] = []
-    kind: Literal["conditional", "direct"]
-    fallthrough_addr = last_insn.address + last_insn.size
-    if is_conditional:
-        expected.append(JumpSuccessorExpectation(direct_target, "Ijk_Boring", True))
-        if _can_decode_block_at(project, bounds, fallthrough_addr):
-            expected.append(
-                JumpSuccessorExpectation(fallthrough_addr, "Ijk_Boring", False)
-            )
-        kind = "conditional"
-    else:
-        expected.append(JumpSuccessorExpectation(direct_target, "Ijk_Boring", True))
-        kind = "direct"
-
-    present = frozenset(
-        succ.addr for succ in graph.successors(node) if not _node_is_placeholder(succ)
-    )
-    return JumpSuccessorAnalysis(
-        kind=kind,
-        expected=tuple(expected),
-        present=present,
-    )
-
-
-def node_has_missing_jump_successor(
-    project: Project,
-    graph: CFGGraph,
-    bounds: FunctionBounds,
-    node,
-) -> bool:
-    """Return True when a jump block is missing one or more successor edges."""
-
-    analysis = _analyze_jump_successors(project, graph, bounds, node)
-    if analysis is None:
-        return False
-
-    expected_addrs = {item.addr for item in analysis.expected}
-    if analysis.present == expected_addrs:
-        return False
-
-    return True
-
-
-def _missing_jump_successors(
-    project: Project,
-    graph: CFGGraph,
-    bounds: FunctionBounds,
-    node,
-) -> tuple[JumpSuccessorExpectation, ...]:
-    """Return the subset of expected jump successors still missing in the graph."""
-
-    analysis = _analyze_jump_successors(project, graph, bounds, node)
-    if analysis is None:
-        return ()
-
-    return tuple(
-        item for item in analysis.expected if item.addr not in analysis.present
-    )
-
-
-def _call_target_is_known_nonreturning(project: Project, node) -> bool:
-    """Return True only for a direct call to an explicitly non-returning hook."""
-
-    decoded = DecodedNode.from_node(node)
-    last_insn = decoded.last
-    if last_insn is None:
-        return False
-
-    target = InsnSemantics(last_insn).direct_target()
-    if target is None or not project.is_hooked(target):
-        return False
-
-    return bool(getattr(project.hooked_by(target), "NO_RET", False))
-
-
-@lru_cache(maxsize=10_000)
-def _can_decode_block_at_cached(
-    project: Project,
-    start_addr: int,
-    end_addr: int,
-    addr: int,
-) -> bool:
-    """Return whether ``addr`` begins decodable code within fixed bounds."""
-
-    if not start_addr <= addr < end_addr:
-        return False
-
-    try:
-        block = project.factory.block(addr, size=end_addr - addr)
-        block_size = block.size
-        return (
-            isinstance(block_size, int)
-            and block_size > 0
-            and bool(block.capstone.insns)
-        )
-    except Exception:
-        return False
-
-
-def _can_decode_block_at(project: Project, bounds: FunctionBounds, addr: int) -> bool:
-    """Return cached decodeability for one address in a function's bounds."""
-
-    return _can_decode_block_at_cached(project, bounds.addr, bounds.end_addr, addr)
-
-
-def node_has_missing_call_fallthrough(
-    project: Project,
-    graph: CFGGraph,
-    bounds: FunctionBounds,
-    node,
-) -> bool:
-    """Return True when a returning call is missing its in-function fake return."""
-
-    if node_has_decoding_coverage_mismatch(node):
-        return False
-
-    try:
-        is_call = node.block.vex.jumpkind == "Ijk_Call"
-    except Exception:
-        return False
-    if not is_call or _call_target_is_known_nonreturning(project, node):
-        return False
-
-    fallthrough_addr = _node_range_end(node)
-    # Symbol sizes can include architecture-specific function metadata. Do not
-    # require a fake return into bytes that the project cannot decode as code.
-    if not _can_decode_block_at(project, bounds, fallthrough_addr):
-        return False
-
-    for successor in graph.successors(node):
-        if successor.addr != fallthrough_addr:
-            continue
-        edge_data = graph.get_edge_data(node, successor) or {}
-        if edge_data.get("jumpkind") == "Ijk_FakeRet":
-            return False
-
-    return True
-
-
-def _is_linear_merge_successor(graph: CFGGraph, node) -> bool:
-    """Return whether ``node`` should absorb its only straight-line successor.
-
-    This targets the specific malformed shape where CFGFast left an artificial
-    split inside one linear byte range: A has one `Ijk_Boring` successor B, B
-    has exactly one predecessor, B starts exactly where A ends, and A itself
-    does not end in a control-transfer instruction.
-    """
-
-    successors = list(graph.successors(node))
-    if len(successors) != 1:
-        return False
-
-    succ = successors[0]
-    if getattr(succ, "is_simprocedure", False):
-        return False
-    if _node_is_placeholder(succ):
-        return False
-    # Synthetic unresolved-jump fallbacks preserve disconnected regions but do
-    # not represent real branch targets. They must not prevent a normal linear
-    # merge between two adjacent materialized blocks.
-    materialized_predecessors = [
-        predecessor
-        for predecessor in graph.predecessors(succ)
-        if not _node_is_simprocedure(predecessor)
-    ]
-    if len(materialized_predecessors) != 1:
-        return False
-
-    edge_data = graph.get_edge_data(node, succ) or {}
-    if edge_data.get("jumpkind") != "Ijk_Boring":
-        return False
-    if _node_range_end(node) != succ.addr:
-        return False
-
-    try:
-        decoded = DecodedNode.from_node(node)
-    except Exception:
-        return False
-
-    if decoded.is_empty:
-        return False
-
-    last_insn = decoded.last
-    if last_insn is None:
-        return False
-    if InsnSemantics(last_insn).is_control_transfer():
-        return False
-
-    return True
-
-
-def node_has_linear_merge_successor(
-    graph: CFGGraph,
-    node,
-) -> bool:
-    """Return True when ``node`` should absorb a linear successor."""
-
-    return _is_linear_merge_successor(graph, node)
-
-
-def _decoding_coverage_anomaly(node) -> CFGAnomaly | None:
-    """Return the byte-coverage anomaly for ``node``, when present."""
-
-    if node.size == 0:
-        return CFGAnomaly(
-            "decoding_coverage_mismatch",
-            node.addr,
-            f"Node {node.addr:#x} has size zero",
-        )
-
-    decoded = DecodedNode.from_node(node)
-    if decoded.insns is None:
-        return CFGAnomaly(
-            "decoding_coverage_mismatch",
-            node.addr,
-            f"Capstone inspection failed for node {node.addr:#x}: "
-            f"{type(decoded.inspection_error).__name__}: {decoded.inspection_error}",
-        )
-
-    if decoded.has_exact_coverage(node):
-        return None
-
-    expected_addr = node.addr
-    for insn in decoded.insns:
-        if insn.address != expected_addr:
-            return CFGAnomaly(
-                "decoding_coverage_mismatch",
-                node.addr,
-                f"Node {node.addr:#x} decodes instruction at {insn.address:#x} "
-                f"instead of expected {expected_addr:#x}",
-            )
-        expected_addr += insn.size
-
-    node_end = node.addr + node.size
-    if expected_addr != node_end:
-        return CFGAnomaly(
-            "decoding_coverage_mismatch",
-            node.addr,
-            f"Node {node.addr:#x} decoded instructions end at {expected_addr:#x}, "
-            f"but node size extends to {node_end:#x}",
-        )
-
-    return None
-
-
-def node_has_decoding_coverage_mismatch(node) -> bool:
-    """Return True when a CFG node clearly covers bytes incorrectly."""
-
-    return _decoding_coverage_anomaly(node) is not None
-
-
-def node_has_decode_gap(node) -> bool:
-    """
-    Return True when a CFG node has a real lifting-only gap worth flagging.
-
-    Once a block's Capstone instruction stream covers the node span exactly, we
-    treat it as structurally decodable even if VEX still reports
-    `Ijk_NoDecode`. This keeps the anomaly checker focused on malformed blocks
-    and missing coverage instead of on VEX-specific complaints for blocks we
-    can already render correctly.
-    """
-
-    if node_has_decoding_coverage_mismatch(node):
-        return False
-
-    decoded = DecodedNode.from_node(node)
-    if not decoded.is_empty:
-        return False
-
-    try:
-        return node.block.vex.jumpkind == "Ijk_NoDecode"
-    except Exception:
-        return False
-
-
-def node_has_truncated_leaf(
-    project: Project,
-    graph: CFGGraph,
-    bounds: FunctionBounds,
-    func_addr: int,
-    node,
-) -> bool:
-    """Return True when a CFG node stops before a real terminator and has no exits."""
-
-    try:
-        if _vex_jumpkind_is_terminal(node.block.vex.jumpkind):
-            return False
-    except Exception:
-        pass
-
-    decoded = DecodedNode.from_node(node)
-    if decoded.insns is None:
-        return False
-
-    if decoded.is_empty:
-        return False
-
-    last_insn = decoded.last
-    if last_insn is None:
-        return False
-
-    last = InsnSemantics(last_insn)
-    if last.is_control_transfer():
-        return False
-
-    if any(True for _ in graph.successors(node)):
-        return False
-
-    if not _can_decode_block_at(project, bounds, _node_range_end(node)):
-        return False
-
-    has_later_function_node = any(
-        other is not node
-        and getattr(other, "function_address", None) == func_addr
-        and not getattr(other, "is_simprocedure", False)
-        and other.addr > node.addr
-        for other in graph.nodes()
-    )
-    return has_later_function_node
-
-
-def node_has_foreign_function_owner(
-    graph: CFGGraph,
-    func_addr: int,
-    node,
-) -> bool:
-    """Return True for an in-function successor mis-owned by CFGFast."""
-
-    if node.function_address == func_addr:
-        return False
-
-    if not any(
-        predecessor.function_address == func_addr
-        for predecessor in graph.predecessors(node)
-    ):
-        return False
-
-    return True
-
-
-class CFGAnomalyDetector:
-    """Classify node-local CFG anomalies and report each one only once."""
-
-    def __init__(
-        self,
-        project: Project,
-        graph: CFGGraph,
-        bounds: FunctionBounds,
-        func_addr: int,
-    ) -> None:
-        """Bind anomaly checks to one live CFG graph and function range."""
-
-        self.project = project
-        self.graph = graph
-        self.bounds = bounds
-        self.func_addr = func_addr
-        self.reported_anomalies: set[tuple[str, int]] = set()
-
-    def _report(self, anomaly: CFGAnomaly) -> None:
-        """Emit ``anomaly`` once for this detector."""
-
-        key = anomaly.kind, anomaly.addr
-        if key in self.reported_anomalies:
-            return
-        self.reported_anomalies.add(key)
-        logger.warning(anomaly.message)
-
-    def node_has_decoding_coverage_mismatch(self, node) -> bool:
-        """Check byte coverage and report the precise mismatch once."""
-
-        anomaly = _decoding_coverage_anomaly(node)
-        if anomaly is None:
-            return False
-        self._report(anomaly)
-        return True
-
-    def node_has_missing_jump_successor(self, node) -> bool:
-        """Check direct branch edges and report missing or unexpected targets."""
-
-        analysis = _analyze_jump_successors(self.project, self.graph, self.bounds, node)
-        if analysis is None:
-            return False
-
-        expected_addrs = {item.addr for item in analysis.expected}
-        if analysis.present == expected_addrs:
-            return False
-
-        label = (
-            "conditional branch" if analysis.kind == "conditional" else "direct jump"
-        )
-        self._report(
-            CFGAnomaly(
-                "missing_jump_successor",
-                node.addr,
-                f"Node {node.addr:#x} is missing {label} successor(s) "
-                f"or shows unexpected ones: expected "
-                f"{', '.join(hex(t) for t in sorted(expected_addrs))}, got "
-                f"{', '.join(hex(t) for t in sorted(analysis.present)) if analysis.present else '<none>'}",
-            )
-        )
-        return True
-
-    def missing_jump_successors(self, node) -> tuple[JumpSuccessorExpectation, ...]:
-        """Return missing direct branch targets for immediate edge recovery."""
-
-        return _missing_jump_successors(self.project, self.graph, self.bounds, node)
-
-    def node_has_missing_call_fallthrough(self, node) -> bool:
-        """Check fake-return coverage for calls and report a missing edge once."""
-
-        if not node_has_missing_call_fallthrough(
-            self.project, self.graph, self.bounds, node
-        ):
-            return False
-
-        self._report(
-            CFGAnomaly(
-                "missing_call_fallthrough",
-                node.addr,
-                f"Call node {node.addr:#x} is missing fake-return successor "
-                f"{_node_range_end(node):#x}",
-            )
-        )
-        return True
-
-    def node_has_linear_merge_successor(self, node) -> bool:
-        """Check for an artificial linear split and report it once."""
-
-        if not node_has_linear_merge_successor(self.graph, node):
-            return False
-        successor = next(iter(self.graph.successors(node)))
-        self._report(
-            CFGAnomaly(
-                "linear_merge_successor",
-                node.addr,
-                f"Node {node.addr:#x} is split from straight-line successor "
-                f"{successor.addr:#x}",
-            )
-        )
-        return True
-
-    def node_has_foreign_function_owner(self, node) -> bool:
-        """Check for an in-bounds node retained under another function owner."""
-
-        if not node_has_foreign_function_owner(self.graph, self.func_addr, node):
-            return False
-        self._report(
-            CFGAnomaly(
-                "foreign_function_owner",
-                node.addr,
-                f"Node {node.addr:#x} is reached from function {self.func_addr:#x} "
-                f"but is owned by CFGFast function {node.function_address:#x}",
-            )
-        )
-        return True
-
-    def node_needs_repair(self, node) -> bool:
-        """Return True when ``node`` violates a repair invariant."""
-
-        return (
-            self.node_has_decoding_coverage_mismatch(node)
-            or node_has_decode_gap(node)
-            or node_has_truncated_leaf(
-                self.project, self.graph, self.bounds, self.func_addr, node
-            )
-            or self.node_has_missing_jump_successor(node)
-            or self.node_has_missing_call_fallthrough(node)
-            or self.node_has_linear_merge_successor(node)
-        )
-
-    def node_is_acceptable(self, forced_block_starts: set[int], node) -> bool:
-        """Return True when an existing node may remain unchanged in the graph."""
-
-        if _node_is_placeholder(node):
-            return False
-        if _node_has_forced_split(node, forced_block_starts):
-            return False
-        if getattr(node, "function_address", None) != self.func_addr:
-            return False
-        return not self.node_needs_repair(node)
-
-
-def _has_decoding_coverage_mismatch(cfg: CFGBase, node) -> bool:
-    """Return True when decoded instructions do not cover the full node span."""
-
-    if not node_has_decoding_coverage_mismatch(node):
-        return False
-
-    logger.warning(
-        f"CFG anomaly for function {node.function_address:#x}:"
-        f" {'zero_sized_block' if node.size == 0 else 'malformed_block'}"
-        f" at {node.addr:#x}"
-    )
-    return True
-
-
-def _has_truncated_leaf(cfg: CFGBase, func_addr: int, node) -> bool:
-    """Return True when a block stops before a real terminator and has no exits."""
-
-    project = getattr(cfg, "project", None)
-    if project is None:
-        project = getattr(getattr(cfg, "kb", None), "_project", None)
-    if project is None:
-        return False
-
-    if not node_has_truncated_leaf(
-        project,
-        _cfg_graph(cfg),
-        _lookup_function_bounds(project, func_addr),
-        func_addr,
-        node,
-    ):
-        return False
-
-    try:
-        insns = list(node.block.capstone.insns)
-    except (AttributeError, KeyError):
-        insn_text = "<unknown>"
-    else:
-        if insns:
-            last = insns[-1]
-            insn_text = f"{last.mnemonic} {last.op_str}".strip()
-        else:
-            insn_text = "<empty>"
-
-    logger.warning(
-        f"CFG anomaly for function {func_addr:#x}: truncated_leaf at {node.addr:#x}: "
-        f"block ends with non-terminating instruction {insn_text} and has no CFG successors"
-    )
-    return True
-
-
-def _has_decode_gap(cfg: CFGBase, func_addr: int) -> bool:
-    """Return True when the CFG contains true decoding/lifting failures."""
-
-    if getattr(getattr(cfg, "model", None), "ident", "") == "CFGFastCustom":
-        # The custom fallback is intentionally capstone-driven. VEX lifting can
-        # still complain about some recovered nodes, but at that point the
-        # custom graph should be judged by decoded instruction coverage instead
-        # of by whether pyvex likes every block.
-        return False
-
-    for node in iter_function_nodes(cfg, func_addr):
-        if _has_decoding_coverage_mismatch(cfg, node):
-            continue
-
-        if node_has_decode_gap(node):
-            logger.warning(
-                f"CFG anomaly for function {func_addr:#x}: decode_gap at {node.addr:#x}: "
-                "node ended with Ijk_NoDecode, which points to a lifting/decoding failure"
-            )
-            return True
-
-    return False
-
-
-def _has_weird_graph(cfg: CFGBase, func_addr: int) -> bool:
-    """Return True when the CFG shows malformed structure without a decode gap."""
-
-    project = getattr(cfg, "project", None)
-    if project is None:
-        project = getattr(getattr(cfg, "kb", None), "_project", None)
-
-    for node in iter_function_nodes(cfg, func_addr):
-        if _has_decoding_coverage_mismatch(cfg, node):
-            return True
-        if _has_truncated_leaf(cfg, func_addr, node):
-            return True
-        if project is not None and node_has_missing_jump_successor(
-            project,
-            _cfg_graph(cfg),
-            _lookup_function_bounds(project, func_addr),
-            node,
-        ):
-            logger.warning(
-                f"CFG anomaly for function {func_addr:#x}: missing_jump_successor "
-                f"at {node.addr:#x}: direct jump block is missing one or more CFG edges"
-            )
-            return True
-        if project is not None and node_has_missing_call_fallthrough(
-            project,
-            _cfg_graph(cfg),
-            _lookup_function_bounds(project, func_addr),
-            node,
-        ):
-            logger.warning(
-                f"CFG anomaly for function {func_addr:#x}: "
-                f"missing_call_fallthrough at {node.addr:#x}: call block is missing "
-                "an in-function fake-return edge"
-            )
-            return True
-        if node_has_linear_merge_successor(_cfg_graph(cfg), node):
-            logger.warning(
-                f"CFG anomaly for function {func_addr:#x}: linear_split at {node.addr:#x}: "
-                "straight-line successor should be merged into the current block"
-            )
-            return True
-    return False
-
-
-def log_cfg_status(cfg: CFGBase, func_addr: int, cfg_label: str) -> None:
-    """Log whether a CFG still shows the anomaly classes we currently track."""
-
-    has_weird_graph = _has_weird_graph(cfg, func_addr)
-    has_decode_gap = _has_decode_gap(cfg, func_addr)
-    if not has_weird_graph and not has_decode_gap:
-        logger.info(
-            f"{cfg_label} for function {func_addr:#x} no longer shows known CFG anomalies"
-        )
-    else:
-        logger.warning(
-            f"{cfg_label} for function {func_addr:#x} still shows CFG anomalies"
-        )
-
-
 def _custom_model_marker() -> SimpleNamespace:
     """Return the minimal model metadata currently needed by callers."""
 
     return SimpleNamespace(ident="CFGFastCustom")
-
-
-def _prune_orphan_simprocedures(graph: CFGGraph) -> int:
-    """
-    Remove simprocedure nodes that no longer have any incoming edges.
-
-    Local repairs may delete the buggy seed nodes that originally pointed to an
-    angr-created simprocedure such as `UnresolvableJumpTarget`. When that
-    happens, the simprocedure can survive in the graph as an orphan even though
-    no repaired block still reaches it. Prune those leftovers iteratively in
-    case removing one orphan exposes another orphaned simprocedure behind it.
-    """
-
-    removed = 0
-    while True:
-        orphan_nodes = [
-            node
-            for node in list(graph.nodes())
-            if _node_is_simprocedure(node) and graph.in_degree(node) == 0
-        ]
-        if not orphan_nodes:
-            return removed
-        _remove_nodes(graph, orphan_nodes)
-        removed += len(orphan_nodes)
-
-
-def _prune_placeholders(graph: CFGGraph) -> int:
-    """Remove temporary placeholder nodes and return how many were pruned."""
-
-    placeholders = [node for node in list(graph.nodes()) if _node_is_placeholder(node)]
-    if placeholders:
-        _remove_nodes(graph, placeholders)
-    return len(placeholders)
-
-
-def _block_name(bounds: FunctionBounds, block: BlockSpec) -> str:
-    """Return the function-relative label used for a recovered block."""
-
-    if block.addr == bounds.addr:
-        return bounds.symbol.name
-    return f"{bounds.symbol.name}+0x{block.addr - bounds.addr:x}"
 
 
 def _node_has_forced_split(node, forced_block_starts: set[int]) -> bool:
@@ -1383,22 +188,6 @@ def _addr_is_mid_instruction_start(node, addr: int) -> bool:
         return False
 
 
-def _make_cfg_node(
-    seed_cfg: CFGBase, func_addr: int, bounds: FunctionBounds, block: BlockSpec
-) -> CFGNode:
-    """Instantiate one CFGNode compatible with the existing rendering pipeline."""
-
-    return CFGNode(
-        block.addr,
-        block.size,
-        cfg=seed_cfg.model,
-        function_address=func_addr,
-        block_id=block.addr,
-        instruction_addrs=block.instruction_addrs,
-        name=_block_name(bounds, block),
-    )
-
-
 def _block_has_unresolved_indirect_jump(block: BlockSpec) -> bool:
     """Return whether a recovered block needs an unresolved indirect-jump leaf."""
 
@@ -1409,76 +198,6 @@ def _block_has_unresolved_indirect_jump(block: BlockSpec) -> bool:
     )
 
 
-def _make_placeholder_node(seed_cfg: CFGBase, func_addr: int, addr: int) -> CFGNode:
-    """Create a zero-sized placeholder node for a newly discovered bad address."""
-
-    return CFGNode(
-        addr,
-        0,
-        cfg=seed_cfg.model,
-        function_address=func_addr,
-        block_id=addr,
-        instruction_addrs=(),
-        name=f"placeholder_{addr:#x}",
-    )
-
-
-def _find_external_target_node(graph: CFGGraph, addr: int) -> CFGNode | None:
-    """Return an existing synthetic external-target leaf for one address."""
-
-    for node in graph.nodes():
-        if not _node_is_simprocedure(node):
-            continue
-        if node.addr == addr:
-            return node
-    return None
-
-
-def _external_target_name(project: Project, addr: int) -> str:
-    """Return the symbol-table name for an external target when available."""
-
-    symbol = project.loader.find_symbol(addr)
-    if symbol is None:
-        return f"ExternalTarget_{addr:#x}"
-
-    name = getattr(symbol, "name", None)
-    return name if isinstance(name, str) and name else f"ExternalTarget_{addr:#x}"
-
-
-def _make_external_target_node(seed_cfg: CFGBase, func_addr: int, addr: int) -> CFGNode:
-    """Create a synthetic leaf node for a branch target outside the function."""
-
-    name = _external_target_name(seed_cfg.project, addr)
-
-    return CFGNode(
-        addr,
-        0,
-        cfg=seed_cfg.model,
-        simprocedure_name=name,
-        function_address=func_addr,
-        block_id=addr,
-        instruction_addrs=(),
-        name=name,
-    )
-
-
-def _ensure_external_target_node(
-    seed_cfg: CFGBase,
-    graph: CFGGraph,
-    func_addr: int,
-    addr: int,
-) -> tuple[CFGNode, bool]:
-    """Get or create one synthetic external-target leaf and report creation."""
-
-    node = _find_external_target_node(graph, addr)
-    if node is not None:
-        return node, False
-
-    node = _make_external_target_node(seed_cfg, func_addr, addr)
-    graph.add_node(node)
-    return node, True
-
-
 class _RepairSession:
     """Mutable state and helpers for one worklist-driven CFG repair run."""
 
@@ -1486,7 +205,15 @@ class _RepairSession:
         self.project = project
         self.seed_cfg = seed_cfg
         self.func_addr = func_addr
-        self.bounds = _lookup_function_bounds(project, func_addr)
+        seed_function = seed_cfg.kb.functions.get(func_addr)
+        seed_name = getattr(seed_function, "name", None)
+        self.bounds = _lookup_function_bounds(
+            project,
+            func_addr,
+            display_name=seed_name
+            if isinstance(seed_name, str) and seed_name
+            else None,
+        )
         # Mutate the live SpillingCFG wrapper in place, but stay on its public
         # API. Its private backing graph stores tuple keys that the renderer
         # cannot consume directly.
@@ -1500,6 +227,7 @@ class _RepairSession:
         self.queue: deque[tuple[str, int]] = deque()
         self.pending: dict[tuple[str, int], PendingObligation] = {}
         self.repaired_nodes: set[CFGNode] = set()
+        self.recovered_blocks: dict[CFGNode, BlockSpec] = {}
         self.leaders = BlockLeaderRegistry({func_addr: {"function_entry"}})
         self.processed_counts: dict[int, int] = {}
         self.last_requeue_states: dict[
@@ -1573,6 +301,47 @@ class _RepairSession:
         return node in self.repaired_nodes or self.anomalies.node_is_acceptable(
             self._explicit_split_starts(),
             node,
+        )
+
+    def _is_required_prefixed_instruction_entry(
+        self,
+        node: CFGNode,
+        block: BlockSpec,
+    ) -> bool:
+        """Return whether ``node`` is a direct target after an instruction prefix.
+
+        Some binaries intentionally branch after a prefix byte. For example,
+        x86 may target the instruction following a LOCK prefix while another
+        path executes the prefixed form. Preserve that alternate, valid entry
+        only when the seed graph proves that it is a direct branch target.
+        A branch into any other part of a decoded instruction is a malformed
+        CFGFast edge, not an alternative instruction stream.
+        """
+
+        if not self._is_preservable_seed_node(node):
+            return False
+
+        has_direct_predecessor = any(
+            node.addr in _seed_graph_direct_targets(self.graph, predecessor)
+            for predecessor in self.graph.predecessors(node)
+            if self._is_preservable_seed_node(predecessor)
+        )
+        if not has_direct_predecessor:
+            return False
+
+        max_inst_bytes = getattr(self.project.arch, "max_inst_bytes", 16)
+        insn = _decode_one(self.project, block.addr, max_inst_bytes)
+        if insn is None:
+            return False
+
+        # Capstone exposes leading instruction prefixes separately from the
+        # opcode. Entering just after all of them is an intentional alternate
+        # stream; other interior byte offsets are not.
+        prefix_size = sum(1 for prefix in insn.prefix if prefix)
+        return (
+            prefix_size > 0
+            and node.addr == insn.address + prefix_size
+            and node.addr < insn.address + insn.size
         )
 
     def _note_mutation(self) -> None:
@@ -1870,8 +639,9 @@ class _RepairSession:
         trying to erase.
         """
 
-        if node in self.repaired_nodes:
-            return _seed_node_expected_successors(node)
+        recovered = self.recovered_blocks.get(node)
+        if recovered is not None:
+            return recovered.direct_targets, recovered.fallthrough_addr
 
         return _seed_graph_direct_targets(self.graph, node), None
 
@@ -1944,12 +714,13 @@ class _RepairSession:
                 # / 0x43597e in __strstr_avx512. Legitimate taken targets like
                 # 0x42367a / 0x445a5e still get through when the covering node
                 # is itself stale.
-                self._queue_if_needed(
-                    RepairObligation(
-                        addr=node.addr,
-                        reason=f"covering_node_for_{addr:#x}",
+                if not self._is_preservable_seed_node(node):
+                    self._queue_if_needed(
+                        RepairObligation(
+                            addr=node.addr,
+                            reason=f"covering_node_for_{addr:#x}",
+                        )
                     )
-                )
                 return node
 
             if self.leaders.add(addr, "explicit_split"):
@@ -2262,50 +1033,53 @@ class _RepairSession:
             self._stop_starts = self._current_stop_starts()
             self._stop_starts_revision = self.mutation_revision
 
+        # A linear tail may be absorbed only while its own predecessor is
+        # being recovered. Other blocks can legitimately fall through to that
+        # same address, so it must remain a leader for their recovery.
+        linear_tails = {
+            successor.addr
+            for node in self._nodes_at_addr(addr)
+            if self.anomalies.check_linear_merge_successor(node)
+            for successor in self.graph.successors(node)
+        }
         return {
             target
             for target in self._stop_starts
-            if addr < target < self.bounds.end_addr
+            if addr < target < self.bounds.end_addr and target not in linear_tails
         }
 
     def _current_stop_starts(self) -> set[int]:
         """
         Return the live leader starts that must bound recovered blocks.
 
-        A linear split candidate ``A -> B`` must not make ``B`` a hard stop:
-        revisiting ``A`` needs to absorb its straight-line tail.  Collecting
-        every such tail in one pass is equivalent to checking each leader
-        separately, but avoids repeatedly iterating angr's spilled CFG nodes.
         The result is invalidated by ``mutation_revision`` whenever the graph
-        or leader set changes.
+        or leader set changes. `current_stop_addrs()` applies the narrower
+        exception for a linear tail while recovering its direct predecessor.
         """
 
-        leaders = self.leaders.copy()
-        linear_tail_starts: set[int] = set()
+        starts = self.leaders.starts()
         for node in self._bound_nodes():
             if not _node_is_materialized_cfg_node(node):
                 continue
 
-            if self._is_preservable_seed_node(node):
+            if self._is_preservable_seed_node(node) or node in self.repaired_nodes:
                 direct_targets, fallthrough_addr = self._preserved_successor_starts(
                     node
                 )
                 for target in direct_targets:
                     if self.bounds.addr <= target < self.bounds.end_addr:
-                        leaders.add(target, "direct_target")
+                        starts.add(target)
+                # Only recovered blocks have trustworthy fallthrough
+                # semantics. CFGFast seed fallthrough edges may be the split
+                # artifacts this repair pass is meant to remove.
                 if (
-                    fallthrough_addr is not None
+                    node in self.repaired_nodes
+                    and fallthrough_addr is not None
                     and self.bounds.addr <= fallthrough_addr < self.bounds.end_addr
                 ):
-                    leaders.add(fallthrough_addr, "fallthrough")
+                    starts.add(fallthrough_addr)
 
-            if not self.anomalies.node_has_linear_merge_successor(node):
-                continue
-            linear_tail_starts.update(
-                successor.addr for successor in self.graph.successors(node)
-            )
-
-        return leaders.starts() - linear_tail_starts
+        return starts
 
     def splice_block(self, block: BlockSpec) -> CFGNode:
         """
@@ -2319,15 +1093,20 @@ class _RepairSession:
         recovered_start = block.addr
         recovered_end = block.addr + block.size
 
-        removed_nodes = [
-            node
-            for node in self._bound_nodes()
-            if node.addr == recovered_start
-            or _ranges_overlap(
+        removed_nodes = []
+        for node in self._bound_nodes():
+            replaces_same_start = node.addr == recovered_start
+            overlaps_recovered_range = _ranges_overlap(
                 node.addr, _node_range_end(node), recovered_start, recovered_end
             )
-            or (_node_is_placeholder(node) and node.addr == recovered_start)
-        ]
+            if not replaces_same_start and not overlaps_recovered_range:
+                continue
+
+            if not replaces_same_start and self._is_required_prefixed_instruction_entry(
+                node, block
+            ):
+                continue
+            removed_nodes.append(node)
         removed_set = set(removed_nodes)
         removed_blocks = [
             node for node in removed_nodes if _node_is_materialized_cfg_node(node)
@@ -2335,7 +1114,7 @@ class _RepairSession:
         linear_merges = sum(
             1
             for node in removed_blocks
-            if _is_linear_merge_successor(self.graph, node)
+            if node_has_linear_merge_successor(self.graph, node)
             and any(
                 successor in removed_set for successor in self.graph.successors(node)
             )
@@ -2353,6 +1132,8 @@ class _RepairSession:
         ]
 
         _remove_nodes(self.graph, removed_nodes)
+        for node in removed_nodes:
+            self.recovered_blocks.pop(node, None)
         self.stats.blocks_redecoded += 1
         self.stats.blocks_replaced += len(removed_blocks)
         self.stats.linear_block_merges += linear_merges
@@ -2363,6 +1144,7 @@ class _RepairSession:
         self.graph.add_node(recovered_node)
         self._note_mutation()
         self.repaired_nodes.add(recovered_node)
+        self.recovered_blocks[recovered_node] = block
 
         for pred, _, data in incoming_edges:
             self._add_edge(
@@ -2456,7 +1238,7 @@ class _RepairSession:
         ownership_boundaries = {
             node.addr
             for node in self._bound_nodes()
-            if self.anomalies.node_has_foreign_function_owner(node)
+            if self.anomalies.check_foreign_function_owner(node)
         }
         return sorted(seed_anomalies | ownership_boundaries)
 
@@ -2557,9 +1339,13 @@ class _RepairSession:
         # Capture seed anomalies before any static table recovery mutates the
         # input graph. The normal initial classification below remains in its
         # original order so the repair behavior itself does not change.
-        self.stats.input_anomalies = len(self._initial_anomalous_addrs())
-        resolved_tables = self._resolve_static_jump_tables()
         initial_bad_addrs = self._initial_anomalous_addrs()
+        self.stats.input_anomalies = len(initial_bad_addrs)
+        resolved_tables = self._resolve_static_jump_tables()
+        if resolved_tables:
+            # Table resolution changes the seed graph, so only then does a
+            # second classification reflect the graph we are about to repair.
+            initial_bad_addrs = self._initial_anomalous_addrs()
         attempted_anomaly_addrs = set(initial_bad_addrs)
         if initial_bad_addrs:
             logger.info(
@@ -2645,6 +1431,7 @@ def build_custom_cfg(
     """
 
     logger.info(f"Building custom CFG for function {func_addr:#x}")
+    _clear_decoded_node_cache()
     session = _RepairSession(project, seed_cfg, func_addr)
     try:
         return session.run()

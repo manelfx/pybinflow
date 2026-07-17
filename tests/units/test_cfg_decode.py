@@ -41,3 +41,57 @@ def test_decoded_node_handles_missing_capstone_inspection() -> None:
     assert decoded.is_empty
     assert decoded.last is None
     assert not decoded.has_exact_coverage(SimpleNamespace(addr=0x1000, size=1))
+
+
+def test_decoded_node_falls_back_to_raw_capstone_when_vex_stops() -> None:
+    """Use the architecture decoder when VEX-backed Capstone has no instruction."""
+
+    instruction = _insn(0x1000, 2)
+    project = SimpleNamespace(
+        loader=SimpleNamespace(
+            memory=SimpleNamespace(load=lambda _addr, _size: b"\x90\x90")
+        ),
+        arch=SimpleNamespace(
+            capstone=SimpleNamespace(
+                disasm=lambda _data, _addr, *, count: [instruction]
+            )
+        ),
+    )
+    node = SimpleNamespace(
+        addr=0x1000,
+        size=2,
+        block=SimpleNamespace(
+            capstone=SimpleNamespace(insns=()),
+            _project=project,
+        ),
+    )
+
+    assert DecodedNode.from_node(node).insns == (instruction,)
+
+
+def test_decoded_node_caches_one_live_node_inspection() -> None:
+    """Avoid recreating angr's Capstone view for repeated node checks."""
+
+    instruction = _insn(0x1000, 1)
+
+    class Node:
+        """Provide a hashable node with a counted block lookup."""
+
+        addr = 0x1000
+        size = 1
+
+        def __init__(self) -> None:
+            self.block_reads = 0
+
+        @property
+        def block(self):
+            self.block_reads += 1
+            return SimpleNamespace(
+                capstone=SimpleNamespace(insns=(SimpleNamespace(insn=instruction),))
+            )
+
+    node = Node()
+
+    assert DecodedNode.from_node(node).insns == (instruction,)
+    assert DecodedNode.from_node(node).insns == (instruction,)
+    assert node.block_reads == 1

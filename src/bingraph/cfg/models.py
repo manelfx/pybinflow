@@ -54,6 +54,13 @@ class FunctionBounds:
     end_addr: int
     size: int
     symbol: FunctionSymbol
+    display_name: str | None = None
+
+    @property
+    def name(self) -> str:
+        """Return the stable label chosen for this CFG request."""
+
+        return self.display_name or self.symbol.name
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ from capstone import (
 )
 from capstone.arm import ARM_CC_AL, ARM_CC_INVALID
 from capstone.x86 import X86_INS_JMP, X86_INS_LJMP
+from capstone.x86_const import X86_GRP_AVX512
 
 
 class InsnSemantics:
@@ -51,6 +52,11 @@ class InsnSemantics:
         """Return whether this instruction changes normal control flow."""
 
         return self.is_ret() or self.is_call() or self.is_jump()
+
+    def is_avx512(self) -> bool:
+        """Return whether Capstone classifies this x86 instruction as AVX-512."""
+
+        return X86_GRP_AVX512 in self.insn.groups
 
     def may_have_nonfallthrough_vex_semantics(self) -> bool:
         """Return whether this system instruction needs a narrow VEX check."""

@@ -87,9 +87,19 @@ def node_is_simprocedure(node) -> bool:
 def is_unresolvable_jump_target(node) -> bool:
     """Return True for angr's synthetic unresolved indirect-jump target node."""
 
-    return node_is_simprocedure(node) and getattr(node, "simprocedure_name", None) == (
-        "UnresolvableJumpTarget"
+    return (
+        is_unresolvable_control_target(node)
+        and getattr(node, "simprocedure_name", None) == "UnresolvableJumpTarget"
     )
+
+
+def is_unresolvable_control_target(node) -> bool:
+    """Return True for angr's unresolved indirect-call or jump placeholder."""
+
+    return node_is_simprocedure(node) and getattr(node, "simprocedure_name", None) in {
+        "UnresolvableCallTarget",
+        "UnresolvableJumpTarget",
+    }
 
 
 def node_ends_in_indirect_jump(node) -> bool:

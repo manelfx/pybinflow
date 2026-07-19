@@ -14,7 +14,12 @@ from bingraph.helpers.capstone import (
     control_transfer_index,
 )
 from bingraph.helpers.symbols import list_function_symbols
-from .decode import DecodedNode, decode_one, decode_raw_capstone_insns
+from .decode import (
+    DecodedNode,
+    decode_one,
+    decode_raw_capstone_insns,
+    lift_instruction_vex,
+)
 from .graph import (
     CFGGraph,
     cfg_graph as _cfg_graph,
@@ -193,10 +198,14 @@ def _missing_call_fallthrough_anomaly(
     if node_has_decoding_coverage_mismatch(node):
         return None
 
-    try:
-        is_call = node.block.vex.jumpkind == "Ijk_Call"
-    except Exception:
+    decoded = DecodedNode.from_node(node)
+    last_insn = decoded.last
+    if last_insn is None:
         return None
+    last_vex = lift_instruction_vex(project, last_insn)
+    is_call = InsnSemantics(last_insn).is_call() or (
+        last_vex is not None and last_vex.jumpkind == "Ijk_Call"
+    )
     if not is_call or _call_has_known_nonreturning_target(project, graph, node):
         return None
 

@@ -111,6 +111,24 @@ def make_external_target_node(seed_cfg: CFGBase, func_addr: int, addr: int) -> C
     )
 
 
+def make_undecodable_target_node(
+    seed_cfg: CFGBase, func_addr: int, addr: int
+) -> CFGNode:
+    """Create a terminal leaf for an in-function target Capstone cannot decode."""
+
+    name = "UndecodableInstructionTarget"
+    return CFGNode(
+        addr,
+        0,
+        cfg=seed_cfg.model,
+        simprocedure_name=name,
+        function_address=func_addr,
+        block_id=addr,
+        instruction_addrs=(),
+        name=name,
+    )
+
+
 def ensure_external_target_node(
     seed_cfg: CFGBase,
     graph: CFGGraph,
@@ -124,5 +142,27 @@ def ensure_external_target_node(
         return node, False
 
     node = make_external_target_node(seed_cfg, func_addr, addr)
+    graph.add_node(node)
+    return node, True
+
+
+def ensure_undecodable_target_node(
+    seed_cfg: CFGBase,
+    graph: CFGGraph,
+    func_addr: int,
+    addr: int,
+) -> tuple[CFGNode, bool]:
+    """Get or create one synthetic leaf for an undecodable in-function target."""
+
+    for node in graph.nodes():
+        if (
+            node_is_simprocedure(node)
+            and node.addr == addr
+            and getattr(node, "simprocedure_name", None)
+            == "UndecodableInstructionTarget"
+        ):
+            return node, False
+
+    node = make_undecodable_target_node(seed_cfg, func_addr, addr)
     graph.add_node(node)
     return node, True

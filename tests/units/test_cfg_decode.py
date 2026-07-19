@@ -95,3 +95,36 @@ def test_decoded_node_caches_one_live_node_inspection() -> None:
     assert DecodedNode.from_node(node).insns == (instruction,)
     assert DecodedNode.from_node(node).insns == (instruction,)
     assert node.block_reads == 1
+
+
+def test_decoded_node_does_not_reuse_an_equal_replacement_node() -> None:
+    """Keep a same-address recovered replacement separate from its stale node."""
+
+    class Node:
+        """Model angr's address-based CFG-node equality with distinct objects."""
+
+        addr = 0x1000
+        size = 1
+
+        def __init__(self, instruction) -> None:
+            self.instruction = instruction
+
+        def __eq__(self, other: object) -> bool:
+            return isinstance(other, Node) and self.addr == other.addr
+
+        def __hash__(self) -> int:
+            return hash(self.addr)
+
+        @property
+        def block(self):
+            return SimpleNamespace(
+                capstone=SimpleNamespace(
+                    insns=(SimpleNamespace(insn=self.instruction),)
+                )
+            )
+
+    stale = Node(_insn(0x1000, 1))
+    replacement = Node(_insn(0x1000, 2))
+
+    assert DecodedNode.from_node(stale).insns == (_insn(0x1000, 1),)
+    assert DecodedNode.from_node(replacement).insns == (_insn(0x1000, 2),)

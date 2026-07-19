@@ -8,7 +8,10 @@ from angr import Project
 from capstone import CsInsn
 
 
-_DECODED_NODE_CACHE: dict[object, DecodedNode] = {}
+# CFGNode equality is address/block-ID based, so a recovered replacement can
+# compare equal to the stale node it supersedes. Keep the object alive in each
+# entry and key by identity so replacement nodes never reuse stale decoding.
+_DECODED_NODE_CACHE: dict[int, tuple[object, DecodedNode]] = {}
 
 
 def clear_decoded_node_cache() -> None:
@@ -53,6 +56,20 @@ def decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
     return fallback_insns[0] if fallback_insns else None
 
 
+def lift_instruction_vex(project: Project, insn: CsInsn):
+    """Lift one instruction without inheriting CFG-node block boundaries."""
+
+    try:
+        return project.factory.block(
+            insn.address,
+            size=insn.size,
+            strict_block_end=True,
+            cross_insn_opt=False,
+        ).vex
+    except Exception:
+        return None
+
+
 @dataclass(frozen=True)
 class DecodedNode:
     """The Capstone instruction view of one CFG node, when it is available."""
@@ -67,18 +84,16 @@ class DecodedNode:
         Anomaly checks inspect the same CFGFast nodes repeatedly while the
         worklist repairs nearby blocks. ``node.block.capstone`` constructs a
         fresh angr Block each time, so retaining this immutable view avoids
-        repeatedly disassembling unchanged node bytes. angr CFG nodes compare
-        by their stable block identity, so equivalent wrappers materialized by
-        its spilled graph reuse one entry until the next custom build resets
-        the cache.
+        repeatedly disassembling unchanged node bytes. The cache is scoped to
+        object identity because angr CFG nodes compare by block identity; a
+        recovered replacement can otherwise collide with the stale node it
+        replaced at the same address.
         """
 
-        try:
-            cached = _DECODED_NODE_CACHE.get(node)
-        except TypeError:
-            cached = None
-        if cached is not None:
-            return cached
+        cache_key = id(node)
+        cached = _DECODED_NODE_CACHE.get(cache_key)
+        if cached is not None and cached[0] is node:
+            return cached[1]
 
         try:
             block = node.block
@@ -92,12 +107,7 @@ class DecodedNode:
         except Exception as exc:
             decoded = cls(None, exc)
 
-        try:
-            _DECODED_NODE_CACHE[node] = decoded
-        except TypeError:
-            # Lightweight test doubles need not implement the CFGNode hash
-            # contract; decode them normally without retaining an entry.
-            pass
+        _DECODED_NODE_CACHE[cache_key] = node, decoded
         return decoded
 
     @property

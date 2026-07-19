@@ -105,6 +105,14 @@ Rendering follow-up:
   pseudo-address. For example, `UnresolvableCallTarget` may render as
   `0x10100058`, which is an angr-internal synthetic address rather than a
   binary address. Prefer hiding it or labeling it explicitly as synthetic.
+- Normalize direct out-of-function CFGFast successors into synthetic external
+  leaves before rendering. Custom-recovered blocks already use
+  `ExternalTarget_*` simprocedure leaves, but untouched CFGFast blocks retain
+  native callee nodes that `CFGSource` filters out. For example,
+  `s390x/test-instr_s390x:__gconv` calls `__assert_fail` at `0x8001d3aa`, yet
+  the call edge is absent from the rendered function graph.
+  For instance, in `s390x/test-instr_s390x:__dl_signal_error` calls
+  `UnresolvableCallTarget`, and that SIMP block leaf is shown.
 
 === Address comments
 

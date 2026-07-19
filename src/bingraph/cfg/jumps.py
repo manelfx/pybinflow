@@ -12,7 +12,7 @@ from loguru import logger
 import pyvex
 
 from bingraph.helpers.capstone import InsnSemantics
-from .decode import DecodedNode
+from .decode import DecodedNode, lift_instruction_vex
 from .graph import (
     CFGGraph,
     iter_graph_bound_nodes as _iter_graph_bound_nodes,
@@ -483,10 +483,12 @@ def _resolve_direct_branch_target(
 
     Capstone normally supplies the concrete target, but some architectures
     expose a PC-relative displacement instead. When that value is not mapped
-    in the loaded binary and VEX supplies exactly one in-function exit, the
-    VEX target is the unambiguous absolute address. Mapped Capstone targets
-    may point outside this function, so retain them: malformed CFGFast VEX
-    metadata can still be stale.
+    in the loaded binary and VEX supplies exactly one mapped exit, the VEX
+    target is the unambiguous absolute address. This includes a direct branch
+    outside the current symbol bounds, which must become an external target
+    rather than repeatedly repairing an impossible relative displacement.
+    Mapped Capstone targets may point outside this function, so retain them:
+    malformed CFGFast VEX metadata can still be stale.
     """
 
     if capstone_target is not None and project.loader.find_object_containing(
@@ -494,11 +496,13 @@ def _resolve_direct_branch_target(
     ):
         return capstone_target
 
-    in_function_exits = {
-        target for target in vex_exit_targets if is_direct_target_valid(bounds, target)
+    mapped_exits = {
+        target
+        for target in vex_exit_targets
+        if project.loader.find_object_containing(target)
     }
-    if len(in_function_exits) == 1:
-        return next(iter(in_function_exits))
+    if len(mapped_exits) == 1:
+        return next(iter(mapped_exits))
 
     return capstone_target
 
@@ -546,6 +550,25 @@ def _analyze_jump_successors(
     if last.is_call() or (vex is not None and vex.jumpkind == "Ijk_Call"):
         return None
 
+    # Some instruction encodings, including RISC-V ``c.jr ra``, are exposed
+    # by Capstone as generic jumps rather than returns. Re-lift just the
+    # terminator to avoid treating an old CFG node's stale fallthrough as a
+    # successor required by the recovered block.
+    terminator_vex = lift_instruction_vex(project, last_insn)
+    terminator_jumpkind = getattr(terminator_vex, "jumpkind", "")
+    if terminator_jumpkind == "Ijk_Ret" or terminator_jumpkind.startswith("Ijk_Sig"):
+        return None
+
+    # A normalized CFGFast node can span many instructions. Its full-block
+    # VEX ``next`` may therefore describe an earlier stale split rather than
+    # the final branch Capstone decoded above. Use a fresh lift of exactly that
+    # terminator for its unconditional target, but retain the full node's exit
+    # statements for conditional classification: some ARM encodings expose
+    # predicated direct branches as generic ``b`` instructions in Capstone.
+    fresh_vex_has_control_flow = (
+        terminator_vex is not None and terminator_jumpkind != "Ijk_NoDecode"
+    )
+    target_vex = terminator_vex if fresh_vex_has_control_flow else vex
     vex_has_control_flow = vex is not None and vex.jumpkind != "Ijk_NoDecode"
     exit_targets: list[int] = []
     if vex_has_control_flow:
@@ -561,36 +584,36 @@ def _analyze_jump_successors(
         # A malformed CFG node can retain stale VEX without the final branch
         # exit. Re-lift only the ambiguous terminator: this keeps genuine x86
         # conditionals conditional, while correctly classifying S390 `j` as a
-        # direct jump instead of inventing a fallthrough edge.
-        try:
-            fresh_vex = project.factory.block(
-                last_insn.address,
-                size=last_insn.size,
-                strict_block_end=True,
-                cross_insn_opt=False,
-            ).vex
-        except Exception:
+        # direct jump instead of inventing a fallthrough edge. Keep the fresh
+        # targets too: some architectures expose a PC-relative Capstone
+        # operand, while the short VEX lift provides the resolved address.
+        fresh_vex = terminator_vex
+        if fresh_vex is None:
             # Preserve the conservative Capstone classification if a fresh
             # lift is unavailable; repair is safer than silently omitting an
             # actual branch successor.
             is_conditional = True
         else:
-            is_conditional = any(
-                ins_addr == last_insn.address
-                for ins_addr, _, _ in fresh_vex.exit_statements
-            )
+            exit_targets = [
+                target
+                for ins_addr, _, stmt in fresh_vex.exit_statements
+                if ins_addr == last_insn.address
+                if isinstance(target := getattr(stmt.dst, "value", None), int)
+            ]
+            is_conditional = bool(exit_targets)
 
     vex_branch_targets = list(exit_targets)
     if (
         not is_conditional
         and vex_has_control_flow
-        and isinstance(vex.next, pyvex.expr.Const)
-        and isinstance(vex.next.con.value, int)
+        and target_vex is not None
+        and isinstance(target_vex.next, pyvex.expr.Const)
+        and isinstance(target_vex.next.con.value, int)
     ):
         # An unconditional branch is represented by VEX's default successor,
         # not an Exit statement. This matters for architectures whose
         # Capstone operands retain a PC-relative displacement.
-        vex_branch_targets.append(vex.next.con.value)
+        vex_branch_targets.append(target_vex.next.con.value)
 
     direct_target = _resolve_direct_branch_target(
         project,

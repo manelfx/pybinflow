@@ -103,6 +103,7 @@ class CustomCFGStats:
     explicit_splits: int = 0
     placeholders_created: int = 0
     external_targets_created: int = 0
+    undecodable_targets_created: int = 0
     edges_added: int = 0
     static_jump_tables_resolved: int = 0
     static_jump_targets_added: int = 0

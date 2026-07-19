@@ -128,12 +128,18 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "mipsel,mips_syscall_demo,0x420240,__gconv_db_freemem.dot",
         # fmt: skip (line too long)
         "mipsel,btrfs-tools_btrfs-calc-size,0x4162c8,btrfs_find_block_group.isra.14.dot",
+        "ppc64el,fauxware_static,0x100014a0,__libc_check_standard_fds.dot",
         "ppc64el,fauxware_static,0x1000ed70,abort.dot",
         "ppc64el,fauxware_static,0x1001e4c0,malloc_consolidate.dot",
         "ppc64el,fauxware_static,0x1003ac00,__gconv_release_step.dot",
         "riscv,server_eapp.eapp_riscv,0x1830,channel_init.dot",
         # fmt: skip (line too long)
+        "riscv,server_eapp.eapp_riscv,0x3df4,crypto_core_hsalsa20.dot",
+        "riscv,server_eapp.eapp_riscv,0x4416,crypto_core_salsa.dot",
+        "riscv,server_eapp.eapp_riscv,0x7e54,crypto_scalarmult_curve25519_ref10.dot",
         "riscv,server_eapp.eapp_riscv,0xe60c,crypto_generichash_blake2b__init_salt_personal.dot",
+        "riscv,server_eapp.eapp_riscv,0xeb6c,blake2b_compress_ref.dot",
+        "s390x,test-instr_s390x,0x8001d140,__gconv.dot",
         "s390x,test-instr_s390x,0x800555f8,_IO_vfscanf.dot",
         "x86_64,cvs,0x485f00,vasnprintf.dot",
         # fmt: skip (line too long)

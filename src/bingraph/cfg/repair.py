@@ -97,6 +97,7 @@ from .graph import (
     add_successor_edge as _add_successor_edge,
     cfg_graph as _cfg_graph,
     cleanup_unreachable_function_nodes as _cleanup_unreachable_function_nodes,
+    is_unresolvable_control_target as _is_unresolvable_control_target,
     is_unresolvable_jump_target as _is_unresolvable_jump_target,
     iter_graph_bound_nodes as _iter_graph_bound_nodes,
     node_ends_in_indirect_jump as _node_ends_in_indirect_jump,
@@ -144,6 +145,7 @@ from .jumps import (
 )
 from .nodes import (
     ensure_external_target_node as _ensure_external_target_node,
+    ensure_undecodable_target_node as _ensure_undecodable_target_node,
     make_cfg_node as _make_cfg_node,
     make_placeholder_node as _make_placeholder_node,
     prune_orphan_simprocedures as _prune_orphan_simprocedures,
@@ -188,14 +190,14 @@ def _addr_is_mid_instruction_start(node, addr: int) -> bool:
         return False
 
 
-def _block_has_unresolved_indirect_jump(block: BlockSpec) -> bool:
-    """Return whether a recovered block needs an unresolved indirect-jump leaf."""
+def _block_has_unresolved_indirect_transfer(block: BlockSpec) -> bool:
+    """Return whether a recovered block needs a preserved unresolved leaf."""
 
+    if block.direct_targets:
+        return False
     return (
-        block.jumpkind == "Ijk_Boring"
-        and not block.direct_targets
-        and block.fallthrough_addr is None
-    )
+        block.jumpkind == "Ijk_Boring" and block.fallthrough_addr is None
+    ) or block.jumpkind == "Ijk_Call"
 
 
 class _RepairSession:
@@ -337,7 +339,7 @@ class _RepairSession:
         # Capstone exposes leading instruction prefixes separately from the
         # opcode. Entering just after all of them is an intentional alternate
         # stream; other interior byte offsets are not.
-        prefix_size = sum(1 for prefix in insn.prefix if prefix)
+        prefix_size = sum(1 for prefix in getattr(insn, "prefix", ()) if prefix)
         return (
             prefix_size > 0
             and node.addr == insn.address + prefix_size
@@ -776,6 +778,45 @@ class _RepairSession:
         self._connect_source_to_node(obligation, placeholder)
         return placeholder
 
+    def _materialize_undecodable_target(
+        self, obligation: RepairObligation | PendingObligation
+    ) -> CFGNode:
+        """Replace a failed in-bounds decode with one terminal synthetic target."""
+
+        target, created = _ensure_undecodable_target_node(
+            self.seed_cfg,
+            self.graph,
+            self.func_addr,
+            obligation.addr,
+        )
+        if created:
+            self.stats.undecodable_targets_created += 1
+            self._note_mutation()
+            logger.warning(
+                f"Custom CFG represents undecodable in-function target "
+                f"{obligation.addr:#x} as a terminal leaf"
+            )
+
+        placeholders = [
+            node
+            for node in self._nodes_at_addr(obligation.addr)
+            if _node_is_placeholder(node)
+        ]
+        for placeholder in placeholders:
+            for predecessor in list(self.graph.predecessors(placeholder)):
+                edge_data = self.graph.get_edge_data(predecessor, placeholder) or {}
+                self._add_edge(
+                    predecessor,
+                    target,
+                    edge_data.get("jumpkind", "Ijk_Boring"),
+                    unresolved_indirect=edge_data.get("unresolved_indirect", False),
+                )
+            self.graph.remove_node(placeholder)
+            self._note_mutation()
+
+        self._connect_source_to_node(obligation, target)
+        return target
+
     def _recover_entry_now(self, obligation: RepairObligation) -> CFGNode | None:
         """Resolve an existing entry or decode one immediately for local repair."""
 
@@ -794,7 +835,9 @@ class _RepairSession:
             obligation.addr,
             self.current_stop_addrs(obligation.addr),
         )
-        if block is None or block.addr != obligation.addr:
+        if block is None:
+            return self._materialize_undecodable_target(obligation)
+        if block.addr != obligation.addr:
             return None
 
         recovered_node = self.splice_block(block)
@@ -1128,7 +1171,7 @@ class _RepairSession:
         unresolved_jump_edges = [
             (dst, data.get("jumpkind", "Ijk_Boring"))
             for src, dst, data in list(self.graph.edges(data=True))
-            if src in removed_set and _is_unresolvable_jump_target(dst)
+            if src in removed_set and _is_unresolvable_control_target(dst)
         ]
 
         _remove_nodes(self.graph, removed_nodes)
@@ -1163,10 +1206,10 @@ class _RepairSession:
 
             self.ensure_expected_successors(pred)
 
-        # A recovered indirect jump has no concrete BlockSpec target. Retain
-        # CFGFast's unresolved placeholder until static table recovery proves
-        # real targets and deliberately replaces it.
-        if _block_has_unresolved_indirect_jump(block):
+        # A recovered indirect transfer has no concrete BlockSpec target.
+        # Retain CFGFast's unresolved placeholder until static table recovery
+        # proves real jump targets, or another analysis resolves the call.
+        if _block_has_unresolved_indirect_transfer(block):
             for unresolved_target, jumpkind in unresolved_jump_edges:
                 self._add_edge(recovered_node, unresolved_target, jumpkind)
 
@@ -1315,7 +1358,7 @@ class _RepairSession:
             self.project, self.bounds, addr, self.current_stop_addrs(addr)
         )
         if block is None:
-            logger.warning(f"Custom CFG could not recover a block at {addr:#x}")
+            self._materialize_undecodable_target(obligation)
             return
 
         recovered_node = self.splice_block(block)

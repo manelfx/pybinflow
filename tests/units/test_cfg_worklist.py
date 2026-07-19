@@ -372,6 +372,44 @@ def test_external_target_node_is_created_once(
     assert graph.nodes() == [external_node]
 
 
+def test_undecodable_target_node_is_created_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reuse one terminal leaf when multiple branches hit undecodable bytes."""
+
+    graph = _NodeGraph()
+    seed_cfg = cast(CFGBase, object())
+    undecodable_node = SimpleNamespace(
+        addr=0x1200,
+        is_simprocedure=True,
+        simprocedure_name="UndecodableInstructionTarget",
+    )
+    monkeypatch.setattr(
+        nodes_module,
+        "make_undecodable_target_node",
+        lambda *args: undecodable_node,
+    )
+
+    first, first_created = nodes_module.ensure_undecodable_target_node(
+        seed_cfg,
+        cast(graph_module.CFGGraph, graph),
+        0x1000,
+        0x1200,
+    )
+    second, second_created = nodes_module.ensure_undecodable_target_node(
+        seed_cfg,
+        cast(graph_module.CFGGraph, graph),
+        0x1000,
+        0x1200,
+    )
+
+    assert first is undecodable_node
+    assert second is undecodable_node
+    assert first_created
+    assert not second_created
+    assert graph.nodes() == [undecodable_node]
+
+
 def test_requeue_preserves_merged_claims_and_reconciliation_action() -> None:
     """Requeue all claims without losing the repair action or exact-start flag."""
 

@@ -96,6 +96,31 @@ def _instruction_has_unclassified_vex_transfer(project: Project, insn: CsInsn) -
     return vex.jumpkind == "Ijk_Call" or vex_jumpkind_is_terminal(vex.jumpkind)
 
 
+def _native_vex_transfer_end(
+    project: Project,
+    bounds: FunctionBounds,
+    start_addr: int,
+) -> int | None:
+    """Return a native VEX call or terminal boundary absent from Capstone groups."""
+
+    try:
+        block = project.factory.block(start_addr)
+    except Exception:
+        return None
+
+    size = getattr(block, "size", None)
+    jumpkind = getattr(block.vex, "jumpkind", None)
+    if not isinstance(size, int) or not isinstance(jumpkind, str):
+        return None
+
+    end_addr = start_addr + size
+    if not start_addr < end_addr <= bounds.end_addr:
+        return None
+    if jumpkind == "Ijk_Call" or vex_jumpkind_is_terminal(jumpkind):
+        return end_addr
+    return None
+
+
 def lift_block_terminator(
     project: Project,
     bounds: FunctionBounds,
@@ -171,8 +196,14 @@ def lift_block_terminator(
         if isinstance(target, int):
             default_target = target
 
-    if semantic.is_ret():
+    # Some compact return encodings are only recognized by the lifter. For
+    # example, Capstone classifies RISC-V ``c.jr ra`` as a generic jump while
+    # VEX correctly lifts its instruction tail as ``Ijk_Ret``.
+    if semantic.is_ret() or vex.jumpkind == "Ijk_Ret":
         return TerminatorInfo(jumpkind="Ijk_Ret")
+
+    if vex_jumpkind_is_terminal(vex.jumpkind):
+        return TerminatorInfo(jumpkind="Ijk_Terminal")
 
     if semantic.is_call() or vex.jumpkind == "Ijk_Call":
         direct_targets: tuple[int, ...] = ()
@@ -256,6 +287,12 @@ def recover_block(
     has_delay_slot = arch_has_delay_slot(project.arch.name)
     has_nonfallthrough_vex_terminator = False
     unclassified_vex_terminator_addr: int | None = None
+    native_vex_transfer_end = None
+    if not has_delay_slot:
+        # Capstone omits control-flow groups for a few encodings, including
+        # S390 `basr`. One native block lift recovers a trustworthy call or
+        # terminal boundary without paying to lift every decoded instruction.
+        native_vex_transfer_end = _native_vex_transfer_end(project, bounds, start_addr)
 
     while bounds.addr <= cur < bounds.end_addr:
         if insns and cur in stop_addrs:
@@ -287,6 +324,10 @@ def recover_block(
                 delay_insn = decode_one(project, next_addr, max_inst_bytes)
                 if delay_insn is not None:
                     insns.append(delay_insn)
+            break
+
+        if next_addr == native_vex_transfer_end:
+            unclassified_vex_terminator_addr = insn.address
             break
 
         cur = next_addr

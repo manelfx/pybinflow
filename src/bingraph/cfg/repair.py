@@ -154,6 +154,7 @@ from .nodes import (
     prune_placeholders as _prune_placeholders,
 )
 from .recovery import (
+    find_shared_instruction_tail as _find_shared_instruction_tail,
     recover_block as _recover_block,
 )
 
@@ -1265,6 +1266,121 @@ class _RepairSession:
 
         return recovered_node
 
+    def _factor_shared_instruction_tail(self) -> bool:
+        """Replace overlapping block tails with one shared instruction node.
+
+        A direct branch can intentionally enter immediately after an x86
+        instruction prefix, producing two distinct instruction streams that
+        later execute the same instructions. Re-decode both linear prefixes
+        and their common tail independently, then replace all participating
+        nodes in one graph mutation. Doing this atomically avoids routing a
+        predecessor into the wrong overlapping stream while an intermediate
+        replacement exists.
+        """
+
+        nodes = [
+            node for node in self._bound_nodes() if _node_is_materialized_cfg_node(node)
+        ]
+        tail = _find_shared_instruction_tail(self.project.arch.name, nodes)
+        if tail is None:
+            return False
+
+        if any(
+            source in tail.nodes and target in tail.nodes
+            for source, target, _ in self.graph.edges(data=True)
+        ):
+            return False
+
+        prefix_blocks: dict[CFGNode, BlockSpec] = {}
+        for node in tail.nodes:
+            prefix = _recover_block(
+                self.project,
+                self.bounds,
+                node.addr,
+                self.current_stop_addrs(node.addr) | {tail.start_addr},
+            )
+            if (
+                prefix is None
+                or prefix.jumpkind != "Ijk_Fallthrough"
+                or prefix.fallthrough_addr != tail.start_addr
+            ):
+                return False
+            prefix_blocks[node] = prefix
+
+        tail_block = _recover_block(
+            self.project,
+            self.bounds,
+            tail.start_addr,
+            self.current_stop_addrs(tail.start_addr),
+        )
+        if tail_block is None or tail_block.instruction_addrs != tail.instruction_addrs:
+            return False
+
+        self.leaders.add(tail.start_addr, "shared_instruction_tail")
+        incoming_edges = [
+            (source, target, dict(data))
+            for source, target, data in self.graph.edges(data=True)
+            if target in tail.nodes and source not in tail.nodes
+        ]
+        _remove_nodes(self.graph, tail.nodes)
+        for node in tail.nodes:
+            self.repaired_nodes.discard(node)
+            self.recovered_blocks.pop(node, None)
+
+        replacements: dict[CFGNode, CFGNode] = {}
+        for node, block in prefix_blocks.items():
+            replacement = _make_cfg_node(
+                self.seed_cfg, self.func_addr, self.bounds, block
+            )
+            self.graph.add_node(replacement)
+            self.repaired_nodes.add(replacement)
+            self.recovered_blocks[replacement] = block
+            replacements[node] = replacement
+
+        tail_node = _make_cfg_node(
+            self.seed_cfg, self.func_addr, self.bounds, tail_block
+        )
+        self.graph.add_node(tail_node)
+        self.repaired_nodes.add(tail_node)
+        self.recovered_blocks[tail_node] = tail_block
+        self.stats.blocks_redecoded += len(prefix_blocks) + 1
+        self.stats.blocks_replaced += len(tail.nodes)
+        self.stats.shared_instruction_tails_factored += 1
+        self._note_mutation()
+
+        for source, target, data in incoming_edges:
+            self._add_edge(
+                source,
+                replacements[target],
+                data.get("jumpkind", "Ijk_Boring"),
+            )
+        for prefix in replacements.values():
+            self._add_edge(prefix, tail_node, "Ijk_Boring")
+
+        for target in tail_block.direct_targets:
+            edge_jumpkind = (
+                "Ijk_Call" if tail_block.jumpkind == "Ijk_Call" else "Ijk_Boring"
+            )
+            self._resolve_successor(
+                tail_node,
+                target,
+                edge_jumpkind,
+                reason=f"shared_tail_target_of_{tail_block.addr:#x}",
+                preserve_exact_addr=True,
+                materialize_external=True,
+            )
+        if tail_block.fallthrough_addr is not None:
+            self._resolve_successor(
+                tail_node,
+                tail_block.fallthrough_addr,
+                "Ijk_FakeRet" if tail_block.jumpkind == "Ijk_Call" else "Ijk_Boring",
+                reason=f"shared_tail_fallthrough_of_{tail_block.addr:#x}",
+                preserve_exact_addr=False,
+            )
+
+        self._queue_reconciliation_neighborhood(tail_node)
+        return True
+
     def _cleanup(self) -> bool:
         """Prune stale nodes and report whether cleanup changed the live graph."""
 
@@ -1433,6 +1549,13 @@ class _RepairSession:
 
         while True:
             self._drain_worklist()
+
+            # Factor valid overlapping instruction streams only after ordinary
+            # recovery has stabilized their local predecessors and successors.
+            # The rewrite can queue new local reconciliation, so drain that
+            # work before proceeding to jump-table recovery or cleanup.
+            while self._factor_shared_instruction_tail():
+                self._drain_worklist()
 
             # Worklist recovery can replace an indirect-dispatch source and
             # therefore discard table edges found before repair. Re-scan the

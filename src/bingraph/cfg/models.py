@@ -101,6 +101,7 @@ class CustomCFGStats:
     blocks_redecoded: int = 0
     blocks_replaced: int = 0
     linear_block_merges: int = 0
+    shared_instruction_tails_factored: int = 0
     explicit_splits: int = 0
     placeholders_created: int = 0
     external_targets_created: int = 0

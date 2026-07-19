@@ -121,6 +121,7 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "armel,lwip_udpecho_bm.elf,0x5f65,dhcp_bind.dot",
         "i386,bronze_ropchain,0x80572f0,_IO_list_lock.dot",
         "i386,bronze_ropchain,0x8060ca0,__strcmp_sse4_2.dot",
+        "i386,bronze_ropchain,0x8062690,__memcmp_sse4_2.dot",
         "i386,bronze_ropchain,0x806a770,__strcasecmp_l_sse4_2.dot",
         "i386,bronze_ropchain,0x806f870,_dl_aux_init.dot",
         "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",

@@ -75,6 +75,7 @@ class StaticJumpTable:
     entry_size: int
     endness: str
     signed_entries: bool
+    target_displacement: int = 0
 
 
 @dataclass(frozen=True)

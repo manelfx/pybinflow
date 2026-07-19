@@ -84,6 +84,33 @@ def _vex_get_key(expr, definitions: dict[int, Any], vex) -> tuple[int, int] | No
     return expr.offset, expr.result_size(vex.tyenv)
 
 
+def _vex_register_with_displacement(
+    expr, definitions: dict[int, Any], vex
+) -> tuple[tuple[int, int], int] | None:
+    """Return one register plus its static displacement from a VEX expression."""
+
+    register_key = _vex_get_key(expr, definitions, vex)
+    if register_key is not None:
+        return register_key, 0
+
+    terms = _vex_add_terms(expr, definitions)
+    if terms is None:
+        return None
+
+    displacement = 0
+    register_key = None
+    for term in terms:
+        value = _vex_const_value(term, definitions)
+        if value is not None:
+            displacement += value
+            continue
+        key = _vex_get_key(term, definitions, vex)
+        if key is None or register_key is not None:
+            return None
+        register_key = key
+    return (register_key, displacement) if register_key is not None else None
+
+
 def _vex_add_terms(expr, definitions: dict[int, Any]) -> list[Any] | None:
     """Flatten a VEX integer-addition expression into its non-additive terms."""
 
@@ -99,8 +126,14 @@ def _vex_add_terms(expr, definitions: dict[int, Any]) -> list[Any] | None:
     return [expr]
 
 
-def _vex_index_key(expr, definitions: dict[int, Any], vex) -> tuple[int, int] | None:
-    """Return the original register identity for a zero-extended table index."""
+def _vex_index_key(
+    expr,
+    definitions: dict[int, Any],
+    vex,
+    *,
+    allow_full_width: bool = False,
+) -> tuple[int, int] | None:
+    """Return the original register identity for a table index expression."""
 
     expr = _resolve_vex_expr(expr, definitions)
     while isinstance(expr, pyvex.expr.Unop) and "Uto" in expr.op:
@@ -110,7 +143,7 @@ def _vex_index_key(expr, definitions: dict[int, Any], vex) -> tuple[int, int] | 
         right = _vex_index_key(expr.args[1], definitions, vex)
         return left or right
     key = _vex_get_key(expr, definitions, vex)
-    if key is not None and 0 < key[1] <= 8:
+    if key is not None and key[1] > 0 and (allow_full_width or key[1] <= 8):
         return key
     return None
 
@@ -190,7 +223,9 @@ def _guarded_jump_table_entry_count(
     return entry_count if entry_count <= MAX_STATIC_JUMPTABLE_ENTRIES else None
 
 
-def _vex_relative_jump_table(vex) -> StaticJumpTable | None:
+def _vex_relative_jump_table(
+    vex, *, allow_full_width_index: bool = False
+) -> StaticJumpTable | None:
     """
     Describe a bounded relative jump table encoded in one VEX indirect jump.
 
@@ -217,9 +252,10 @@ def _vex_relative_jump_table(vex) -> StaticJumpTable | None:
     )
     candidates = ((left, right), (right, left))
     for entry_expr, base_expr in candidates:
-        base_key = _vex_get_key(base_expr, definitions, vex)
-        if base_key is None:
+        base = _vex_register_with_displacement(base_expr, definitions, vex)
+        if base is None:
             continue
+        base_key, target_displacement = base
 
         signed_entries = False
         entry_expr = _resolve_vex_expr(entry_expr, definitions)
@@ -254,7 +290,12 @@ def _vex_relative_jump_table(vex) -> StaticJumpTable | None:
             ):
                 break
             shift = _vex_const_value(term.args[1], definitions)
-            index_key = _vex_index_key(term.args[0], definitions, vex)
+            index_key = _vex_index_key(
+                term.args[0],
+                definitions,
+                vex,
+                allow_full_width=allow_full_width_index,
+            )
             if (
                 shift is None
                 or index_key is None
@@ -275,6 +316,7 @@ def _vex_relative_jump_table(vex) -> StaticJumpTable | None:
                     entry_size=entry_size,
                     endness=entry_expr.end,
                     signed_entries=signed_entries,
+                    target_displacement=target_displacement,
                 )
 
     return None
@@ -350,6 +392,87 @@ def _unique_static_register_value(
     return next(iter(values)) if len(values) == 1 else None
 
 
+def _x86_pc_thunk_base_addr(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node,
+    table: StaticJumpTable,
+) -> int | None:
+    """Return an x86 PIC table base register value proven by a PC thunk call."""
+
+    if project.arch.name != "X86" or project.arch.bits != 32:
+        return None
+    register_name = project.arch.register_names.get(table.base_register_offset)
+    if register_name is None:
+        return None
+    # GCC names 32-bit x86 thunks after the 16-bit register suffix: ``ebx``
+    # is initialized by ``__x86.get_pc_thunk.bx``.
+    thunk_register = register_name.removeprefix("e")
+    expected_name = f"__x86.get_pc_thunk.{thunk_register}"
+
+    values: set[int] = set()
+    for predecessor in graph.predecessors(node):
+        if not _node_is_materialized_cfg_node(predecessor):
+            continue
+        if not _node_intersects_bounds(predecessor, bounds):
+            continue
+        if predecessor.addr + predecessor.size != node.addr:
+            continue
+        vex = _node_vex(predecessor)
+        if vex is None or vex.jumpkind != "Ijk_Call":
+            continue
+        definitions = _vex_tmp_definitions(vex)
+        call_target = _vex_const_value(vex.next, definitions)
+        if call_target is None:
+            continue
+        symbol = project.loader.find_symbol(call_target)
+        if symbol is not None and symbol.name == expected_name:
+            values.add(node.addr)
+
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _in_function_jump_table_entry_count(
+    project: Project,
+    bounds: FunctionBounds,
+    table: StaticJumpTable,
+    base_addr: int,
+) -> int | None:
+    """Infer a contiguous, bounded table extent when every target is in-function."""
+
+    table_addr = base_addr + table.table_displacement
+    try:
+        raw = project.loader.memory.load(
+            table_addr, MAX_STATIC_JUMPTABLE_ENTRIES * table.entry_size
+        )
+    except Exception as exc:
+        logger.debug(f"Custom CFG could not read jump table at {table_addr:#x}: {exc}")
+        return None
+
+    byteorder = "little" if table.endness == "Iend_LE" else "big"
+    count = 0
+    for offset in range(0, len(raw), table.entry_size):
+        entry = int.from_bytes(
+            raw[offset : offset + table.entry_size],
+            byteorder=byteorder,
+            signed=table.signed_entries,
+        )
+        target = _jump_table_target_addr(base_addr, table, entry)
+        if not is_direct_target_valid(bounds, target):
+            break
+        count += 1
+    return count if count >= 2 else None
+
+
+def _jump_table_target_addr(base_addr: int, table: StaticJumpTable, entry: int) -> int:
+    """Apply the architecture-width arithmetic used by a relative table jump."""
+
+    return (base_addr + table.target_displacement + entry) & (
+        (1 << table.base_bits) - 1
+    )
+
+
 def _read_static_jump_table_targets(
     project: Project,
     table: StaticJumpTable,
@@ -376,7 +499,7 @@ def _read_static_jump_table_targets(
             byteorder=byteorder,
             signed=table.signed_entries,
         )
-        targets.add(base_addr + entry)
+        targets.add(_jump_table_target_addr(base_addr, table, entry))
 
     return tuple(sorted(targets))
 

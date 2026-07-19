@@ -137,11 +137,13 @@ from .anomalies import (
 from .jumps import (
     _constant_register_from_predecessors,
     _guarded_jump_table_entry_count,
+    _in_function_jump_table_entry_count,
     _read_static_jump_table_targets,
     _seed_graph_direct_targets,
     _seed_node_expected_successors,
     _unique_static_register_value,
     _vex_relative_jump_table,
+    _x86_pc_thunk_base_addr,
 )
 from .nodes import (
     ensure_external_target_node as _ensure_external_target_node,
@@ -406,6 +408,23 @@ class _RepairSession:
             if vex is None:
                 continue
             table = _vex_relative_jump_table(vex)
+            pic_base_addr = None
+            if (
+                table is None
+                and self.project.arch.name == "X86"
+                and self.project.arch.bits == 32
+            ):
+                pic_table = _vex_relative_jump_table(vex, allow_full_width_index=True)
+                if pic_table is not None:
+                    pic_base_addr = _x86_pc_thunk_base_addr(
+                        self.project,
+                        self.graph,
+                        self.bounds,
+                        node,
+                        pic_table,
+                    )
+                    if pic_base_addr is not None:
+                        table = pic_table
             if table is None or table.base_bits != self.project.arch.bits:
                 continue
             entry_count = _guarded_jump_table_entry_count(
@@ -414,14 +433,14 @@ class _RepairSession:
                 node,
                 table,
             )
-            if entry_count is None:
-                continue
-            base_addr = _constant_register_from_predecessors(
-                self.graph,
-                self.bounds,
-                node,
-                table.base_register_offset,
-            )
+            base_addr = pic_base_addr
+            if base_addr is None:
+                base_addr = _constant_register_from_predecessors(
+                    self.graph,
+                    self.bounds,
+                    node,
+                    table.base_register_offset,
+                )
             if base_addr is None:
                 # A disconnected table dispatcher may not have a complete
                 # predecessor path back to its base definition. Scan the
@@ -433,6 +452,15 @@ class _RepairSession:
                     table.base_register_offset,
                 )
             if base_addr is None:
+                continue
+            if entry_count is None and pic_base_addr is not None:
+                entry_count = _in_function_jump_table_entry_count(
+                    self.project,
+                    self.bounds,
+                    table,
+                    base_addr,
+                )
+            if entry_count is None:
                 continue
             targets = _read_static_jump_table_targets(
                 self.project,

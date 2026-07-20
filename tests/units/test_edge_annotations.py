@@ -12,12 +12,22 @@ def _node(
     *,
     size: int = 0,
     vex: SimpleNamespace | None = None,
+    capstone_insns: tuple[SimpleNamespace, ...] = (),
     is_simprocedure: bool = False,
     simprocedure_name: str | None = None,
 ) -> SimpleNamespace:
     """Return the minimal visualization-node shape consumed by ``_edge_type``."""
 
-    block = SimpleNamespace(vex=vex) if vex is not None else None
+    block = (
+        SimpleNamespace(
+            vex=vex,
+            capstone=SimpleNamespace(
+                insns=[SimpleNamespace(insn=insn) for insn in capstone_insns]
+            ),
+        )
+        if vex is not None
+        else None
+    )
     return SimpleNamespace(
         obj=SimpleNamespace(
             addr=addr,
@@ -25,7 +35,8 @@ def _node(
             block=block,
             is_simprocedure=is_simprocedure,
             simprocedure_name=simprocedure_name,
-        )
+        ),
+        project=SimpleNamespace(arch=SimpleNamespace(name="X86")),
     )
 
 
@@ -50,6 +61,7 @@ def _vex(
     *,
     next_addr: int | None = None,
     exit_targets: tuple[int, ...] = (),
+    exit_jumpkind: str = "Ijk_Boring",
 ) -> SimpleNamespace:
     """Build the subset of VEX state used to classify ordinary edges."""
 
@@ -61,7 +73,14 @@ def _vex(
         jumpkind=jumpkind,
         next=next_expression,
         exit_statements=[
-            (None, None, SimpleNamespace(dst=SimpleNamespace(value=target)))
+            (
+                None,
+                None,
+                SimpleNamespace(
+                    dst=SimpleNamespace(value=target),
+                    jumpkind=exit_jumpkind,
+                ),
+            )
             for target in exit_targets
         ],
     )
@@ -149,3 +168,33 @@ def test_boring_edges_use_vex_terminator_semantics(
     assert (
         _edge_type(_edge(source, _node(destination), jumpkind="Ijk_Boring")) == expected
     )
+
+
+def test_atomic_vex_self_exit_remains_a_linear_fallthrough() -> None:
+    """Ignore VEX's internal atomic exit when Capstone sees no branch."""
+
+    source = _node(
+        0x1000,
+        size=7,
+        vex=_vex("Ijk_Boring", next_addr=0x1007, exit_targets=(0x1000,)),
+        capstone_insns=(SimpleNamespace(address=0x1000, groups=(), operands=()),),
+    )
+
+    assert _edge_type(_edge(source, _node(0x1007), jumpkind="Ijk_Boring")) == "NEXT"
+
+
+def test_non_boring_vex_exit_is_not_a_conditional_branch() -> None:
+    """Ignore VEX exception exits when classifying ordinary CFG edges."""
+
+    source = _node(
+        0x1000,
+        size=4,
+        vex=_vex(
+            "Ijk_Boring",
+            next_addr=0x1004,
+            exit_targets=(0x2000,),
+            exit_jumpkind="Ijk_SigFPE_IntDiv",
+        ),
+    )
+
+    assert _edge_type(_edge(source, _node(0x1004), jumpkind="Ijk_Boring")) == "NEXT"

@@ -261,6 +261,8 @@ def _vex_boring_edge_type(edge) -> str:
     # destination, so both are valid non-fall-through successors.
     exit_targets: set[int] = set()
     for _, _, stmt in vex.exit_statements:
+        if stmt.jumpkind != "Ijk_Boring":
+            continue
         try:
             target = stmt.dst.value
         except AttributeError:
@@ -269,6 +271,15 @@ def _vex_boring_edge_type(edge) -> str:
             exit_targets.add(target)
     if exit_targets:
         fallthrough_addr = source_node.addr + source_node.size
+        if (
+            edge.dst.obj.addr == fallthrough_addr
+            and exit_targets == {source_node.addr}
+            and _control_transfer_tail(edge) is None
+        ):
+            # VEX models some atomic x86 instructions with a self-targeting
+            # internal Exit. Capstone sees no control transfer, so the only
+            # CFG successor is the ordinary next instruction.
+            return "NEXT"
         if edge.dst.obj.addr == fallthrough_addr:
             return "CONDITIONAL_FALSE"
         if edge.dst.obj.addr in exit_targets or edge.dst.obj.addr == next_addr:

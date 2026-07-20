@@ -44,8 +44,9 @@ coverage:
 goldens:
 	$(UV) pytest -v tests/goldens/test_cfg_goldens.py
 
-# Render and compare only checkpoint-marked goldens. Set
-# `BINGRAPH_GOLDEN_CONFIGS` in the environment to choose configurations.
+# Render and compare only checkpoint-marked goldens. The selected-test set
+# keeps the full-corpus summary and non-checkpoint `_actual` artifacts intact.
+# Set `BINGRAPH_GOLDEN_CONFIGS` in the environment to choose configurations.
 goldens-checkpoint:
 	$(UV) pytest -v -m checkpoint tests/goldens/test_cfg_goldens.py
 

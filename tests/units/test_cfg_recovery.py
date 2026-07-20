@@ -8,7 +8,7 @@ from angr.knowledge_plugins.cfg import CFGNode
 from bingraph.cfg.models import BlockSpec
 from bingraph.cfg.models import FunctionBounds
 from bingraph.cfg import recovery
-from bingraph.cfg.recovery import _native_vex_transfer_end
+from bingraph.cfg.recovery import _native_vex_transfer_end, call_fallthrough_addr
 from bingraph.cfg.repair import _block_has_unresolved_indirect_transfer
 
 
@@ -61,6 +61,30 @@ def test_native_vex_boundary_outside_function_is_ignored() -> None:
     )
 
     assert _native_vex_transfer_end(project, _bounds(), 0x1000) is None
+
+
+def test_call_fallthrough_accepts_a_known_external_function_entry() -> None:
+    """Preserve a call continuation that begins a neighboring function."""
+
+    project = SimpleNamespace(
+        loader=SimpleNamespace(
+            find_symbol=lambda addr: (
+                SimpleNamespace(rebased_addr=addr, is_function=True)
+                if addr == 0x1100
+                else None
+            )
+        )
+    )
+
+    assert call_fallthrough_addr(project, _bounds(), 0x1100) == 0x1100
+
+
+def test_call_fallthrough_rejects_unknown_external_bytes() -> None:
+    """Avoid inventing a continuation beyond the selected function range."""
+
+    project = SimpleNamespace(loader=SimpleNamespace(find_symbol=lambda _addr: None))
+
+    assert call_fallthrough_addr(project, _bounds(), 0x1100) is None
 
 
 def test_indirect_call_preserves_its_unresolved_target() -> None:

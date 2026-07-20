@@ -28,11 +28,11 @@ How this module works:
    previously missing golden.
 
 5. Summary files
-   At the end of the module run, one `summary.json` file is written per config
-   under `tests/_actual/<config-name>/...`. A dedicated per-config test then
-   compares it with the committed summary, so summary failures are not
-   attributed to the final rendered artifact. In promote mode, that summary is
-   also copied into the golden directory.
+   A run that selects the per-config summary test writes one `summary.json`
+   file per config under `tests/_actual/<config-name>/...` and compares it
+   with the committed summary. Checkpoint and other partial runs deliberately
+   leave that full-corpus summary and the other `_actual` artifacts untouched.
+   In promote mode, the full summary is also copied into the golden directory.
 
 6. First-time bootstrap
    To create goldens for the first time:
@@ -526,8 +526,15 @@ RUN_STATE: dict[str, ConfigRunState] = {}
 ACTIVE_CACHE_CONFIG: str | None = None
 
 
+def _summary_test_is_selected(request: pytest.FixtureRequest) -> bool:
+    """Return whether this pytest invocation selected the summary test."""
+
+    summary_nodeid = f"{request.node.nodeid}::test_config_summary_matches_golden"
+    return any(item.nodeid.startswith(summary_nodeid) for item in request.session.items)
+
+
 @pytest.fixture(scope="module", autouse=True)
-def _manage_summary_files() -> Iterator[None]:
+def _manage_summary_files(request: pytest.FixtureRequest) -> Iterator[None]:
     """Initialize run state and always materialize actual summaries at teardown."""
 
     global RUN_STATE, ACTIVE_CACHE_CONFIG
@@ -545,6 +552,15 @@ def _manage_summary_files() -> Iterator[None]:
     }
 
     yield
+
+    if not _summary_test_is_selected(request):
+        # A marker or explicit node selection can run only part of the corpus.
+        # Do not replace the complete summary with partial counters or prune
+        # the remaining full-corpus `_actual` artifacts in that case.
+        RUN_STATE = {}
+        ACTIVE_CACHE_CONFIG = None
+        _clear_caches()
+        return
 
     for config in ACTIVE_CONFIGS:
         _write_config_summary(config, validate=False)
@@ -685,7 +701,6 @@ if CURRENT_MODE == "compare":
         state.golden_matches += 1
 
     @pytest.mark.slow
-    @pytest.mark.checkpoint
     @pytest.mark.parametrize("config", ACTIVE_CONFIGS, ids=lambda config: config.name)
     def test_config_summary_matches_golden(config: GoldenConfig) -> None:
         """Compare one config summary after all of its artifact cases complete."""

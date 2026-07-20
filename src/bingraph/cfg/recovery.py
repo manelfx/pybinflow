@@ -110,6 +110,28 @@ def vex_jumpkind_is_terminal(jumpkind: str) -> bool:
     return jumpkind == "Ijk_Ret" or jumpkind.startswith("Ijk_Sig")
 
 
+def call_fallthrough_addr(
+    project: Project, bounds: FunctionBounds, next_addr: int
+) -> int | None:
+    """Return a call continuation inside this function or at a known next one.
+
+    A bounded CFG normally excludes the instruction following its last byte.
+    That address can still be an architecturally valid call continuation when
+    it exactly names another function. Preserve that known cross-function
+    continuation as a synthetic fake-return leaf instead of treating arbitrary
+    out-of-bounds bytes as executable code.
+    """
+
+    if bounds.addr <= next_addr < bounds.end_addr:
+        return next_addr
+
+    symbol = project.loader.find_symbol(next_addr)
+    if symbol is not None and symbol.rebased_addr == next_addr and symbol.is_function:
+        return next_addr
+
+    return None
+
+
 def _instruction_has_nonfallthrough_vex_semantics(
     project: Project, insn: CsInsn
 ) -> bool:
@@ -297,7 +319,7 @@ def lift_block_terminator(
             bounds, default_target
         ):
             direct_targets = (default_target,)
-        fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
+        fallthrough_addr = call_fallthrough_addr(project, bounds, next_addr)
         return TerminatorInfo(
             jumpkind="Ijk_Call",
             direct_targets=direct_targets,

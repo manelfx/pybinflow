@@ -33,7 +33,10 @@ from .models import (
     FunctionBounds,
     JumpSuccessorExpectation,
 )
-from .recovery import vex_jumpkind_is_terminal as _vex_jumpkind_is_terminal
+from .recovery import (
+    call_fallthrough_addr as _call_fallthrough_addr,
+    vex_jumpkind_is_terminal as _vex_jumpkind_is_terminal,
+)
 
 
 def _node_has_forced_split(node, forced_block_starts: set[int]) -> bool:
@@ -209,10 +212,16 @@ def _missing_call_fallthrough_anomaly(
     if not is_call or _call_has_known_nonreturning_target(project, graph, node):
         return None
 
-    fallthrough_addr = _node_range_end(node)
-    # Symbol sizes can include architecture-specific function metadata. Do not
-    # require a fake return into bytes that the project cannot decode as code.
-    if not _can_decode_block_at(project, bounds, fallthrough_addr):
+    next_addr = _node_range_end(node)
+    fallthrough_addr = _call_fallthrough_addr(project, bounds, next_addr)
+    if fallthrough_addr is None:
+        return None
+    # Preserve CFGFast's existing guard for continuations that remain in this
+    # symbol's range. Symbol-size inference can include non-code metadata, so
+    # only the new cross-function case may bypass this decodeability probe.
+    if bounds.addr <= next_addr < bounds.end_addr and not _can_decode_block_at(
+        project, bounds, next_addr
+    ):
         return None
 
     for successor in graph.successors(node):

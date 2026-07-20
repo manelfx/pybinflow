@@ -1260,6 +1260,7 @@ class _RepairSession:
                 "Ijk_FakeRet" if block.jumpkind == "Ijk_Call" else "Ijk_Boring",
                 reason=f"fallthrough_of_{block.addr:#x}",
                 preserve_exact_addr=False,
+                materialize_external=block.jumpkind == "Ijk_Call",
             )
 
         self._queue_reconciliation_neighborhood(recovered_node)

@@ -6,6 +6,7 @@ from collections import deque
 from types import SimpleNamespace
 from typing import cast
 
+import networkx as nx
 import pytest
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGNode
@@ -120,6 +121,114 @@ def test_queue_keeps_recovery_and_reconciliation_separate() -> None:
     assert session._queue_if_needed(reconciliation)
     assert list(session.queue) == [("recover", 0x1200), ("reconcile", 0x1200)]
     assert set(session.pending) == {("recover", 0x1200), ("reconcile", 0x1200)}
+
+
+def test_static_jump_diagnostics_count_final_unbounded_dispatchers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Count a final unresolved dispatcher once by its missing proof."""
+
+    session = _bare_session()
+    dispatcher = _source_node(0x1234)
+    monkeypatch.setattr(
+        session, "_unresolved_indirect_dispatchers", lambda: (dispatcher,)
+    )
+    monkeypatch.setattr(
+        session,
+        "_static_jump_table_plan",
+        lambda _node: (None, "unbounded_index"),
+    )
+
+    session._collect_static_jump_table_diagnostics()
+
+    assert session.stats.static_jump_dispatchers_unresolved == 1
+    assert session.stats.static_jump_unbounded_index == 1
+
+
+def test_static_jump_table_removes_a_stale_unresolved_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Remove the unresolved leaf when every proven table target already exists."""
+
+    session = _bare_session()
+    session.project = object()
+    source = _source_node(0x1234)
+    concrete_target = _source_node(0x1200)
+    unresolved_target = _source_node(0x601050)
+    unresolved_target.is_simprocedure = True
+    unresolved_target.simprocedure_name = "UnresolvableJumpTarget"
+    session.graph = nx.DiGraph([(source, concrete_target), (source, unresolved_target)])
+    session.resolved_static_table_sources = set()
+    monkeypatch.setattr(session, "_bound_nodes", lambda: (source,))
+    monkeypatch.setattr(
+        session,
+        "_static_jump_table_plan",
+        lambda _node: (
+            SimpleNamespace(table=object(), base_addr=0, entry_count=1),
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        cfg_module,
+        "_read_static_jump_table_targets",
+        lambda *_args: (concrete_target.addr,),
+    )
+    monkeypatch.setattr(
+        cfg_module,
+        "_static_jump_target_rejection_reason",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        session,
+        "_resolve_successor",
+        lambda *_args, **_kwargs: pytest.fail("no target should be materialized"),
+    )
+
+    assert session._resolve_static_jump_tables() == 1
+    assert not session.graph.has_edge(source, unresolved_target)
+    assert session.stats.unresolved_jump_edges_removed == 1
+
+
+def test_static_jump_table_keeps_unresolved_target_for_invalid_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Avoid partially resolving a table that contains an unsafe entry."""
+
+    session = _bare_session()
+    session.project = object()
+    source = _source_node(0x1234)
+    unresolved_target = _source_node(0x601050)
+    unresolved_target.is_simprocedure = True
+    unresolved_target.simprocedure_name = "UnresolvableJumpTarget"
+    session.graph = nx.DiGraph([(source, unresolved_target)])
+    session.resolved_static_table_sources = set()
+    monkeypatch.setattr(session, "_bound_nodes", lambda: (source,))
+    monkeypatch.setattr(
+        session,
+        "_static_jump_table_plan",
+        lambda _node: (
+            SimpleNamespace(table=object(), base_addr=0, entry_count=1),
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        cfg_module,
+        "_read_static_jump_table_targets",
+        lambda *_args: (0x1200,),
+    )
+    monkeypatch.setattr(
+        cfg_module,
+        "_static_jump_target_rejection_reason",
+        lambda *_args: "non_executable",
+    )
+    monkeypatch.setattr(
+        session,
+        "_resolve_successor",
+        lambda *_args, **_kwargs: pytest.fail("invalid targets must not materialize"),
+    )
+
+    assert session._resolve_static_jump_tables() == 0
+    assert session.graph.has_edge(source, unresolved_target)
 
 
 def test_immediate_entry_downgrades_to_queued_work(

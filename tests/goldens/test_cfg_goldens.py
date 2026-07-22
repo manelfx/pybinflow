@@ -30,8 +30,10 @@ How this module works:
 5. Summary files
    A run that selects the per-config summary test writes one `summary.json`
    file per config under `tests/_actual/<config-name>/...` and compares it
-   with the committed summary. Checkpoint and other partial runs deliberately
-   leave that full-corpus summary and the other `_actual` artifacts untouched.
+   with the committed summary. Custom-mode summaries also aggregate the repair
+   counters emitted by each completed custom CFG build. Checkpoint and other
+   partial runs deliberately leave that full-corpus summary and the other
+   `_actual` artifacts untouched.
    In promote mode, the full summary is also copied into the golden directory.
 
 6. First-time bootstrap
@@ -64,7 +66,7 @@ import json
 import os
 import re
 import traceback
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import shutil
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -119,11 +121,14 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "armel,lwip_udpecho_bm.elf,0x705,__udivmoddi4.dot",
         "armel,lwip_udpecho_bm.elf,0x39f1,tcp_alloc.dot",
         "armel,lwip_udpecho_bm.elf,0x5f65,dhcp_bind.dot",
+        "i386,bronze_ropchain,0x8049930,plural_eval.dot",
         "i386,bronze_ropchain,0x80572f0,_IO_list_lock.dot",
+        "i386,bronze_ropchain,0x805ec40,__memset_sse2.dot",
         "i386,bronze_ropchain,0x8060ca0,__strcmp_sse4_2.dot",
         "i386,bronze_ropchain,0x8062690,__memcmp_sse4_2.dot",
         "i386,bronze_ropchain,0x806a770,__strcasecmp_l_sse4_2.dot",
         "i386,bronze_ropchain,0x806f870,_dl_aux_init.dot",
+        "i386,bronze_ropchain,0x806b8e0,handle_amd.dot",
         "i386,bronze_ropchain,0x809cc70,_dl_mcount.dot",
         "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",
         "mipsel,mips_syscall_demo,0x401390,__libc_setup_tls.dot",
@@ -162,6 +167,8 @@ CHECKPOINT_ARTIFACTS = frozenset(
 
 @dataclass
 class ConfigRunState:
+    """Accumulate render and custom-repair results for one configuration."""
+
     expected_files: set[Path]
     entries: int = 0
     render_successes: int = 0
@@ -171,6 +178,8 @@ class ConfigRunState:
     missing_goldens: int = 0
     render_crashes: int = 0
     render_recoveries: int = 0
+    custom_cfg_runs: int = 0
+    custom_cfg_stats: dict[str, int] = field(default_factory=dict)
 
 
 def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
@@ -284,6 +293,13 @@ def _summary_payload(
         "missing_goldens": state.missing_goldens,
         "render_crashes": state.render_crashes,
         "render_recoveries": state.render_recoveries,
+        # These counters are aggregated from completed custom-repair sessions,
+        # not inferred from DOT differences, so they distinguish repair work
+        # from rendering-only layout or label changes.
+        "custom_cfg_stats": {
+            "runs": state.custom_cfg_runs,
+            "totals": dict(sorted(state.custom_cfg_stats.items())),
+        },
         "format": "raw",
         "artifact_extension": ".dot",
         "limit": limit,
@@ -323,6 +339,18 @@ def _clear_caches() -> None:
     render_module.render_cfg.cache_clear()
     project_module._get_project.cache_clear()
     project_module.get_cfg.cache_clear()
+
+
+def _record_custom_cfg_stats(state: ConfigRunState, cfg: object) -> None:
+    """Add one completed custom CFG wrapper's repair counters to run state."""
+
+    stats = getattr(cfg, "custom_stats", None)
+    if stats is None:
+        return
+
+    state.custom_cfg_runs += 1
+    for name, value in stats.as_dict().items():
+        state.custom_cfg_stats[name] = state.custom_cfg_stats.get(name, 0) + value
 
 
 def _extract_render_cfg() -> Callable[..., str]:
@@ -652,10 +680,24 @@ if CURRENT_MODE == "compare":
             patch.object(project_module, "get_settings", return_value=settings),
         ):
             render_cfg = _extract_render_cfg()
+            original_build_custom_cfg = project_module.build_custom_cfg
+
+            def build_custom_cfg_with_stats(*args: Any, **kwargs: Any) -> Any:
+                """Preserve repair counters while delegating to real CFG building."""
+
+                cfg = original_build_custom_cfg(*args, **kwargs)
+                _record_custom_cfg_stats(state, cfg)
+                return cfg
+
             try:
-                artifact_text = render_cfg(
-                    row["filepath"], row["function_addr"], format="raw"
-                )
+                with patch.object(
+                    project_module,
+                    "build_custom_cfg",
+                    side_effect=build_custom_cfg_with_stats,
+                ):
+                    artifact_text = render_cfg(
+                        row["filepath"], row["function_addr"], format="raw"
+                    )
                 state.render_successes += 1
             except Exception as exc:  # pragma: no cover - exercised against real corpus
                 artifact_text = _error_artifact(exc)

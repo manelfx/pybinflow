@@ -65,9 +65,9 @@ class FunctionBounds:
 
 @dataclass(frozen=True)
 class StaticJumpTable:
-    """A high-confidence relative jump table described by a VEX terminator."""
+    """A high-confidence static jump table described by a VEX terminator."""
 
-    base_register_offset: int
+    base_register_offset: int | None
     base_bits: int
     table_displacement: int
     index_register_offset: int
@@ -76,6 +76,8 @@ class StaticJumpTable:
     endness: str
     signed_entries: bool
     target_displacement: int = 0
+    entries_are_relative: bool = True
+    static_base_addr: int | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,20 @@ class CustomCFGStats:
     edges_added: int = 0
     static_jump_tables_resolved: int = 0
     static_jump_targets_added: int = 0
+    static_jump_dispatchers_unresolved: int = 0
+    static_jump_no_vex: int = 0
+    static_jump_no_table_shape: int = 0
+    static_jump_unknown_base: int = 0
+    static_jump_unbounded_index: int = 0
+    static_jump_table_unreadable: int = 0
+    static_jump_table_empty: int = 0
+    static_jump_tables_rejected_targets: int = 0
+    static_jump_targets_read: int = 0
+    static_jump_targets_accepted: int = 0
+    static_jump_targets_external_code: int = 0
+    static_jump_targets_unmapped: int = 0
+    static_jump_targets_non_executable: int = 0
+    static_jump_targets_synthetic: int = 0
     unresolved_jump_edges_removed: int = 0
     unresolved_fallback_edges_added: int = 0
     unresolved_fallbacks_flattened: int = 0
@@ -248,3 +264,4 @@ class CustomCFG(SimpleNamespace):
     model: CFGModel
     functions: object
     kb: KnowledgeBase
+    custom_stats: CustomCFGStats

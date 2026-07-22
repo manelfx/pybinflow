@@ -46,7 +46,8 @@ Terminology used throughout the module:
   An `UnresolvableJumpTarget` simprocedure keeps an indirect dispatch visible
   when static recovery cannot prove its targets. It is connected to otherwise
   disconnected in-function blocks so cleanup preserves those CFGFast-discovered
-  regions without inventing direct case edges from the original dispatch.
+  regions without inventing direct case edges from an unproven dispatch. Proven
+  static-table sources bypass this shared candidate hub entirely.
 
 High-level algorithm:
 
@@ -65,7 +66,9 @@ High-level algorithm:
    repair state changed. A separate iteration limit protects against a graph
    that continues changing without converging.
 6. When the worklist is empty, connect any remaining unresolved indirect-jump
-   placeholder to disconnected seed blocks. A placeholder with exactly one
+   placeholder to disconnected seed blocks. Proven static-table dispatchers
+   have already been connected directly to their table targets and no longer
+   point at this shared candidate hub. A placeholder with exactly one remaining
    indirect source is flattened into explicitly marked unresolved candidate
    edges, preserving uncertainty without retaining a synthetic intermediary.
    Then remove genuinely unreachable stale nodes and temporary placeholders.
@@ -85,7 +88,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from types import SimpleNamespace
 
 from angr import KnowledgeBase, Project
@@ -111,6 +114,7 @@ from .graph import (
 )
 from .jumps import (
     is_direct_target_valid as _is_direct_target_valid,
+    static_jump_target_rejection_reason as _static_jump_target_rejection_reason,
 )
 from .decode import (
     DecodedNode,
@@ -127,6 +131,7 @@ from .models import (
     EntryResolutionPolicy,
     PendingObligation,
     RepairObligation,
+    StaticJumpTable,
 )
 from .anomalies import (
     CFGAnomalyDetector,
@@ -142,6 +147,7 @@ from .jumps import (
     _seed_graph_direct_targets,
     _seed_node_expected_successors,
     _unique_static_register_value,
+    _vex_direct_jump_table,
     _vex_relative_jump_table,
     _x86_pc_thunk_base_addr,
 )
@@ -201,6 +207,15 @@ def _block_has_unresolved_indirect_transfer(block: BlockSpec) -> bool:
     return (
         block.jumpkind == "Ijk_Boring" and block.fallthrough_addr is None
     ) or block.jumpkind == "Ijk_Call"
+
+
+@dataclass(frozen=True)
+class _StaticJumpTablePlan:
+    """Capture the VEX-proven information needed to read one static table."""
+
+    table: StaticJumpTable
+    base_addr: int
+    entry_count: int
 
 
 class _RepairSession:
@@ -283,6 +298,9 @@ class _RepairSession:
         """Capture the final graph shape and emit one custom-repair summary."""
 
         try:
+            # Count only final unresolved dispatchers so worklist retries do
+            # not inflate the reason histogram used for corpus analysis.
+            self._collect_static_jump_table_diagnostics()
             self.stats.output_blocks, self.stats.output_edges = self._graph_shape()
             self.stats.output_anomalies = len(self._anomalous_addrs())
         except Exception as exc:
@@ -397,79 +415,111 @@ class _RepairSession:
                 f"{self.func_addr:#x}"
             )
 
+    def _static_jump_table_plan(
+        self, node
+    ) -> tuple[_StaticJumpTablePlan | None, str | None]:
+        """Return a readable table plan or the first proof that is unavailable."""
+
+        vex = _node_vex(node)
+        if vex is None:
+            return None, "no_vex"
+
+        table = _vex_relative_jump_table(vex) or _vex_direct_jump_table(vex)
+        if table is None:
+            # A table index naturally has the architecture's full register
+            # width on 64-bit targets. Recognition is safe here because the
+            # plan still requires a separate finite range proof before any
+            # table entries are read.
+            table = _vex_relative_jump_table(
+                vex, allow_full_width_index=True
+            ) or _vex_direct_jump_table(vex, allow_full_width_index=True)
+        pic_base_addr = None
+        if self.project.arch.name == "X86" and self.project.arch.bits == 32:
+            if table is not None:
+                pic_base_addr = _x86_pc_thunk_base_addr(
+                    self.project,
+                    self.graph,
+                    self.bounds,
+                    node,
+                    table,
+                )
+        if table is None or table.base_bits != self.project.arch.bits:
+            return None, "no_table_shape"
+
+        entry_count = _guarded_jump_table_entry_count(
+            self.graph,
+            self.bounds,
+            node,
+            table,
+        )
+        base_addr = table.static_base_addr or pic_base_addr
+        if base_addr is None:
+            base_register_offset = table.base_register_offset
+            if base_register_offset is None:
+                return None, "unknown_base"
+            base_addr = _constant_register_from_predecessors(
+                self.graph,
+                self.bounds,
+                node,
+                base_register_offset,
+            )
+        if base_addr is None:
+            # A disconnected table dispatcher may not have a complete
+            # predecessor path back to its base definition. Scan the bounded
+            # VEX blocks instead, but accept a value only when all static
+            # definitions for this register agree.
+            base_addr = _unique_static_register_value(
+                self.graph,
+                self.bounds,
+                base_register_offset,
+            )
+        if base_addr is None:
+            return None, "unknown_base"
+
+        if (
+            entry_count is None
+            and table.entries_are_relative
+            and pic_base_addr is not None
+        ):
+            entry_count = _in_function_jump_table_entry_count(
+                self.project,
+                self.bounds,
+                table,
+                base_addr,
+            )
+        if entry_count is None:
+            return None, "unbounded_index"
+
+        return _StaticJumpTablePlan(table, base_addr, entry_count), None
+
     def _resolve_static_jump_tables(self) -> int:
-        """Recover high-confidence relative table targets from unresolved jumps."""
+        """Recover high-confidence in-function targets from static jump tables."""
 
         resolved_sources = 0
         for node in self._bound_nodes():
             if not _node_is_materialized_cfg_node(node):
                 continue
 
-            vex = _node_vex(node)
-            if vex is None:
-                continue
-            table = _vex_relative_jump_table(vex)
-            pic_base_addr = None
-            if (
-                table is None
-                and self.project.arch.name == "X86"
-                and self.project.arch.bits == 32
-            ):
-                pic_table = _vex_relative_jump_table(vex, allow_full_width_index=True)
-                if pic_table is not None:
-                    pic_base_addr = _x86_pc_thunk_base_addr(
-                        self.project,
-                        self.graph,
-                        self.bounds,
-                        node,
-                        pic_table,
-                    )
-                    if pic_base_addr is not None:
-                        table = pic_table
-            if table is None or table.base_bits != self.project.arch.bits:
-                continue
-            entry_count = _guarded_jump_table_entry_count(
-                self.graph,
-                self.bounds,
-                node,
-                table,
-            )
-            base_addr = pic_base_addr
-            if base_addr is None:
-                base_addr = _constant_register_from_predecessors(
-                    self.graph,
-                    self.bounds,
-                    node,
-                    table.base_register_offset,
-                )
-            if base_addr is None:
-                # A disconnected table dispatcher may not have a complete
-                # predecessor path back to its base definition. Scan the
-                # bounded VEX blocks instead, but accept a value only when all
-                # static definitions for this register agree.
-                base_addr = _unique_static_register_value(
-                    self.graph,
-                    self.bounds,
-                    table.base_register_offset,
-                )
-            if base_addr is None:
-                continue
-            if entry_count is None and pic_base_addr is not None:
-                entry_count = _in_function_jump_table_entry_count(
-                    self.project,
-                    self.bounds,
-                    table,
-                    base_addr,
-                )
-            if entry_count is None:
+            plan, _ = self._static_jump_table_plan(node)
+            if plan is None:
                 continue
             targets = _read_static_jump_table_targets(
                 self.project,
-                table,
-                base_addr,
-                entry_count,
+                plan.table,
+                plan.base_addr,
+                plan.entry_count,
             )
             if not targets:
+                continue
+
+            rejection_reasons = [
+                _static_jump_target_rejection_reason(self.project, target)
+                for target in targets
+            ]
+            if any(rejection_reasons):
+                # A mixed set of code and non-code entries is not a fully
+                # proven dispatch. Preserve the unresolved leaf instead of
+                # rendering a partial set of seemingly definite case edges.
                 continue
 
             existing_target_addrs = {
@@ -478,14 +528,11 @@ class _RepairSession:
             missing_targets = [
                 target for target in targets if target not in existing_target_addrs
             ]
-            if not missing_targets:
-                unresolved_targets = []
-            else:
-                unresolved_targets = [
-                    successor
-                    for successor in self.graph.successors(node)
-                    if _is_unresolvable_jump_target(successor)
-                ]
+            unresolved_targets = [
+                successor
+                for successor in self.graph.successors(node)
+                if _is_unresolvable_jump_target(successor)
+            ]
 
             if not missing_targets and not unresolved_targets:
                 continue
@@ -510,6 +557,11 @@ class _RepairSession:
                 self.graph.remove_edge(node, unresolved_target)
                 self._note_mutation()
             self.stats.static_jump_targets_added += len(missing_targets)
+            self.stats.static_jump_targets_read += len(targets)
+            self.stats.static_jump_targets_accepted += len(targets)
+            self.stats.static_jump_targets_external_code += sum(
+                not _is_direct_target_valid(self.bounds, target) for target in targets
+            )
             self.stats.unresolved_jump_edges_removed += len(unresolved_targets)
             self.resolved_static_table_sources.add(node.addr)
             self.stats.static_jump_tables_resolved = len(
@@ -518,6 +570,67 @@ class _RepairSession:
             resolved_sources += 1
 
         return resolved_sources
+
+    def _unresolved_indirect_dispatchers(self) -> tuple[CFGNode, ...]:
+        """Return live dispatch blocks that still lead to an unresolved target."""
+
+        return tuple(
+            node
+            for node in self._bound_nodes()
+            if _node_is_materialized_cfg_node(node)
+            and any(
+                _is_unresolvable_jump_target(successor)
+                for successor in self.graph.successors(node)
+            )
+        )
+
+    def _collect_static_jump_table_diagnostics(self) -> None:
+        """Classify final unresolved dispatchers without changing the CFG graph."""
+
+        for node in self._unresolved_indirect_dispatchers():
+            self.stats.static_jump_dispatchers_unresolved += 1
+            plan, reason = self._static_jump_table_plan(node)
+            if reason is not None:
+                field_name = f"static_jump_{reason}"
+                setattr(self.stats, field_name, getattr(self.stats, field_name) + 1)
+                continue
+            if plan is None:  # Defensive: every failed plan must name a reason.
+                logger.warning(
+                    f"Custom CFG could not classify indirect jump at {node.addr:#x}"
+                )
+                continue
+
+            targets = _read_static_jump_table_targets(
+                self.project,
+                plan.table,
+                plan.base_addr,
+                plan.entry_count,
+            )
+            if targets is None:
+                self.stats.static_jump_table_unreadable += 1
+                continue
+            if not targets:
+                self.stats.static_jump_table_empty += 1
+                continue
+
+            self.stats.static_jump_targets_read += len(targets)
+            rejection_reasons = [
+                _static_jump_target_rejection_reason(self.project, target)
+                for target in targets
+            ]
+            rejected = [reason for reason in rejection_reasons if reason is not None]
+            if not rejected:
+                self.stats.static_jump_targets_accepted += len(targets)
+                self.stats.static_jump_targets_external_code += sum(
+                    not _is_direct_target_valid(self.bounds, target)
+                    for target in targets
+                )
+                continue
+
+            self.stats.static_jump_tables_rejected_targets += 1
+            for reason in rejected:
+                field_name = f"static_jump_targets_{reason}"
+                setattr(self.stats, field_name, getattr(self.stats, field_name) + 1)
 
     def _unresolved_jump_fallback_nodes(self) -> list[CFGNode]:
         """Return synthetic leaves still reached from unresolved indirect jumps."""
@@ -1605,6 +1718,9 @@ class _RepairSession:
             model=_custom_model_marker(),
             functions=self.seed_cfg.functions,
             kb=self.seed_cfg.kb,
+            # Keep the final counters alongside the wrapper so callers that
+            # need corpus-level metrics do not have to parse Loguru output.
+            custom_stats=self.stats,
         )
         return result
 

@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from typing import cast
 
 import networkx as nx
+import archinfo
+import pyvex
 import pytest
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGNode
@@ -27,6 +29,9 @@ def _bare_session() -> cfg_module._RepairSession:
     session.mutation_revision = 0
     session.last_requeue_states = {}
     session.stats = models_module.CustomCFGStats()
+    session.func_addr = 0x1000
+    session._bound_nodes_revision = -1
+    session._bound_nodes_snapshot = ()
     session.bounds = cast(
         models_module.FunctionBounds,
         SimpleNamespace(addr=0x1000, end_addr=0x2000),
@@ -67,6 +72,20 @@ class _NodeGraph:
         """Store one node in the test graph."""
 
         self._nodes.append(node)
+
+
+class _BlockNode:
+    """Hashable node stand-in carrying a VEX block for fallback-candidate tests."""
+
+    def __init__(self, addr: int, data: bytes) -> None:
+        """Lift one bounded x86 block from ``data`` at ``addr``."""
+
+        self.addr = addr
+        self.size = len(data)
+        self.is_simprocedure = False
+        self.block = SimpleNamespace(
+            vex=pyvex.lift(data, addr, archinfo.ArchX86(), max_bytes=len(data))
+        )
 
 
 def test_queue_merges_edge_claims_by_source_identity() -> None:
@@ -229,6 +248,68 @@ def test_static_jump_table_keeps_unresolved_target_for_invalid_entries(
 
     assert session._resolve_static_jump_tables() == 0
     assert session.graph.has_edge(source, unresolved_target)
+
+
+def test_unresolved_fallback_skips_transparent_padding_candidates() -> None:
+    """Attach unknown indirect candidates after no-op alignment padding."""
+
+    session = _bare_session()
+    fallback = _source_node(0x601050)
+    fallback.is_simprocedure = True
+    fallback.simprocedure_name = "UnresolvableJumpTarget"
+    padding = _BlockNode(0x1100, bytes.fromhex("89f68d3f"))
+    target = _source_node(0x1104)
+    session.graph = nx.DiGraph()
+    session.graph.add_edge(padding, target, jumpkind="Ijk_Boring")
+    session._unresolved_jump_fallback_nodes = lambda: [fallback]
+    session._disconnected_function_nodes = lambda: [padding, target]
+
+    assert session._attach_unresolved_jump_fallbacks()
+    assert not session.graph.has_edge(fallback, padding)
+    assert session.graph.has_edge(fallback, target)
+
+
+def test_unresolved_fallback_keeps_padding_with_a_known_predecessor() -> None:
+    """Retain exact landing padding when an ordinary CFG edge targets it."""
+
+    session = _bare_session()
+    fallback = _source_node(0x601050)
+    fallback.is_simprocedure = True
+    fallback.simprocedure_name = "UnresolvableJumpTarget"
+    source = _source_node(0x1000)
+    padding = _BlockNode(0x1100, bytes.fromhex("89f68d3f"))
+    target = _source_node(0x1104)
+    session.graph = nx.DiGraph()
+    session.graph.add_edge(source, padding, jumpkind="Ijk_Boring")
+    session.graph.add_edge(padding, target, jumpkind="Ijk_Boring")
+    session._unresolved_jump_fallback_nodes = lambda: [fallback]
+    session._disconnected_function_nodes = lambda: [padding, target]
+
+    assert session._attach_unresolved_jump_fallbacks()
+    assert session.graph.has_edge(fallback, padding)
+
+
+def test_unresolved_fallback_drops_padding_before_a_reachable_successor() -> None:
+    """Do not add an unknown edge when padding already falls into live code."""
+
+    session = _bare_session()
+    fallback = _source_node(0x601050)
+    fallback.is_simprocedure = True
+    fallback.simprocedure_name = "UnresolvableJumpTarget"
+    entry = _source_node(0x1000)
+    padding = _BlockNode(0x1100, bytes.fromhex("89f68d3f"))
+    target = _source_node(0x1104)
+    entry.size = 1
+    target.size = 1
+    session.graph = nx.DiGraph()
+    session.graph.add_edge(entry, target, jumpkind="Ijk_Boring")
+    session.graph.add_edge(padding, target, jumpkind="Ijk_Boring")
+    session._unresolved_jump_fallback_nodes = lambda: [fallback]
+    session._disconnected_function_nodes = lambda: [padding]
+
+    assert not session._attach_unresolved_jump_fallbacks()
+    assert not session.graph.has_edge(fallback, padding)
+    assert not session.graph.has_edge(fallback, target)
 
 
 def test_immediate_entry_downgrades_to_queued_work(

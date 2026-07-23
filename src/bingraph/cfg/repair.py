@@ -107,6 +107,7 @@ from .graph import (
     node_intersects_bounds as _node_intersects_bounds,
     node_is_materialized_cfg_node as _node_is_materialized_cfg_node,
     node_is_placeholder as _node_is_placeholder,
+    node_is_transparent_fallthrough_padding as _node_is_transparent_fallthrough_padding,
     node_range_end as _node_range_end,
     node_vex as _node_vex,
     ranges_overlap as _ranges_overlap,
@@ -150,6 +151,7 @@ from .jumps import (
     _vex_direct_jump_table,
     _vex_relative_jump_table,
     _x86_pc_thunk_base_addr,
+    _x86_pc_thunk_guarded_entry_count,
 )
 from .nodes import (
     ensure_external_target_node as _ensure_external_target_node,
@@ -452,6 +454,14 @@ class _RepairSession:
             node,
             table,
         )
+        if entry_count is None and pic_base_addr is not None:
+            entry_count = _x86_pc_thunk_guarded_entry_count(
+                self.project,
+                self.graph,
+                self.bounds,
+                node,
+                table,
+            )
         base_addr = table.static_base_addr or pic_base_addr
         if base_addr is None:
             base_register_offset = table.base_register_offset
@@ -679,18 +689,60 @@ class _RepairSession:
         if not fallback_nodes:
             return False
         disconnected_nodes = self._disconnected_function_nodes()
+        reachable_nodes = self._reachable_from_entry()
+        candidate_nodes: set[CFGNode] = set()
+        for node in disconnected_nodes:
+            candidate = self._unresolved_fallback_candidate(node)
+            if candidate not in reachable_nodes:
+                candidate_nodes.add(candidate)
         changed = False
         for fallback in fallback_nodes:
-            for node in disconnected_nodes:
+            for node in sorted(candidate_nodes, key=lambda node: node.addr):
                 if self._add_edge(fallback, node, "Ijk_Boring"):
                     self.stats.unresolved_fallback_edges_added += 1
                     changed = True
         if changed:
             logger.info(
-                f"Connected {len(disconnected_nodes)} disconnected function block(s) through "
+                f"Connected {len(candidate_nodes)} unresolved candidate target(s), selected from "
+                f"{len(disconnected_nodes)} disconnected function block(s), through "
                 f"{len(fallback_nodes)} unresolved indirect-jump target(s)"
             )
         return changed
+
+    def _unresolved_fallback_candidate(self, node: CFGNode) -> CFGNode:
+        """Return the meaningful target reached after transparent candidate padding.
+
+        Unknown indirect jumps use disconnected seed nodes as conservative
+        candidate targets.  A node that only contains VEX-proven no-op
+        self-assignments adds no CFG information in that role, so follow its
+        sole normal fall-through.  Known predecessors disqualify the shortcut:
+        an explicit branch or table target must retain its exact landing node.
+        """
+
+        visited: set[CFGNode] = set()
+        while node not in visited:
+            visited.add(node)
+            if not _node_is_transparent_fallthrough_padding(node):
+                break
+            predecessors = list(self.graph.predecessors(node))
+            if any(
+                not _is_unresolvable_jump_target(predecessor)
+                for predecessor in predecessors
+            ):
+                break
+            successors = list(self.graph.successors(node))
+            if len(successors) != 1:
+                break
+            successor = successors[0]
+            edge_data = self.graph.get_edge_data(node, successor) or {}
+            if (
+                edge_data.get("jumpkind") != "Ijk_Boring"
+                or not _node_is_materialized_cfg_node(successor)
+                or not _node_intersects_bounds(successor, self.bounds)
+            ):
+                break
+            node = successor
+        return node
 
     def _flatten_single_source_unresolved_fallback(self) -> bool:
         """Replace one unambiguous unresolved-jump placeholder with candidate edges.

@@ -113,6 +113,50 @@ def node_ends_in_indirect_jump(node) -> bool:
     )
 
 
+def node_is_transparent_fallthrough_padding(node) -> bool:
+    """Return whether ``node`` only self-assigns registers before falling through.
+
+    Compilers commonly use instructions such as ``mov reg, reg`` and
+    ``lea reg, [reg]`` for alignment.  Their VEX blocks contain only IMarks,
+    temporary GETs, and PUTs that write the same register value back.  These
+    nodes are safe to skip as *unresolved* indirect-jump candidates, but not
+    when a known branch or table entry explicitly targets them.
+    """
+
+    if getattr(node, "size", 0) <= 0:
+        return False
+    vex = node_vex(node)
+    if vex is None or vex.jumpkind != "Ijk_Boring":
+        return False
+    next_addr = getattr(getattr(vex.next, "con", None), "value", None)
+    if next_addr != node_range_end(node):
+        return False
+
+    definitions: dict[int, Any] = {}
+    saw_instruction = False
+    for statement in vex.statements:
+        if isinstance(statement, pyvex.stmt.IMark):
+            saw_instruction = True
+            continue
+        if isinstance(statement, pyvex.stmt.WrTmp):
+            if not isinstance(statement.data, pyvex.expr.Get):
+                return False
+            definitions[statement.tmp] = statement.data
+            continue
+        if not isinstance(statement, pyvex.stmt.Put):
+            return False
+
+        value = statement.data
+        while isinstance(value, pyvex.expr.RdTmp):
+            value = definitions.get(value.tmp)
+            if value is None:
+                return False
+        if not isinstance(value, pyvex.expr.Get) or value.offset != statement.offset:
+            return False
+
+    return saw_instruction
+
+
 def node_is_materialized_cfg_node(node) -> bool:
     """Return True for normal nodes that are neither simprocedures nor placeholders."""
 

@@ -1,4 +1,13 @@
-"""Jump-target primitives shared by custom CFG reconstruction."""
+"""Jump-target primitives shared by custom CFG reconstruction.
+
+Static jump-table recovery is deliberately VEX-driven and therefore portable
+across architectures when their lifted transfer has a recognized shape.  It
+supports direct and relative entries, one-, two-, four-, and eight-byte table
+entries, VEX endianness and signed-entry semantics, guard-derived index bounds,
+constant bases, and bases proven from predecessor register definitions.  The
+32-bit x86 PC-thunk helper is a narrow supplement for PIC code whose table base
+is not retained as a VEX constant.
+"""
 
 from __future__ import annotations
 
@@ -201,7 +210,7 @@ def _vex_guarded_index_upper_bound(
     """Return a proven unsigned upper bound for an exit entering ``target_addr``."""
 
     definitions = _vex_tmp_definitions(vex)
-    for stmt in vex.statements:
+    for exit_index, stmt in enumerate(vex.statements):
         if not isinstance(stmt, pyvex.stmt.Exit):
             continue
         if getattr(stmt.dst, "value", None) != target_addr:
@@ -214,9 +223,8 @@ def _vex_guarded_index_upper_bound(
             continue
         if not guard.op.endswith("U"):
             continue
-        if (
-            _vex_index_key(guard.args[0], definitions, vex, allow_full_width=True)
-            != index_key
+        if not _vex_guard_matches_index_register(
+            guard.args[0], index_key, definitions, vex, vex.statements[:exit_index]
         ):
             continue
         bound = _vex_static_int(guard.args[1], definitions)
@@ -227,6 +235,29 @@ def _vex_guarded_index_upper_bound(
         if "CmpLT" in guard.op and bound > 0:
             return bound - 1
     return None
+
+
+def _vex_guard_matches_index_register(
+    expr,
+    index_key: tuple[int, int],
+    definitions: dict[int, Any],
+    vex,
+    preceding_statements: tuple[Any, ...] | list[Any],
+) -> bool:
+    """Return whether a guard expression is the index register's current value."""
+
+    if _vex_index_key(expr, definitions, vex, allow_full_width=True) == index_key:
+        return True
+
+    resolved_expr = _resolve_vex_expr(expr, definitions)
+    if resolved_expr is None:
+        return False
+    for stmt in reversed(preceding_statements):
+        if not isinstance(stmt, pyvex.stmt.Put) or stmt.offset != index_key[0]:
+            continue
+        value = _resolve_vex_expr(stmt.data, definitions)
+        return value is resolved_expr or value == resolved_expr
+    return False
 
 
 def _guarded_jump_table_entry_count(
@@ -528,6 +559,49 @@ def _unique_static_register_value(
     return next(iter(values)) if len(values) == 1 else None
 
 
+def _x86_pc_thunk_predecessors(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node,
+    table: StaticJumpTable,
+) -> tuple[CFGNode, ...]:
+    """Return matching x86 PC-thunk calls whose fake return enters ``node``."""
+
+    if project.arch.name != "X86" or project.arch.bits != 32:
+        return ()
+    if table.base_register_offset is None:
+        return ()
+    register_name = project.arch.register_names.get(table.base_register_offset)
+    if register_name is None:
+        return ()
+    # GCC names 32-bit x86 thunks after the 16-bit register suffix: ``ebx``
+    # is initialized by ``__x86.get_pc_thunk.bx``.
+    thunk_register = register_name.removeprefix("e")
+    expected_name = f"__x86.get_pc_thunk.{thunk_register}"
+
+    predecessors: list[CFGNode] = []
+    for predecessor in graph.predecessors(node):
+        if not _node_is_materialized_cfg_node(predecessor):
+            continue
+        if not _node_intersects_bounds(predecessor, bounds):
+            continue
+        if predecessor.addr + predecessor.size != node.addr:
+            continue
+        vex = _node_vex(predecessor)
+        if vex is None or vex.jumpkind != "Ijk_Call":
+            continue
+        definitions = _vex_tmp_definitions(vex)
+        call_target = _vex_const_value(vex.next, definitions)
+        if call_target is None:
+            continue
+        symbol = project.loader.find_symbol(call_target)
+        if symbol is not None and symbol.name == expected_name:
+            predecessors.append(predecessor)
+
+    return tuple(predecessors)
+
+
 def _x86_pc_thunk_base_addr(
     project: Project,
     graph: CFGGraph,
@@ -549,24 +623,10 @@ def _x86_pc_thunk_base_addr(
     thunk_register = register_name.removeprefix("e")
     expected_name = f"__x86.get_pc_thunk.{thunk_register}"
 
+    if _x86_pc_thunk_predecessors(project, graph, bounds, node, table):
+        return node.addr
+
     values: set[int] = set()
-    for predecessor in graph.predecessors(node):
-        if not _node_is_materialized_cfg_node(predecessor):
-            continue
-        if not _node_intersects_bounds(predecessor, bounds):
-            continue
-        if predecessor.addr + predecessor.size != node.addr:
-            continue
-        vex = _node_vex(predecessor)
-        if vex is None or vex.jumpkind != "Ijk_Call":
-            continue
-        definitions = _vex_tmp_definitions(vex)
-        call_target = _vex_const_value(vex.next, definitions)
-        if call_target is None:
-            continue
-        symbol = project.loader.find_symbol(call_target)
-        if symbol is not None and symbol.name == expected_name:
-            values.add(node.addr)
 
     # Tables are often far from the prologue that initializes their PIC base.
     # GCC emits ``call __x86.get_pc_thunk.<reg>; add $offset, %reg``: the
@@ -616,13 +676,45 @@ def _x86_pc_thunk_base_addr(
     return next(iter(values)) if len(values) == 1 else None
 
 
+def _x86_pc_thunk_guarded_entry_count(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node,
+    table: StaticJumpTable,
+) -> int | None:
+    """Return a table length proven by a guard immediately before an x86 thunk."""
+
+    index_key = table.index_register_offset, table.index_bits
+    upper_bounds: set[int] = set()
+    for thunk_call in _x86_pc_thunk_predecessors(project, graph, bounds, node, table):
+        for predecessor in graph.predecessors(thunk_call):
+            if not _node_is_materialized_cfg_node(predecessor):
+                continue
+            if not _node_intersects_bounds(predecessor, bounds):
+                continue
+            vex = _node_vex(predecessor)
+            if vex is None:
+                continue
+            upper_bound = _vex_guarded_index_upper_bound(
+                vex, thunk_call.addr, index_key
+            )
+            if upper_bound is not None:
+                upper_bounds.add(upper_bound)
+
+    if len(upper_bounds) != 1:
+        return None
+    entry_count = next(iter(upper_bounds)) + 1
+    return entry_count if entry_count <= MAX_STATIC_JUMPTABLE_ENTRIES else None
+
+
 def _in_function_jump_table_entry_count(
     project: Project,
     bounds: FunctionBounds,
     table: StaticJumpTable,
     base_addr: int,
 ) -> int | None:
-    """Infer a contiguous, bounded table extent when every target is in-function."""
+    """Estimate a table extent from contiguous in-function target entries."""
 
     table_addr = _jump_table_addr(base_addr, table)
     try:

@@ -14,6 +14,7 @@ from bingraph.cfg.jumps import (
     _vex_guarded_index_upper_bound,
     _vex_relative_jump_table,
     _x86_pc_thunk_base_addr,
+    _x86_pc_thunk_guarded_entry_count,
     static_jump_target_rejection_reason,
 )
 from bingraph.cfg.models import FunctionBounds, StaticJumpTable
@@ -34,14 +35,16 @@ class _Node:
         return SimpleNamespace(vex=self.vex)
 
 
-def _table(*, target_displacement: int = 0) -> StaticJumpTable:
+def _table(
+    *, target_displacement: int = 0, index_register_offset: int = 12
+) -> StaticJumpTable:
     """Create a 32-bit relative table description for focused helper tests."""
 
     return StaticJumpTable(
         base_register_offset=20,
         base_bits=32,
         table_displacement=0,
-        index_register_offset=12,
+        index_register_offset=index_register_offset,
         index_bits=32,
         entry_size=4,
         endness="Iend_LE",
@@ -110,6 +113,87 @@ def test_x86_pc_thunk_rejects_a_call_to_the_wrong_register_thunk() -> None:
     bounds = FunctionBounds(0x1000, 0x1100, 0x100, SimpleNamespace(name="f"))
 
     assert _x86_pc_thunk_base_addr(project, graph, bounds, dispatcher, _table()) is None
+
+
+def test_x86_pc_thunk_prefers_an_immediate_dispatcher_predecessor() -> None:
+    """Keep one local PC-thunk proof from conflicting with unrelated PIC setup."""
+
+    call_target = 0x4000
+    call_vex = SimpleNamespace(
+        jumpkind="Ijk_Call",
+        next=pyvex.expr.Const(pyvex.const.U32(call_target)),
+        statements=(),
+    )
+    predecessor = _Node(0x1000, 5, call_vex)
+    dispatcher = _Node(0x1005, 4, SimpleNamespace())
+    other_thunk_call = _Node(0x1020, 5, call_vex)
+    other_fallthrough = _Node(
+        0x1025,
+        4,
+        pyvex.lift(bytes.fromhex("83c320c3"), 0x1025, archinfo.ArchX86()),
+    )
+    graph = nx.DiGraph(
+        [(predecessor, dispatcher), (other_thunk_call, other_fallthrough)]
+    )
+    project = SimpleNamespace(
+        arch=SimpleNamespace(name="X86", bits=32, register_names={20: "ebx"}),
+        loader=SimpleNamespace(
+            find_symbol=lambda addr: (
+                SimpleNamespace(name="__x86.get_pc_thunk.bx")
+                if addr == call_target
+                else None
+            )
+        ),
+    )
+    bounds = FunctionBounds(0x1000, 0x1100, 0x100, SimpleNamespace(name="f"))
+
+    assert (
+        _x86_pc_thunk_base_addr(project, graph, bounds, dispatcher, _table()) == 0x1005
+    )
+
+
+def test_x86_pc_thunk_recovers_the_guarded_table_length() -> None:
+    """Carry an unsigned index bound through the thunk's fake-return edge."""
+
+    call_target = 0x4000
+    guard = _Node(
+        0x1000,
+        5,
+        pyvex.lift(bytes.fromhex("83f8207200"), 0x1000, archinfo.ArchX86()),
+    )
+    thunk_call = _Node(
+        0x1005,
+        5,
+        SimpleNamespace(
+            jumpkind="Ijk_Call",
+            next=pyvex.expr.Const(pyvex.const.U32(call_target)),
+            statements=(),
+        ),
+    )
+    dispatcher = _Node(0x100A, 4, SimpleNamespace())
+    graph = nx.DiGraph([(guard, thunk_call), (thunk_call, dispatcher)])
+    project = SimpleNamespace(
+        arch=SimpleNamespace(name="X86", bits=32, register_names={20: "ebx"}),
+        loader=SimpleNamespace(
+            find_symbol=lambda addr: (
+                SimpleNamespace(name="__x86.get_pc_thunk.bx")
+                if addr == call_target
+                else None
+            )
+        ),
+    )
+    bounds = FunctionBounds(0x1000, 0x1100, 0x100, SimpleNamespace(name="f"))
+
+    assert (
+        _x86_pc_thunk_guarded_entry_count(
+            project,
+            graph,
+            bounds,
+            dispatcher,
+            _table(index_register_offset=8),
+        )
+        == 32
+    )
 
 
 def test_relative_table_target_wraps_to_the_architecture_width() -> None:
@@ -182,6 +266,15 @@ def test_guarded_jump_table_bound_accepts_unsigned_strict_less_than() -> None:
     vex = pyvex.lift(bytes.fromhex("4883fa207200"), 0x1000, archinfo.ArchAMD64())
 
     assert _vex_guarded_index_upper_bound(vex, 0x1006, (32, 64)) == 31
+
+
+def test_guarded_jump_table_bound_tracks_a_same_block_index_assignment() -> None:
+    """Use the index value written before the guard rather than only a raw GET."""
+
+    # mov ecx, [esp + 0x10]; cmp ecx, 0x20; jb 0x1009
+    vex = pyvex.lift(bytes.fromhex("8b4c241083f9207200"), 0x1000, archinfo.ArchX86())
+
+    assert _vex_guarded_index_upper_bound(vex, 0x1009, (12, 32)) == 31
 
 
 def test_unreadable_static_jump_table_returns_none() -> None:

@@ -268,6 +268,15 @@ def test_guarded_jump_table_bound_accepts_unsigned_strict_less_than() -> None:
     assert _vex_guarded_index_upper_bound(vex, 0x1006, (32, 64)) == 31
 
 
+def test_guarded_jump_table_bound_tracks_a_narrowed_register_view() -> None:
+    """Match a 32-bit guard against the 64-bit register used to index a table."""
+
+    # cmp r8d, 0x11; jbe 0x1006
+    vex = pyvex.lift(bytes.fromhex("4183f8117600"), 0x1000, archinfo.ArchAMD64())
+
+    assert _vex_guarded_index_upper_bound(vex, 0x1006, (80, 64)) == 17
+
+
 def test_guarded_jump_table_bound_tracks_a_same_block_index_assignment() -> None:
     """Use the index value written before the guard rather than only a raw GET."""
 

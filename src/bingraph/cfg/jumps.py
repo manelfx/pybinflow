@@ -173,7 +173,14 @@ def _vex_index_key(
     """Return the original register identity for a table index expression."""
 
     expr = _resolve_vex_expr(expr, definitions)
-    while isinstance(expr, pyvex.expr.Unop) and "Uto" in expr.op:
+    # A range guard often compares a narrowed view of the register used to
+    # address the table (for example, x86 ``cmp r8d, limit`` before indexing
+    # with ``r8``). Preserve the source register across integer-width casts.
+    while (
+        isinstance(expr, pyvex.expr.Unop)
+        and expr.op.startswith("Iop_")
+        and "to" in expr.op
+    ):
         expr = _resolve_vex_expr(expr.args[0], definitions)
     if isinstance(expr, pyvex.expr.Binop) and expr.op.startswith("Iop_And"):
         left = _vex_index_key(expr.args[0], definitions, vex)
@@ -193,6 +200,16 @@ def _vex_static_int(expr, definitions: dict[int, Any]) -> int | None:
         return value
 
     expr = _resolve_vex_expr(expr, definitions)
+    if (
+        isinstance(expr, pyvex.expr.Unop)
+        and expr.op.startswith("Iop_")
+        and "to" in expr.op
+    ):
+        value = _vex_static_int(expr.args[0], definitions)
+        result_bits = expr.op.rsplit("to", maxsplit=1)[-1]
+        if value is None or not result_bits.isdecimal():
+            return None
+        return value & ((1 << int(result_bits)) - 1)
     if not isinstance(expr, pyvex.expr.Binop):
         return None
     left = _vex_static_int(expr.args[0], definitions)

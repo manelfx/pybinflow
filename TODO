@@ -82,29 +82,35 @@ Memory Dependencies: Instruction 1 stores a value onto the stack ([RBP - 0x8]), 
 
 === Revisit unresolved indirect jumps
 
-Some functions in the corpus contain CFG nodes that end at simprocedure
-`UnresolvableJumpTarget`. This is not tied to one architecture only. Current
-test outputs show such cases across at least:
+Static jump-table recovery is intentionally bounded and VEX-driven. The
+current implementation resolves 64 tables and adds 1,629 validated target
+edges over the full corpus. The remaining 413 unresolved dispatchers do not
+match a recognized static-table shape; many are dynamic callbacks, GOT loads
+with an unknown base, or architecture-specific indirect transfers. Keep them
+represented by `UnresolvableJumpTarget` rather than guessing targets.
 
-- `riscv`
-- `mips64`
-- `armhf`
-- `armel`
-- `s390x`
-- `ppc64el`
-- `i386`
-- `mipsel`
-- `x86_64`
+Possible lower-priority extensions:
 
-We might have fixed the i386/x86_64 cases, but we need to revisit other
-architectures.
-
-Rendering follow-up:
-
+- Recognize absolute-base direct tables indexed by a finite-width memory load
+  (for example an 8-bit character selector). This could help six current
+  functions across AMD64 and MIPS, but must retain the 256-entry maximum and
+  executable-target validation.
+- Recover 32-bit x86 PC-thunk table bases for the same finite-width memory
+  index pattern. This currently appears in two printf-family functions, so it
+  is not a corpus-wide priority.
+- Add a deliberate, architecture-neutral dataflow/range analysis for indexed
+  tables whose index is affine (such as `register + constant`). Do not infer a
+  table length by scanning executable bytes: recovery requires a proven finite
+  bound before materializing edges.
 - Review whether unresolved-target simprocedure nodes should show their CLE
   pseudo-address. For example, `UnresolvableCallTarget` may render as
   `0x10100058`, which is an angr-internal synthetic address rather than a
   binary address. Prefer hiding it or labeling it explicitly as synthetic.
+
+The broad register-unindexed family is not currently a recovery target:
+inspection found stack-held callbacks and MIPS GOT-style transfers whose `gp`
+base cannot be proven statically. Revisit it only with a stronger provenance
+analysis rather than a heuristic resolver.
 
 === Address comments
 

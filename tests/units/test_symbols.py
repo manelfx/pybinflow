@@ -26,10 +26,21 @@ def _symbol(
 class _Project:
     """Hashable project stand-in compatible with the symbol-list cache."""
 
-    def __init__(self, symbols: list[SimpleNamespace]) -> None:
+    def __init__(
+        self,
+        symbols: list[SimpleNamespace],
+        *,
+        sections: dict[int, SimpleNamespace] | None = None,
+    ) -> None:
         """Expose loader symbols through the minimal angr-project shape."""
 
-        self.loader = SimpleNamespace(main_object=SimpleNamespace(symbols=symbols))
+        sections = sections or {}
+        self.loader = SimpleNamespace(
+            main_object=SimpleNamespace(
+                symbols=symbols,
+                find_section_containing=lambda addr: sections.get(addr),
+            )
+        )
 
 
 def test_symbol_listing_sorts_deduplicates_and_infers_sizes() -> None:
@@ -60,3 +71,41 @@ def test_symbol_listing_drops_unresolved_trailing_zero_sized_symbol() -> None:
     list_function_symbols.cache_clear()
 
     assert list_function_symbols(project) == []
+
+
+def test_symbol_listing_caps_an_inferred_size_at_its_section_end() -> None:
+    """Avoid extending a zero-sized symbol into the next executable section."""
+
+    project = _Project(
+        [_symbol(0x1000, "init", 0), _symbol(0x1200, "text", 4)],
+        sections={0x1000: SimpleNamespace(vaddr=0x1000, memsize=0x20)},
+    )
+    list_function_symbols.cache_clear()
+
+    symbols = list_function_symbols(project)
+
+    assert [(symbol.name, symbol.size) for symbol in symbols] == [
+        ("init", 0x20),
+        ("text", 4),
+    ]
+
+
+def test_symbol_listing_preserves_zero_sized_aliases_at_one_entry() -> None:
+    """Infer one shared span for aliases before the next distinct address."""
+
+    project = _Project(
+        [
+            _symbol(0x1000, "alias", 0),
+            _symbol(0x1000, "entry", 0),
+            _symbol(0x1080, "next", 4),
+        ]
+    )
+    list_function_symbols.cache_clear()
+
+    symbols = list_function_symbols(project)
+
+    assert [(symbol.name, symbol.size) for symbol in symbols] == [
+        ("alias", 0x80),
+        ("entry", 0x80),
+        ("next", 4),
+    ]

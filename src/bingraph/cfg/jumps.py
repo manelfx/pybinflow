@@ -370,6 +370,7 @@ def _vex_relative_jump_table(
         constant_total = 0
         displacement = 0
         saw_base = False
+        index_key: tuple[int, int] | None = None
         index_bits: int | None = None
         for term in address_terms:
             value = _vex_const_value(term, definitions)

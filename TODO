@@ -122,6 +122,22 @@ analysis rather than a heuristic resolver.
 - Are these differences specific to comments, or do they come from another kind
   of label annotation?
 
+=== Make call-target SIMP visibility configurable
+
+Add a CLI/settings option that controls whether rendered CFGs show call-target
+SIMP leaves:
+
+- `always`: materialize a SIMP leaf for every direct call target outside the
+  selected function, including resolved calls to ordinary functions.
+- `never`: hide call-target SIMP leaves, including angr extern-object nodes
+  produced for unresolved relocations in object files such as `client_loop.o`.
+
+Keep non-call synthetic leaves visible: unresolved indirect jumps, external
+branch targets, and non-returning control-flow exits still communicate CFG
+semantics rather than optional call-detail. Apply the policy at render time so
+the recovered CFG remains complete and one CLI choice does not affect another
+consumer of the same graph.
+
 === Review custom CFG transformation statistics
 
 `CustomCFGStats` now logs the input/output graph shape, anomaly counts, and

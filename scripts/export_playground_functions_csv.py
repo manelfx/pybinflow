@@ -129,11 +129,15 @@ def load_project(path: Path):
             auto_load_libs=False,
         )
     except Exception as exc:
-        logger.warning(f"skipping unsupported binary for angr/CLE: {path} ({type(exc).__name__}: {exc})")
+        logger.warning(
+            f"skipping unsupported binary for angr/CLE: {path} ({type(exc).__name__}: {exc})"
+        )
         return None
 
 
-def build_basic_block_size_fingerprint(project: Project, func_addr: int, func_size: int) -> tuple[int, ...]:
+def build_basic_block_size_fingerprint(
+    project: Project, func_addr: int, func_size: int
+) -> tuple[int, ...]:
     """Build a cheap, deterministic basic-block-size fingerprint for one function.
 
     This is intentionally lighter than running CFGFast: it starts from the
@@ -183,7 +187,9 @@ def build_basic_block_size_fingerprint(project: Project, func_addr: int, func_si
         jump_targets = getattr(block_vex, "constant_jump_targets", set())
         normalized_targets = sorted(
             target
-            for target in (_normalize_vex_target(raw_target) for raw_target in jump_targets)
+            for target in (
+                _normalize_vex_target(raw_target) for raw_target in jump_targets
+            )
             if target is not None
         )
         for target in normalized_targets:
@@ -230,7 +236,13 @@ def list_file_owned_functions(project: Project) -> list[tuple[str, str, int, str
     main_object = project.loader.main_object
 
     entries = [
-        (symbol.name, symbol.linked_addr, symbol.relative_addr, symbol.size, symbol.is_import)
+        (
+            symbol.name,
+            symbol.rebased_addr,
+            symbol.relative_addr,
+            symbol.size,
+            symbol.is_import,
+        )
         for symbol in main_object.symbols
         if symbol.is_function and symbol.name
     ]
@@ -238,18 +250,32 @@ def list_file_owned_functions(project: Project) -> list[tuple[str, str, int, str
     # CLE can expose duplicate symbols at the same address/name pair. Sort
     # first so we can collapse those duplicates deterministically.
     entries = sorted(entries, key=lambda item: (item[1], item[0]))
-    entries = [next(group) for _, group in groupby(entries, key=lambda item: (item[1], item[0]))]
+    entries = [
+        next(group)
+        for _, group in groupby(entries, key=lambda item: (item[1], item[0]))
+    ]
 
     # Like the app's symbol listing, infer missing sizes when the symbol table
-    # recorded size zero. Cap the inferred extent to the earliest of:
+    # recorded size zero. Find the next distinct address so aliases at the same
+    # entry remain valid candidates, and cap the inferred extent to the earliest of:
     # - the next symbol address
     # - the end of the containing section
     # This avoids size-zero symbols like `_init` accidentally absorbing PLT or
     # neighboring sections just because the next function symbol happens later.
-    for idx in range(len(entries) - 1):
+    for idx, entry in enumerate(entries):
         name, addr, relative_addr, size, is_import = entries[idx]
         if size == 0:
-            inferred_size = entries[idx + 1][1] - addr
+            next_addr = next(
+                (
+                    candidate[1]
+                    for candidate in entries[idx + 1 :]
+                    if candidate[1] > addr
+                ),
+                None,
+            )
+            if next_addr is None:
+                continue
+            inferred_size = next_addr - addr
             section = main_object.find_section_containing(addr)
             if section is not None:
                 section_end = section.vaddr + section.memsize
@@ -284,7 +310,14 @@ def iter_files(root: Path) -> Iterable[Path]:
 def collect_rows(
     *,
     root: Path,
-) -> tuple[list[CorpusRow], int, int, int, Counter[tuple[str, int, str]], Counter[tuple[str, int, tuple[int, ...]]]]:
+) -> tuple[
+    list[CorpusRow],
+    int,
+    int,
+    int,
+    Counter[tuple[str, int, str]],
+    Counter[tuple[str, int, tuple[int, ...]]],
+]:
     """Collect every candidate row while computing duplicate metadata inline.
 
     We still apply the same logical dedup order as before:
@@ -319,9 +352,13 @@ def collect_rows(
         relpath = str(path.relative_to(root))
 
         # Process each function while the owning binary is still hot in memory.
-        for funcname, funcaddr, funcsize, checksum in list_file_owned_functions(project):
+        for funcname, funcaddr, funcsize, checksum in list_file_owned_functions(
+            project
+        ):
             candidate_rows += 1
-            block_fingerprint = build_basic_block_size_fingerprint(project, int(funcaddr, 16), funcsize)
+            block_fingerprint = build_basic_block_size_fingerprint(
+                project, int(funcaddr, 16), funcsize
+            )
             num_bbs = len(block_fingerprint)
             raw_key = (fileformat, funcsize, checksum)
             bb_key = (fileformat, funcsize, block_fingerprint)
@@ -353,7 +390,14 @@ def collect_rows(
                 )
             )
 
-    return rows, files_seen, binaries_seen, candidate_rows, raw_duplicate_counts, bb_duplicate_counts
+    return (
+        rows,
+        files_seen,
+        binaries_seen,
+        candidate_rows,
+        raw_duplicate_counts,
+        bb_duplicate_counts,
+    )
 
 
 def log_report(
@@ -373,10 +417,16 @@ def log_report(
     logger.info(f"candidate rows written: {rows_written}")
     logger.info(f"output: {output}")
 
-    raw_duplicate_groups = sum(1 for count in raw_duplicate_counts.values() if count > 1)
+    raw_duplicate_groups = sum(
+        1 for count in raw_duplicate_counts.values() if count > 1
+    )
     bb_duplicate_groups = sum(1 for count in bb_duplicate_counts.values() if count > 1)
-    raw_duplicate_rows = sum(count - 1 for count in raw_duplicate_counts.values() if count > 1)
-    bb_duplicate_rows = sum(count - 1 for count in bb_duplicate_counts.values() if count > 1)
+    raw_duplicate_rows = sum(
+        count - 1 for count in raw_duplicate_counts.values() if count > 1
+    )
+    bb_duplicate_rows = sum(
+        count - 1 for count in bb_duplicate_counts.values() if count > 1
+    )
     unique_rows = rows_written - duplicate_rows
 
     logger.info(f"rows marked duplicate: {duplicate_rows}")
@@ -415,7 +465,10 @@ def main() -> int:
     root = args.root
 
     if not root.exists() or not root.is_dir():
-        print(f"error: root directory not found or not a directory: {root}", file=sys.stderr)
+        print(
+            f"error: root directory not found or not a directory: {root}",
+            file=sys.stderr,
+        )
         return 1
 
     try:
@@ -424,13 +477,19 @@ def main() -> int:
         print("error: 'objdump' command not found in PATH", file=sys.stderr)
         return 1
 
-    rows, files_seen, binaries_seen, _candidate_rows, raw_duplicate_counts, bb_duplicate_counts = collect_rows(
-        root=root
-    )
+    (
+        rows,
+        files_seen,
+        binaries_seen,
+        _candidate_rows,
+        raw_duplicate_counts,
+        bb_duplicate_counts,
+    ) = collect_rows(root=root)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
+        # Keep the generated corpus consistent with the repository's LF files.
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(
             [
                 "filepath",

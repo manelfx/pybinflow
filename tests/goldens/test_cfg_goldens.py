@@ -3,9 +3,9 @@
 How this module works:
 
 1. Test matrix
-   Pytest parametrizes over every row in `playground_functions.csv` and the two
-   supported CFG-mode configurations. That means the full suite collects
-   `2 x N` tests, where `N` is the number of CSV rows.
+   Pytest parametrizes over every row in `playground_functions.csv` and the
+   selected CFG-mode configurations. By default it uses `cfg_mode_custom`; set
+   `BINGRAPH_GOLDEN_CONFIGS` to select another configuration explicitly.
 
 2. Fresh render output
    Each test patches `get_settings()` so the app uses the requested test
@@ -113,6 +113,12 @@ CONFIGS = [
     GoldenConfig(name="cfg_mode_custom", cfg_mode="custom"),
 ]
 
+# Custom repair is the production CFG path and therefore the default golden
+# suite. Keep the other configuration available for explicit comparisons.
+DEFAULT_CONFIGS = [
+    next(config for config in CONFIGS if config.name == "cfg_mode_custom")
+]
+
 # Curated regression cases that exercise repair behavior we want to protect
 # while keeping a quick developer-facing golden suite. Configuration selection
 # remains the responsibility of BINGRAPH_GOLDEN_CONFIGS.
@@ -121,6 +127,7 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "armel,lwip_udpecho_bm.elf,0x705,__udivmoddi4.dot",
         "armel,lwip_udpecho_bm.elf,0x39f1,tcp_alloc.dot",
         "armel,lwip_udpecho_bm.elf,0x5f65,dhcp_bind.dot",
+        "armel,btrfs.ko,0x438184,btrfs_writepage_fixup_worker.dot",
         "i386,bronze_ropchain,0x8049930,plural_eval.dot",
         "i386,bronze_ropchain,0x80572f0,_IO_list_lock.dot",
         "i386,bronze_ropchain,0x805ec40,__memset_sse2.dot",
@@ -133,14 +140,13 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",
         "mipsel,mips_syscall_demo,0x401390,__libc_setup_tls.dot",
         "mipsel,mips_syscall_demo,0x420240,__gconv_db_freemem.dot",
-        # fmt: skip (line too long)
         "mipsel,btrfs-tools_btrfs-calc-size,0x4162c8,btrfs_find_block_group.isra.14.dot",
         "ppc64el,fauxware_static,0x100014a0,__libc_check_standard_fds.dot",
         "ppc64el,fauxware_static,0x1000ed70,abort.dot",
         "ppc64el,fauxware_static,0x1001e4c0,malloc_consolidate.dot",
         "ppc64el,fauxware_static,0x1003ac00,__gconv_release_step.dot",
+        "ppc,libc.so.6,0x43f300,initstate.dot",
         "riscv,server_eapp.eapp_riscv,0x1830,channel_init.dot",
-        # fmt: skip (line too long)
         "riscv,server_eapp.eapp_riscv,0x3df4,crypto_core_hsalsa20.dot",
         "riscv,server_eapp.eapp_riscv,0x4416,crypto_core_salsa.dot",
         "riscv,server_eapp.eapp_riscv,0x7e54,crypto_scalarmult_curve25519_ref10.dot",
@@ -148,8 +154,9 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "riscv,server_eapp.eapp_riscv,0xeb6c,blake2b_compress_ref.dot",
         "s390x,test-instr_s390x,0x8001d140,__gconv.dot",
         "s390x,test-instr_s390x,0x800555f8,_IO_vfscanf.dot",
+        "s390x,libc.so.6,0x48ee08,__libc_mallopt.dot",
         "x86_64,cvs,0x485f00,vasnprintf.dot",
-        # fmt: skip (line too long)
+        "x86_64,decompiler,clientloop.o,0x405f00,client_loop.dot",
         "x86_64,elf_with_static_libc_ubuntu_2004,0x445970,__memset_avx512_no_vzeroupper.dot",
         "x86_64,elf_with_static_libc_ubuntu_2004,0x48ef40,execute_stack_op.dot",
         "x86_64,langdetect_clang,0x408ce0,msort_with_tmp.part.0.dot",
@@ -160,6 +167,8 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "x86_64,langdetect_clang,0x465ee0,_dl_mcount.dot",
         "x86_64,langdetect_clang,0x4741a0,execute_cfa_program.dot",
         "x86_64,langdetect_clang,0x475e90,_Unwind_Resume_or_Rethrow.dot",
+        "x86_64,rust_hello_world,0x4207f0,_ZN3std3env11current_exe17hfb9bee2aecec296fE.dot",
+        "x86_64,libc.so.6,0x4370d0,sigwait.dot",
         "x86_64,static,0x40dc00,abort.dot",
     }
 )
@@ -436,7 +445,7 @@ def _selected_configs() -> list[GoldenConfig]:
 
     raw_configs = os.getenv(CONFIGS_ENV, "").strip()
     if not raw_configs:
-        return CONFIGS
+        return DEFAULT_CONFIGS
 
     available = {config.name: config for config in CONFIGS}
     selected_names = [name.strip() for name in raw_configs.split(",") if name.strip()]

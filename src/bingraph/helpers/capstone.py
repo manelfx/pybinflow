@@ -11,6 +11,7 @@ from capstone import (
     CsInsn,
 )
 from capstone.arm import ARM_CC_AL, ARM_CC_INVALID
+from capstone.systemz import SYSZ_INS_BC
 from capstone.x86 import X86_INS_JMP, X86_INS_LJMP
 from capstone.x86_const import X86_GRP_AVX512
 
@@ -46,11 +47,29 @@ class InsnSemantics:
     def is_jump(self) -> bool:
         """Return whether Capstone classifies this instruction as a jump."""
 
-        return CS_GRP_JUMP in self.insn.groups
+        if CS_GRP_JUMP not in self.insn.groups:
+            return False
+
+        # SystemZ's BC instruction uses its first immediate operand as a
+        # condition mask. A zero mask is an architectural no-op, even though
+        # Capstone places it in the generic jump group.
+        if self.insn.id != SYSZ_INS_BC:
+            return True
+        first_operand = self.insn.operands[0]
+        return not (
+            first_operand.type == CS_OP_IMM
+            and isinstance(first_operand.imm, int)
+            and first_operand.imm == 0
+        )
 
     def is_control_transfer(self) -> bool:
         """Return whether this instruction changes normal control flow."""
 
+        # Some architectures use a direct branch or call to the immediately
+        # following instruction as a PC-relative register setup idiom. It has
+        # side effects, but all executable paths remain linear in the CFG.
+        if self.direct_target() == self.address + self.size:
+            return False
         return self.is_ret() or self.is_call() or self.is_jump()
 
     def is_avx512(self) -> bool:

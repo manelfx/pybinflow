@@ -77,8 +77,9 @@ def list_function_symbols(project: Project) -> list[FunctionSymbol]:
         next(group) for _, group in groupby(symbols, key=lambda s: (s.addr, s.name))
     ]
 
-    # CLE often leaves function sizes unset, so infer them from the next symbol
-    # address before dropping unresolved zero-sized entries from the final list.
+    # CLE often leaves function sizes unset. Infer them from the next distinct
+    # symbol address, while keeping the inferred span inside its section. The
+    # distinct-address lookup preserves aliases that share one function entry.
     for idx, symbol in enumerate(symbols):
         if symbol.size != 0:
             continue
@@ -92,7 +93,15 @@ def list_function_symbols(project: Project) -> list[FunctionSymbol]:
             None,
         )
         if next_addr is not None:
-            symbol.size = next_addr - symbol.addr
+            inferred_size = next_addr - symbol.addr
+            find_section = getattr(
+                project.loader.main_object, "find_section_containing", None
+            )
+            section = find_section(symbol.addr) if callable(find_section) else None
+            if section is not None:
+                section_end = section.vaddr + section.memsize
+                inferred_size = min(inferred_size, section_end - symbol.addr)
+            symbol.size = inferred_size
 
     symbols = [symbol for symbol in symbols if symbol.size > 0]
 

@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 from capstone import CS_GRP_JUMP, CS_OP_IMM
+from capstone.x86 import X86_INS_UD2
 from loguru import logger
 import pyvex
 
@@ -40,6 +41,65 @@ def test_decoding_coverage_accepts_exact_capstone_span(
     )
 
 
+def test_truncated_leaf_accepts_fully_decoded_ud2_trap(monkeypatch) -> None:
+    """Accept a complete x86 ud2 trap even though VEX reports Ijk_NoDecode."""
+
+    node = SimpleNamespace(
+        addr=0x1000,
+        size=2,
+        block=SimpleNamespace(vex=SimpleNamespace(jumpkind="Ijk_NoDecode")),
+    )
+    ud2 = SimpleNamespace(address=0x1000, size=2, id=X86_INS_UD2)
+    monkeypatch.setattr(
+        anomalies.DecodedNode,
+        "from_node",
+        lambda _node: DecodedNode((ud2,)),
+    )
+
+    assert not anomalies.node_has_truncated_leaf(
+        SimpleNamespace(arch=SimpleNamespace(name="AMD64")),
+        SimpleNamespace(successors=lambda _node: (), nodes=lambda: (node,)),
+        FunctionBounds(0x1000, 0x1010, 0x10, SimpleNamespace(name="f")),
+        0x1000,
+        node,
+    )
+
+
+def test_truncated_leaf_keeps_non_trap_nodecode_blocks_repairable(monkeypatch) -> None:
+    """Do not treat every fully decoded Ijk_NoDecode node as a valid leaf."""
+
+    node = SimpleNamespace(
+        addr=0x1000,
+        size=2,
+        block=SimpleNamespace(vex=SimpleNamespace(jumpkind="Ijk_NoDecode")),
+        function_address=0x1000,
+        is_simprocedure=False,
+    )
+    later_node = SimpleNamespace(
+        addr=0x1002,
+        function_address=0x1000,
+        is_simprocedure=False,
+    )
+    ordinary_insn = SimpleNamespace(address=0x1000, size=2, id=None, groups=())
+    monkeypatch.setattr(
+        anomalies.DecodedNode,
+        "from_node",
+        lambda _node: DecodedNode((ordinary_insn,)),
+    )
+    monkeypatch.setattr(anomalies, "_can_decode_block_at", lambda *_args: True)
+
+    assert anomalies.node_has_truncated_leaf(
+        SimpleNamespace(arch=SimpleNamespace(name="AMD64")),
+        SimpleNamespace(
+            successors=lambda _node: (),
+            nodes=lambda: (node, later_node),
+        ),
+        FunctionBounds(0x1000, 0x1010, 0x10, SimpleNamespace(name="f")),
+        0x1000,
+        node,
+    )
+
+
 def test_anomaly_detector_logs_each_kind_and_address_once() -> None:
     """Suppress repeated warnings while retaining distinct anomaly categories."""
 
@@ -59,6 +119,121 @@ def test_anomaly_detector_logs_each_kind_and_address_once() -> None:
         logger.remove(sink_id)
 
     assert messages == ["coverage warning\n", "jump warning\n"]
+
+
+def test_terminal_vex_node_with_successor_needs_repair() -> None:
+    """Reject CFGFast's stale fallthrough after a VEX-level return."""
+
+    node = SimpleNamespace(
+        addr=0x1000,
+        block=SimpleNamespace(vex=SimpleNamespace(jumpkind="Ijk_Ret")),
+    )
+    successor = SimpleNamespace(addr=0x1004)
+    graph = SimpleNamespace(
+        successors=lambda candidate: (successor,) if candidate is node else ()
+    )
+
+    assert anomalies._terminal_successor_anomaly(graph, node) == CFGAnomaly(
+        "terminal_successor",
+        0x1000,
+        "Node 0x1000 has terminal VEX jumpkind Ijk_Ret but retains "
+        "successor(s): 0x1004",
+    )
+
+
+def test_terminal_vex_node_keeps_conditional_return_fallthrough() -> None:
+    """Keep the explicit not-taken path of a conditional return instruction."""
+
+    successor = SimpleNamespace(addr=0x1004)
+    node = SimpleNamespace(
+        addr=0x1000,
+        size=4,
+        block=SimpleNamespace(
+            vex=SimpleNamespace(
+                jumpkind="Ijk_Ret",
+                exit_statements=(
+                    (
+                        0x1000,
+                        0,
+                        SimpleNamespace(
+                            jumpkind="Ijk_Boring",
+                            dst=SimpleNamespace(value=0x1004),
+                        ),
+                    ),
+                ),
+            )
+        ),
+    )
+    graph = SimpleNamespace(
+        successors=lambda candidate: (successor,) if candidate is node else ()
+    )
+
+    assert anomalies._terminal_successor_anomaly(graph, node) is None
+
+
+def test_terminal_vex_node_rejects_non_fallthrough_successor() -> None:
+    """Retain the stale-edge check beside a conditional return fall-through."""
+
+    fallthrough = SimpleNamespace(addr=0x1004)
+    stale_successor = SimpleNamespace(addr=0x2000)
+    node = SimpleNamespace(
+        addr=0x1000,
+        size=4,
+        block=SimpleNamespace(
+            vex=SimpleNamespace(
+                jumpkind="Ijk_Ret",
+                exit_statements=(
+                    (
+                        0x1000,
+                        0,
+                        SimpleNamespace(
+                            jumpkind="Ijk_Boring",
+                            dst=SimpleNamespace(value=0x1004),
+                        ),
+                    ),
+                ),
+            )
+        ),
+    )
+    graph = SimpleNamespace(
+        successors=lambda candidate: (
+            (fallthrough, stale_successor) if candidate is node else ()
+        )
+    )
+
+    assert anomalies._terminal_successor_anomaly(graph, node) == CFGAnomaly(
+        "terminal_successor",
+        0x1000,
+        "Node 0x1000 has terminal VEX jumpkind Ijk_Ret but retains "
+        "successor(s): 0x2000",
+    )
+
+
+def test_overlapping_instruction_entry_requires_an_external_predecessor(
+    monkeypatch,
+) -> None:
+    """Split a covering node only for an independently entered instruction."""
+
+    covering = SimpleNamespace(addr=0x1000, size=6, is_simprocedure=False)
+    entry = SimpleNamespace(addr=0x1002, size=2, is_simprocedure=False)
+    source = SimpleNamespace(addr=0x2000)
+    graph = SimpleNamespace(
+        nodes=lambda: (covering, entry),
+        predecessors=lambda node: (source,) if node is entry else (),
+    )
+    first = SimpleNamespace(address=0x1000, size=2)
+    second = SimpleNamespace(address=0x1002, size=2)
+    monkeypatch.setattr(
+        anomalies.DecodedNode,
+        "from_node",
+        lambda node: (
+            DecodedNode((first, second)) if node is covering else DecodedNode(())
+        ),
+    )
+
+    assert anomalies.overlapping_instruction_entries(graph, (covering, entry)) == (
+        (covering, (0x1002,)),
+    )
 
 
 def test_fresh_vex_target_overrides_relative_capstone_branch_operand(

@@ -12,7 +12,7 @@ from capstone import (
 )
 from capstone.arm import ARM_CC_AL, ARM_CC_INVALID
 from capstone.systemz import SYSZ_INS_BC
-from capstone.x86 import X86_INS_JMP, X86_INS_LJMP
+from capstone.x86 import X86_INS_JMP, X86_INS_LJMP, X86_INS_UD2
 from capstone.x86_const import X86_GRP_AVX512
 
 
@@ -71,6 +71,11 @@ class InsnSemantics:
         """Return whether Capstone classifies this x86 instruction as AVX-512."""
 
         return X86_GRP_AVX512 in self.insn.groups
+
+    def is_undefined_instruction_trap(self) -> bool:
+        """Return whether this is x86's intentional undefined-instruction trap."""
+
+        return self.insn.id == X86_INS_UD2
 
     def may_have_nonfallthrough_vex_semantics(self) -> bool:
         """Return whether this system instruction needs a narrow VEX check."""

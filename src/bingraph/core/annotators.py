@@ -3,7 +3,8 @@ from typing import Any
 from loguru import logger
 
 from bingraph.helpers import get_style
-from bingraph.helpers.capstone import control_transfer_index
+from bingraph.helpers.capstone import InsnSemantics, control_transfer_index
+from bingraph.cfg.recovery import vex_jumpkind_is_terminal
 from .vis import NodeAnnotator, ContentAnnotator, EdgeAnnotator, Node
 
 
@@ -228,6 +229,46 @@ def _lift_control_transfer_tail(edge, tail):
         return None
 
 
+def _capstone_folded_conditional_edge_type(edge, exit_targets: set[int]) -> str | None:
+    """Classify a direct conditional branch that VEX has constant-folded.
+
+    VEX may model a system-register read as a concrete value and eliminate a
+    later conditional branch. When CFGFast still retains both architectural
+    successors, preserve that static CFG information for presentation.
+    """
+
+    if exit_targets:
+        return None
+    tail = _control_transfer_tail(edge)
+    if tail is None:
+        return None
+    semantics = InsnSemantics(tail[0])
+    if not semantics.is_conditional_jump():
+        return None
+    target_addr = semantics.direct_target()
+    if target_addr is None:
+        return None
+    fallthrough_addr = tail[-1].address + tail[-1].size
+    # Some control-transfer instructions, such as x86 XBEGIN with a zero
+    # displacement, encode the sequential address as their only target. They
+    # do not represent a distinct taken edge in the rendered CFG.
+    if target_addr == fallthrough_addr:
+        return None
+    try:
+        successor_addrs = {
+            successor.addr for successor in edge.src.graph.successors(edge.src.obj)
+        }
+    except (AttributeError, KeyError):
+        return None
+    if {target_addr, fallthrough_addr} - successor_addrs:
+        return None
+    if edge.dst.obj.addr == target_addr:
+        return "CONDITIONAL_TRUE"
+    if edge.dst.obj.addr == fallthrough_addr:
+        return "CONDITIONAL_FALSE"
+    return None
+
+
 def _vex_boring_edge_type(edge) -> str:
     """Classify one ordinary edge from its source block's lifted terminator."""
 
@@ -248,7 +289,19 @@ def _vex_boring_edge_type(edge) -> str:
         vex = _lift_control_transfer_tail(edge, tail)
         if vex is None:
             return "UNKNOWN"
-    if vex.jumpkind != "Ijk_Boring":
+
+    if vex.jumpkind == "Ijk_Call":
+        try:
+            call_target = vex.next.con.value
+        except AttributeError:
+            return "UNKNOWN"
+        # CFGFast occasionally retains a direct call target as Ijk_Boring even
+        # though VEX identifies the source transfer as a call. Only recover
+        # the style when the edge lands at that exact lifted target.
+        return "CALL" if edge.dst.obj.addr == call_target else "UNKNOWN"
+
+    terminal_default = vex_jumpkind_is_terminal(vex.jumpkind)
+    if vex.jumpkind != "Ijk_Boring" and not terminal_default:
         return "UNKNOWN"
 
     try:
@@ -269,7 +322,22 @@ def _vex_boring_edge_type(edge) -> str:
             continue
         if isinstance(target, int):
             exit_targets.add(target)
+
+    folded_conditional_type = _capstone_folded_conditional_edge_type(edge, exit_targets)
+    if folded_conditional_type is not None:
+        return folded_conditional_type
+
     if exit_targets:
+        if terminal_default:
+            # Conditional return instructions can use a terminal default VEX
+            # jumpkind together with an explicit Ijk_Boring exit for their
+            # non-returning path. The explicit exit remains a real branch.
+            if edge.dst.obj.addr in exit_targets:
+                return "CONDITIONAL_TRUE"
+            if edge.dst.obj.addr == next_addr:
+                return "CONDITIONAL_FALSE"
+            return "UNKNOWN"
+
         fallthrough_addr = source_node.addr + source_node.size
         if (
             edge.dst.obj.addr == fallthrough_addr
@@ -317,9 +385,11 @@ def _edge_type(edge) -> str:
         return "RET"
     if jumpkind == "Ijk_FakeRet":
         return "FAKE_RET"
-    # A syscall transfers control to an OS service just like a call crosses a
-    # function boundary. Keep its explicit fake-return edge distinct below.
-    if jumpkind in {"Ijk_Call", "Ijk_Sys_syscall"}:
+    # System transfers such as x86 ``int 0x80`` cross into an OS service just
+    # like calls. Keep their explicit fake-return edges distinct below.
+    if jumpkind == "Ijk_Call" or (
+        isinstance(jumpkind, str) and jumpkind.startswith("Ijk_Sys_")
+    ):
         return "CALL"
     if jumpkind == "Ijk_Boring":
         return _vex_boring_edge_type(edge)

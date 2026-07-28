@@ -6,6 +6,7 @@ from functools import lru_cache
 
 from angr import Project
 from angr.analyses.cfg import CFGBase
+from angr.knowledge_plugins.cfg import CFGNode
 from loguru import logger
 
 from bingraph.helpers.capstone import (
@@ -468,21 +469,30 @@ def node_has_truncated_leaf(
 ) -> bool:
     """Return True when a CFG node stops before a real terminator and has no exits."""
 
+    decoded = DecodedNode.from_node(node)
+    if decoded.insns is None or decoded.is_empty:
+        return False
+
+    # VEX reports x86 ``ud2`` as Ijk_NoDecode even though Capstone decodes its
+    # complete two-byte trap encoding. Treat that intentional synchronous trap
+    # as a valid leaf, while retaining ordinary Ijk_NoDecode blocks as repair
+    # candidates.
+    last_insn = decoded.last
+    if (
+        len(decoded.insns) == 1
+        and last_insn is not None
+        and decoded.has_exact_coverage(node)
+        and InsnSemantics(last_insn).is_undefined_instruction_trap()
+    ):
+        return False
+
     try:
         if _vex_jumpkind_is_terminal(node.block.vex.jumpkind):
             return False
     except Exception:
         pass
 
-    decoded = DecodedNode.from_node(node)
-    if decoded.insns is None:
-        return False
-
-    if decoded.is_empty:
-        return False
-
     insns = list(decoded.insns)
-    last_insn = decoded.last
     if last_insn is None:
         return False
 
@@ -510,6 +520,92 @@ def node_has_truncated_leaf(
         for other in graph.nodes()
     )
     return has_later_function_node
+
+
+def _terminal_successor_anomaly(graph: CFGGraph, node) -> CFGAnomaly | None:
+    """Return an anomaly when VEX-terminal code retains a stale successor.
+
+    A conditional return can have ``Ijk_Ret`` as its default VEX jumpkind and
+    an ``Ijk_Boring`` exit to the next instruction for its not-taken path.
+    That explicit fall-through is valid; only other successors are stale.
+    """
+
+    try:
+        vex = node.block.vex
+        jumpkind = vex.jumpkind
+    except Exception:
+        return None
+
+    if not _vex_jumpkind_is_terminal(jumpkind):
+        return None
+
+    allowed_successor_addrs = {
+        target
+        for _, _, stmt in getattr(vex, "exit_statements", ())
+        if getattr(stmt, "jumpkind", None) == "Ijk_Boring"
+        if isinstance(target := getattr(getattr(stmt, "dst", None), "value", None), int)
+        if target == _node_range_end(node)
+    }
+    successors = tuple(
+        successor
+        for successor in graph.successors(node)
+        if successor.addr not in allowed_successor_addrs
+    )
+    if not successors:
+        return None
+
+    targets = ", ".join(f"{successor.addr:#x}" for successor in successors)
+    return CFGAnomaly(
+        "terminal_successor",
+        node.addr,
+        f"Node {node.addr:#x} has terminal VEX jumpkind {jumpkind} "
+        f"but retains successor(s): {targets}",
+    )
+
+
+def overlapping_instruction_entries(
+    graph: CFGGraph, nodes: tuple[CFGNode, ...]
+) -> tuple[tuple[CFGNode, tuple[int, ...]], ...]:
+    """Return independently entered instruction starts covered by each node.
+
+    CFGFast can retain a large linear node while also creating a separate node
+    at an instruction it discovered through another path. The latter address
+    must become a block leader when the covering node is repaired; otherwise
+    the instruction is rendered twice. Entries inside an instruction are
+    intentionally excluded because they can represent valid alternate x86 or
+    Thumb instruction streams.
+    """
+
+    materialized_nodes = tuple(
+        node
+        for node in nodes
+        if not _node_is_simprocedure(node) and not _node_is_placeholder(node)
+    )
+    nodes_by_addr: dict[int, list[CFGNode]] = {}
+    for node in materialized_nodes:
+        nodes_by_addr.setdefault(node.addr, []).append(node)
+
+    overlaps: list[tuple[CFGNode, tuple[int, ...]]] = []
+    for node in materialized_nodes:
+        decoded = DecodedNode.from_node(node)
+        if decoded.insns is None:
+            continue
+
+        node_end = _node_range_end(node)
+        starts = {
+            candidate.addr
+            for insn in decoded.insns
+            if node.addr < insn.address < node_end
+            for candidate in nodes_by_addr.get(insn.address, ())
+            if candidate is not node
+            and any(
+                predecessor is not node for predecessor in graph.predecessors(candidate)
+            )
+        }
+        if starts:
+            overlaps.append((node, tuple(sorted(starts))))
+
+    return tuple(overlaps)
 
 
 def node_has_foreign_function_owner(
@@ -573,6 +669,15 @@ class CFGAnomalyDetector:
         anomaly = _missing_jump_successor_anomaly(
             self.project, self.graph, self.bounds, node
         )
+        if anomaly is None:
+            return False
+        self._report(anomaly)
+        return True
+
+    def check_terminal_successor(self, node) -> bool:
+        """Check that a terminal VEX node has no stale CFG successor."""
+
+        anomaly = _terminal_successor_anomaly(self.graph, node)
         if anomaly is None:
             return False
         self._report(anomaly)
@@ -646,6 +751,7 @@ class CFGAnomalyDetector:
             or node_has_truncated_leaf(
                 self.project, self.graph, self.bounds, self.func_addr, node
             )
+            or self.check_terminal_successor(node)
             or self.check_missing_jump_successor(node)
             or self.check_missing_call_fallthrough(node)
             or self.check_missing_linear_fallthrough(node)

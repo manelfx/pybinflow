@@ -863,3 +863,33 @@ def test_requeue_preserves_merged_claims_and_reconciliation_action() -> None:
     assert pending.reasons == {"first, second"}
     assert pending.edge_claims == obligation.edge_claims
     assert pending.preserve_exact_addr
+
+
+def test_splice_drops_removed_alternate_mode_stream_edge() -> None:
+    """Do not rewire a stale Thumb stream into an overlapping ARM block."""
+
+    session = _bare_session()
+    thumb_source = cast(CFGNode, SimpleNamespace(thumb=True))
+    thumb_target = cast(CFGNode, SimpleNamespace(thumb=True))
+    arm_source = cast(CFGNode, SimpleNamespace(thumb=False))
+    session.graph = SimpleNamespace(predecessors=lambda _node: (thumb_source,))
+
+    assert not session._rewire_incoming_overlap_edge(thumb_source, thumb_target, False)
+    assert session._rewire_incoming_overlap_edge(arm_source, thumb_target, False)
+
+    session.graph = SimpleNamespace(
+        predecessors=lambda _node: (thumb_source, arm_source)
+    )
+    assert session._rewire_incoming_overlap_edge(thumb_source, thumb_target, False)
+
+    unresolved = cast(
+        CFGNode,
+        SimpleNamespace(
+            is_simprocedure=True,
+            simprocedure_name="UnresolvableJumpTarget",
+        ),
+    )
+    session.graph = SimpleNamespace(
+        predecessors=lambda _node: (thumb_source, unresolved)
+    )
+    assert session._rewire_incoming_overlap_edge(thumb_source, thumb_target, False)

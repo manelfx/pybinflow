@@ -140,6 +140,7 @@ from .anomalies import (
     _iter_seed_function_nodes,
     _lookup_function_bounds,
     node_has_linear_merge_successor,
+    overlapping_instruction_entries,
 )
 from .jumps import (
     _constant_register_from_predecessors,
@@ -329,7 +330,7 @@ class _RepairSession:
         """
 
         return node in self.repaired_nodes or self.anomalies.node_is_acceptable(
-            self._explicit_split_starts(),
+            self._forced_split_starts(),
             node,
         )
 
@@ -367,7 +368,7 @@ class _RepairSession:
             return False
 
         if {node.addr, block.addr} & (
-            self._explicit_split_starts() | self._overlapping_entry_starts
+            self._forced_split_starts() | self._overlapping_entry_starts
         ):
             return True
 
@@ -873,10 +874,30 @@ class _RepairSession:
 
         return _seed_graph_direct_targets(self.graph, node), None
 
-    def _explicit_split_starts(self) -> set[int]:
-        """Return leaders created by a requested split through an old node."""
+    def _forced_split_starts(self) -> set[int]:
+        """Return leaders created to split through stale seed-node coverage."""
 
-        return self.leaders.starts_with_reason("explicit_split")
+        return self.leaders.starts_with_reason(
+            "explicit_split"
+        ) | self.leaders.starts_with_reason("overlapping_instruction_entry")
+
+    def _register_overlapping_instruction_entries(self) -> set[int]:
+        """Mark separately entered instructions as leaders before recovery."""
+
+        repairs: set[int] = set()
+        changed = False
+        nodes = tuple(
+            node for node in self._bound_nodes() if _node_is_materialized_cfg_node(node)
+        )
+        for node, entry_addrs in overlapping_instruction_entries(self.graph, nodes):
+            for entry_addr in entry_addrs:
+                if self.leaders.add(entry_addr, "overlapping_instruction_entry"):
+                    changed = True
+            repairs.add(node.addr)
+
+        if changed:
+            self._note_mutation()
+        return repairs
 
     def ensure_block_entry(
         self,
@@ -988,6 +1009,56 @@ class _RepairSession:
             return bool(self.project.arch.is_thumb(addr))
         except AttributeError:
             return False
+
+    def _block_execution_mode(self, node: CFGNode) -> bool | None:
+        """Return an ARM/Thumb mode tag when the CFG node exposes one."""
+
+        mode = getattr(node, "thumb", None)
+        return mode if isinstance(mode, bool) else None
+
+    def _recovered_execution_mode(self, block: BlockSpec) -> bool | None:
+        """Return the replacement block's ARM/Thumb tag, when applicable."""
+
+        is_thumb = getattr(self.project.arch, "is_thumb", None)
+        return bool(is_thumb(block.addr)) if callable(is_thumb) else None
+
+    def _rewire_incoming_overlap_edge(
+        self,
+        source: CFGNode,
+        target: CFGNode,
+        recovered_mode: bool | None,
+    ) -> bool:
+        """Return whether an incoming edge belongs to the recovered stream.
+
+        A removable alternate-mode node can have one predecessor from the same
+        false instruction stream. Rewiring that isolated edge to an overlapping
+        ARM replacement invents a cross-mode path and lets the stale stream
+        queue itself forever. If another predecessor also reaches the overlap,
+        keep the existing splice behavior: that competing ownership may be a
+        valid shared stream that this local replacement cannot disprove.
+        """
+
+        source_mode = self._block_execution_mode(source)
+        target_mode = self._block_execution_mode(target)
+        alternate_stream_edge = (
+            recovered_mode is not None
+            and source_mode is not None
+            and source_mode == target_mode
+            and source_mode != recovered_mode
+        )
+        if not alternate_stream_edge:
+            return True
+        if any(
+            _is_unresolvable_jump_target(predecessor)
+            for predecessor in self.graph.predecessors(target)
+        ):
+            # An unresolved indirect jump explicitly retains this stream as a
+            # candidate target. Its incoming alternate-mode edge may provide
+            # the evidence needed to preserve the overlapping entry.
+            return True
+        return any(
+            predecessor is not source for predecessor in self.graph.predecessors(target)
+        )
 
     def _resolve_covering_entry(
         self,
@@ -1156,7 +1227,7 @@ class _RepairSession:
                 node
                 for node in nodes
                 if self.anomalies.node_is_acceptable(
-                    self._explicit_split_starts(),
+                    self._forced_split_starts(),
                     node,
                 )
             ),
@@ -1465,10 +1536,13 @@ class _RepairSession:
             )
         )
 
+        recovered_mode = self._recovered_execution_mode(block)
         incoming_edges = [
             (src, dst, dict(data))
             for src, dst, data in list(self.graph.edges(data=True))
-            if dst in removed_set and src not in removed_set
+            if dst in removed_set
+            and src not in removed_set
+            and self._rewire_incoming_overlap_edge(src, dst, recovered_mode)
         ]
         unresolved_jump_edges = [
             (dst, data.get("jumpkind", "Ijk_Boring"))
@@ -1505,7 +1579,7 @@ class _RepairSession:
             if pred in self.repaired_nodes:
                 continue
             if not self.anomalies.node_is_acceptable(
-                self._explicit_split_starts(),
+                self._forced_split_starts(),
                 pred,
             ):
                 continue
@@ -1699,6 +1773,7 @@ class _RepairSession:
             for node in _iter_seed_function_nodes(self.seed_cfg, self.func_addr)
             if self.anomalies.node_needs_repair(node)
         }
+        seed_anomalies.update(self._register_overlapping_instruction_entries())
         ownership_boundaries = {
             node.addr
             for node in self._bound_nodes()
@@ -1756,7 +1831,7 @@ class _RepairSession:
             if node.addr != addr and not _node_is_placeholder(node)
         ]
         if covering_nodes and addr not in self._overlapping_entry_starts:
-            if addr in self._explicit_split_starts():
+            if addr in self._forced_split_starts():
                 # Another node still covers this forced split point. Requeue
                 # both the covering node and the split address so the target
                 # is revisited after the prefix block gets truncated.
@@ -1840,7 +1915,10 @@ class _RepairSession:
             resolved_tables += self._resolve_static_jump_tables()
 
             cleanup_changed = self._cleanup()
-            remaining_bad_addrs = self._anomalous_addrs()
+            overlap_repair_addrs = self._register_overlapping_instruction_entries()
+            remaining_bad_addrs = sorted(
+                set(self._anomalous_addrs()) | overlap_repair_addrs
+            )
             if not remaining_bad_addrs:
                 break
             if not cleanup_changed:

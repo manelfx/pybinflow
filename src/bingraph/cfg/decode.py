@@ -30,8 +30,26 @@ def decode_raw_capstone_insns(
     """Decode bytes directly through the project's architecture Capstone engine."""
 
     try:
-        data = project.loader.memory.load(addr, size)
-        return tuple(project.arch.capstone.disasm(data, addr, count=count))
+        arch = project.arch
+        try:
+            is_thumb = arch.is_thumb(addr)
+        except AttributeError:
+            is_thumb = False
+
+        # ARM/Thumb stores the execution mode in address bit 0. Read bytes at
+        # the physical address, while preserving the tagged address in output.
+        # ``capstone_thumb`` is an ARM-specific extension not declared on the
+        # base archinfo ``Arch`` type.
+        thumb_capstone = getattr(arch, "capstone_thumb", None)
+
+        if is_thumb and thumb_capstone is not None:
+            capstone = thumb_capstone
+            memory_addr = addr & ~1
+        else:
+            capstone = arch.capstone
+            memory_addr = addr
+        data = project.loader.memory.load(memory_addr, size)
+        return tuple(capstone.disasm(data, addr, count=count))
     except Exception:
         return ()
 
@@ -54,6 +72,22 @@ def decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
 
     fallback_insns = decode_raw_capstone_insns(project, addr, size, count=1)
     return fallback_insns[0] if fallback_insns else None
+
+
+def is_post_prefix_instruction_entry(insn: CsInsn, addr: int) -> bool:
+    """Return whether ``addr`` enters immediately after all instruction prefixes.
+
+    Some x86 binaries deliberately branch after an instruction prefix, such as
+    ``LOCK``. The remaining opcode bytes form a valid alternate instruction
+    stream, unlike arbitrary entries into the middle of an instruction.
+    """
+
+    prefix_size = sum(1 for prefix in getattr(insn, "prefix", ()) if prefix)
+    return (
+        prefix_size > 0
+        and addr == insn.address + prefix_size
+        and addr < insn.address + insn.size
+    )
 
 
 def lift_instruction_vex(project: Project, insn: CsInsn):

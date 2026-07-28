@@ -26,6 +26,8 @@ def _bare_session() -> cfg_module._RepairSession:
     session.queue = deque()
     session.pending = {}
     session.leaders = models_module.BlockLeaderRegistry({})
+    session._overlapping_entry_starts = set()
+    session._deferred_unresolved_control_edges = {}
     session.mutation_revision = 0
     session.last_requeue_states = {}
     session.stats = models_module.CustomCFGStats()
@@ -37,6 +39,7 @@ def _bare_session() -> cfg_module._RepairSession:
         SimpleNamespace(addr=0x1000, end_addr=0x2000),
     )
     session.graph = object()
+    session.project = SimpleNamespace(arch=SimpleNamespace(is_thumb=lambda addr: False))
     return session
 
 
@@ -312,6 +315,32 @@ def test_unresolved_fallback_drops_padding_before_a_reachable_successor() -> Non
     assert not session.graph.has_edge(fallback, target)
 
 
+def test_unresolved_fallback_skips_disconnected_alternate_mode_nodes() -> None:
+    """Avoid treating a disconnected alternate decode stream as a jump target."""
+
+    session = _bare_session()
+    fallback = _source_node(0x601050)
+    fallback.is_simprocedure = True
+    fallback.simprocedure_name = "UnresolvableJumpTarget"
+    entry = _source_node(0x1000)
+    entry.size = 1
+    entry.thumb = False
+    same_mode = _source_node(0x1100)
+    same_mode.size = 1
+    same_mode.thumb = False
+    alternate_mode = _source_node(0x1201)
+    alternate_mode.size = 1
+    alternate_mode.thumb = True
+    session.graph = nx.DiGraph()
+    session.graph.add_node(entry)
+    session._unresolved_jump_fallback_nodes = lambda: [fallback]
+    session._disconnected_function_nodes = lambda: [same_mode, alternate_mode]
+
+    assert session._attach_unresolved_jump_fallbacks()
+    assert session.graph.has_edge(fallback, same_mode)
+    assert not session.graph.has_edge(fallback, alternate_mode)
+
+
 def test_immediate_entry_downgrades_to_queued_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -330,6 +359,11 @@ def test_immediate_entry_downgrades_to_queued_work(
     placeholder = cast(CFGNode, object())
     queued: list[cfg_module.RepairObligation] = []
 
+    monkeypatch.setattr(
+        session,
+        "_recovered_coverage_has_live_predecessor",
+        lambda addr: False,
+    )
     monkeypatch.setattr(session, "_recover_entry_now", lambda obligation: None)
     monkeypatch.setattr(session, "_resolve_covering_entry", lambda obligation: None)
     monkeypatch.setattr(session, "_nodes_at_addr", lambda addr: [])
@@ -361,7 +395,13 @@ def test_immediate_entry_returns_a_recovered_node_without_queuing(
     )
     recovered = cast(CFGNode, object())
 
+    monkeypatch.setattr(
+        session,
+        "_recovered_coverage_has_live_predecessor",
+        lambda addr: False,
+    )
     monkeypatch.setattr(session, "_recover_entry_now", lambda obligation: recovered)
+    monkeypatch.setattr(session, "_resolve_covering_entry", lambda obligation: None)
     monkeypatch.setattr(
         session,
         "_claim_placeholder",
@@ -371,6 +411,147 @@ def test_immediate_entry_returns_a_recovered_node_without_queuing(
     assert session.ensure_block_entry(request) is recovered
     assert not session.pending
     assert not session.queue
+
+
+def test_immediate_covered_entry_queues_the_split_before_local_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Split a covering block before immediately decoding an interior target."""
+
+    session = _bare_session()
+    request = cfg_module.RepairObligation(
+        addr=0x1208,
+        reason="missing_successor",
+        preserve_exact_addr=True,
+        resolution_policy="immediate",
+    )
+    placeholder = cast(CFGNode, object())
+    covering_requests: list[cfg_module.RepairObligation] = []
+
+    def resolve_covering(obligation: cfg_module.RepairObligation) -> CFGNode:
+        covering_requests.append(obligation)
+        return placeholder
+
+    monkeypatch.setattr(
+        session,
+        "_recovered_coverage_has_live_predecessor",
+        lambda addr: True,
+    )
+    monkeypatch.setattr(session, "_resolve_covering_entry", resolve_covering)
+    monkeypatch.setattr(
+        session,
+        "_recover_entry_now",
+        lambda obligation: pytest.fail("covered target bypassed split handling"),
+    )
+
+    assert session.ensure_block_entry(request) is placeholder
+    assert covering_requests == [
+        cfg_module.RepairObligation(
+            addr=0x1208,
+            reason="missing_successor",
+            preserve_exact_addr=True,
+        )
+    ]
+
+
+def test_recovered_coverage_requires_a_valid_predecessor_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Protect a recovered covering block only when an edge must enter it."""
+
+    session = _bare_session()
+    predecessor = _source_node(0x1100)
+    covering_node = _source_node(0x1200)
+    session.graph = nx.DiGraph([(predecessor, covering_node)])
+    session.project = SimpleNamespace(arch=SimpleNamespace(max_inst_bytes=16))
+    session.recovered_blocks = {
+        covering_node: cfg_module.BlockSpec(
+            addr=0x1200,
+            size=16,
+            instruction_addrs=(0x1200,),
+            jumpkind="Ijk_Boring",
+        )
+    }
+    monkeypatch.setattr(session, "_covering_nodes", lambda addr: [covering_node])
+    monkeypatch.setattr(cfg_module, "_decode_one", lambda *_args: None)
+    monkeypatch.setattr(
+        session,
+        "_preserved_successor_starts",
+        lambda node: ((covering_node.addr,), None),
+    )
+
+    assert session._recovered_coverage_has_live_predecessor(0x1208)
+
+    monkeypatch.setattr(
+        session,
+        "_preserved_successor_starts",
+        lambda node: ((0x1208,), None),
+    )
+    assert not session._recovered_coverage_has_live_predecessor(0x1208)
+
+
+def test_post_prefix_target_does_not_protect_recovered_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Allow a valid branch after a prefix to replace recovered coverage."""
+
+    session = _bare_session()
+    session.project = SimpleNamespace(arch=SimpleNamespace(max_inst_bytes=16))
+    predecessor = _source_node(0x1100)
+    covering_node = _source_node(0x1200)
+    session.graph = nx.DiGraph([(predecessor, covering_node)])
+    session.recovered_blocks = {
+        covering_node: cfg_module.BlockSpec(
+            addr=0x1200,
+            size=3,
+            instruction_addrs=(0x1200,),
+            jumpkind="Ijk_Boring",
+        )
+    }
+    monkeypatch.setattr(session, "_covering_nodes", lambda addr: [covering_node])
+    monkeypatch.setattr(
+        session,
+        "_preserved_successor_starts",
+        lambda node: ((covering_node.addr,), None),
+    )
+    monkeypatch.setattr(
+        cfg_module,
+        "_decode_one",
+        lambda *_args: SimpleNamespace(
+            address=0x1200,
+            size=3,
+            prefix=(0xF0, 0, 0, 0),
+        ),
+    )
+
+    assert not session._recovered_coverage_has_live_predecessor(0x1201)
+
+
+def test_linear_split_defers_unresolved_call_edge_to_the_call_suffix() -> None:
+    """Keep an indirect-call leaf while splitting off a linear prefix block."""
+
+    session = _bare_session()
+    unresolved_target = _source_node(0x601050)
+    edge = (unresolved_target, "Ijk_Call")
+    prefix = cfg_module.BlockSpec(
+        addr=0x1100,
+        size=4,
+        instruction_addrs=(0x1100,),
+        jumpkind="Ijk_Fallthrough",
+        fallthrough_addr=0x1104,
+    )
+    suffix = cfg_module.BlockSpec(
+        addr=0x1104,
+        size=4,
+        instruction_addrs=(0x1104,),
+        jumpkind="Ijk_Call",
+        fallthrough_addr=0x1108,
+    )
+
+    assert session._route_unresolved_control_edges(prefix, [edge]) == []
+    assert session._deferred_unresolved_control_edges == {0x1104: [edge]}
+    assert session._route_unresolved_control_edges(suffix, []) == [edge]
+    assert not session._deferred_unresolved_control_edges
 
 
 def test_covered_entry_queues_covering_repair_before_split_target(
@@ -409,7 +590,7 @@ def test_covered_entry_queues_covering_repair_before_split_target(
     ]
 
 
-def test_mid_instruction_entry_preserves_a_valid_covering_node_without_a_split(
+def test_nonexact_mid_instruction_entry_preserves_a_valid_covering_node(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Do not create or repair a synthetic leader inside a valid instruction."""
@@ -419,7 +600,6 @@ def test_mid_instruction_entry_preserves_a_valid_covering_node_without_a_split(
     request = cfg_module.RepairObligation(
         addr=0x1108,
         reason="invalid_mid_instruction_target",
-        preserve_exact_addr=True,
     )
     queued: list[cfg_module.RepairObligation] = []
 
@@ -439,6 +619,65 @@ def test_mid_instruction_entry_preserves_a_valid_covering_node_without_a_split(
 
     assert session._resolve_covering_entry(request) is covering_node
     assert session.leaders.starts_with_reason("explicit_split") == set()
+    assert queued == []
+
+
+def test_exact_thumb_mid_instruction_entry_queues_an_overlapping_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep a VEX-derived direct target as an alternate instruction stream."""
+
+    session = _bare_session()
+    source = _source_node()
+    covering_node = cast(CFGNode, SimpleNamespace(addr=0x1100, size=16))
+    request = cfg_module.RepairObligation(
+        addr=0x1108,
+        reason="direct_target",
+        source_node=source,
+        preserve_exact_addr=True,
+    )
+    placeholder = cast(CFGNode, object())
+    queued: list[cfg_module.RepairObligation] = []
+
+    monkeypatch.setattr(session, "_covering_nodes", lambda addr: [covering_node])
+    monkeypatch.setattr(cfg_module, "_addr_is_mid_instruction_start", lambda *_: True)
+    monkeypatch.setattr(session, "_is_thumb_entry", lambda addr: True)
+    monkeypatch.setattr(session, "_is_preservable_seed_node", lambda node: True)
+    monkeypatch.setattr(session, "_claim_placeholder", lambda obligation: placeholder)
+    monkeypatch.setattr(session, "_queue_if_needed", queued.append)
+
+    assert session._resolve_covering_entry(request) is placeholder
+    assert session._overlapping_entry_starts == {0x1108}
+    assert session.leaders.starts_with_reason("explicit_split") == set()
+    assert queued == [request]
+
+
+def test_exact_nonthumb_mid_instruction_entry_preserves_covering_node(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject a malformed non-Thumb direct target inside one instruction."""
+
+    session = _bare_session()
+    covering_node = cast(CFGNode, SimpleNamespace(addr=0x1100, size=16))
+    request = cfg_module.RepairObligation(
+        addr=0x1108,
+        reason="direct_target",
+        preserve_exact_addr=True,
+    )
+    queued: list[cfg_module.RepairObligation] = []
+
+    monkeypatch.setattr(session, "_covering_nodes", lambda addr: [covering_node])
+    monkeypatch.setattr(cfg_module, "_addr_is_mid_instruction_start", lambda *_: True)
+    monkeypatch.setattr(session, "_is_preservable_seed_node", lambda node: True)
+    monkeypatch.setattr(session, "_queue_if_needed", queued.append)
+    monkeypatch.setattr(
+        session,
+        "_claim_placeholder",
+        lambda obligation: pytest.fail("non-Thumb target created a placeholder"),
+    )
+
+    assert session._resolve_covering_entry(request) is covering_node
+    assert session._overlapping_entry_starts == set()
     assert queued == []
 
 

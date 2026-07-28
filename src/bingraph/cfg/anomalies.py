@@ -159,6 +159,43 @@ def _can_decode_block_at(project: Project, bounds: FunctionBounds, addr: int) ->
 
 
 @lru_cache(maxsize=10_000)
+def _has_complete_capstone_block_at_cached(
+    project: Project,
+    start_addr: int,
+    end_addr: int,
+    addr: int,
+) -> bool:
+    """Return whether Capstone reaches a block boundary from ``addr``."""
+
+    if not start_addr <= addr < end_addr:
+        return False
+
+    current_addr = addr
+    while current_addr < end_addr:
+        max_bytes = min(
+            getattr(project.arch, "max_inst_bytes", 16), end_addr - current_addr
+        )
+        insn = decode_one(project, current_addr, max_bytes)
+        if insn is None:
+            return False
+        current_addr += insn.size
+        if InsnSemantics(insn).is_control_transfer():
+            return True
+
+    return current_addr == end_addr
+
+
+def _has_complete_capstone_block_at(
+    project: Project, bounds: FunctionBounds, addr: int
+) -> bool:
+    """Return whether a fake-return continuation reaches executable boundary."""
+
+    return _has_complete_capstone_block_at_cached(
+        project, bounds.addr, bounds.end_addr, addr
+    )
+
+
+@lru_cache(maxsize=10_000)
 def _raw_capstone_avx512_vex_decode_gap_at(project: Project, addr: int) -> bool:
     """Return whether an AVX-512 instruction is decodable only by Capstone."""
 
@@ -216,11 +253,11 @@ def _missing_call_fallthrough_anomaly(
     fallthrough_addr = _call_fallthrough_addr(project, bounds, next_addr)
     if fallthrough_addr is None:
         return None
-    # Preserve CFGFast's existing guard for continuations that remain in this
-    # symbol's range. Symbol-size inference can include non-code metadata, so
-    # only the new cross-function case may bypass this decodeability probe.
-    if bounds.addr <= next_addr < bounds.end_addr and not _can_decode_block_at(
-        project, bounds, next_addr
+    # Symbol-size inference can include literal pools. Require Capstone to
+    # reach a complete block boundary before adding a call continuation.
+    if (
+        bounds.addr <= next_addr < bounds.end_addr
+        and not _has_complete_capstone_block_at(project, bounds, next_addr)
     ):
         return None
 
@@ -261,7 +298,10 @@ def _missing_linear_fallthrough_anomaly(
     decoded = DecodedNode.from_node(node)
     if decoded.is_empty or decoded.insns is None:
         return None
-    if control_transfer_index(project.arch.name, list(decoded.insns)) is not None:
+    if (
+        control_transfer_index(project.arch.name, list(decoded.insns), strict=False)
+        is not None
+    ):
         return None
 
     fallthrough_addr = _node_range_end(node)
@@ -335,7 +375,10 @@ def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
     # On MIPS the final instruction may be the delay slot. Look for the
     # effective terminator instead of treating that trailing instruction as a
     # straight-line fallthrough.
-    if control_transfer_index(node.block.arch.name, list(insns)) is not None:
+    if (
+        control_transfer_index(node.block.arch.name, list(insns), strict=False)
+        is not None
+    ):
         return False
 
     return True
@@ -446,7 +489,7 @@ def node_has_truncated_leaf(
     # MIPS executes one delay-slot instruction after a branch. The final
     # instruction can therefore be ordinary arithmetic even though the block
     # already has a real control transfer and is not a truncated leaf.
-    if control_transfer_index(project.arch.name, insns) is not None:
+    if control_transfer_index(project.arch.name, insns, strict=False) is not None:
         return False
 
     last = InsnSemantics(last_insn)

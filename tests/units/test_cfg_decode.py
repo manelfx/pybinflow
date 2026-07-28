@@ -2,7 +2,11 @@
 
 from types import SimpleNamespace
 
-from bingraph.cfg.decode import DecodedNode
+from bingraph.cfg.decode import (
+    DecodedNode,
+    decode_raw_capstone_insns,
+    is_post_prefix_instruction_entry,
+)
 
 
 def _insn(addr: int, size: int) -> SimpleNamespace:
@@ -31,6 +35,16 @@ def test_decoded_node_rejects_a_gap_or_trailing_bytes() -> None:
         node
     )
     assert not DecodedNode((_insn(0x1000, 2),)).has_exact_coverage(node)
+
+
+def test_post_prefix_entry_is_a_valid_alternate_instruction_stream() -> None:
+    """Accept only the byte directly after all leading instruction prefixes."""
+
+    instruction = SimpleNamespace(address=0x1000, size=3, prefix=(0xF0, 0, 0, 0))
+
+    assert is_post_prefix_instruction_entry(instruction, 0x1001)
+    assert not is_post_prefix_instruction_entry(instruction, 0x1000)
+    assert not is_post_prefix_instruction_entry(instruction, 0x1002)
 
 
 def test_decoded_node_handles_missing_capstone_inspection() -> None:
@@ -67,6 +81,34 @@ def test_decoded_node_falls_back_to_raw_capstone_when_vex_stops() -> None:
     )
 
     assert DecodedNode.from_node(node).insns == (instruction,)
+
+
+def test_raw_decode_uses_thumb_mode_and_untagged_memory_address() -> None:
+    """Respect ARM's tagged Thumb addresses when raw decoding is required."""
+
+    instruction = _insn(0x1001, 2)
+    memory_reads: list[tuple[int, int]] = []
+    thumb_calls: list[tuple[bytes, int, int]] = []
+    project = SimpleNamespace(
+        loader=SimpleNamespace(
+            memory=SimpleNamespace(
+                load=lambda addr, size: memory_reads.append((addr, size)) or b"\x00\x00"
+            )
+        ),
+        arch=SimpleNamespace(
+            is_thumb=lambda _addr: True,
+            capstone=SimpleNamespace(disasm=lambda *_args, **_kwargs: ()),
+            capstone_thumb=SimpleNamespace(
+                disasm=lambda data, addr, *, count: (
+                    thumb_calls.append((data, addr, count)) or [instruction]
+                )
+            ),
+        ),
+    )
+
+    assert decode_raw_capstone_insns(project, 0x1001, 2) == (instruction,)
+    assert memory_reads == [(0x1000, 2)]
+    assert thumb_calls == [(b"\x00\x00", 0x1001, 0)]
 
 
 def test_decoded_node_caches_one_live_node_inspection() -> None:

@@ -234,3 +234,39 @@ def test_inner_call_does_not_require_a_fake_return(
         anomalies._missing_call_fallthrough_anomaly(project, graph, bounds, node)
         is None
     )
+
+
+def test_call_fallthrough_requires_a_complete_capstone_continuation(
+    monkeypatch,
+) -> None:
+    """Reject partial data decoding but retain a Capstone-only control transfer."""
+
+    partial = SimpleNamespace(address=0x1004, size=2, control_transfer=False)
+    transfer = SimpleNamespace(address=0x1004, size=2, control_transfer=True)
+
+    class Project:
+        """Provide a hashable mapping of continuation instructions."""
+
+        arch = SimpleNamespace(max_inst_bytes=16)
+
+        def __init__(self, insns) -> None:
+            self.insns = insns
+
+    bounds = FunctionBounds(0x1000, 0x1010, 0x10, SimpleNamespace(name="f"))
+    monkeypatch.setattr(
+        anomalies,
+        "decode_one",
+        lambda project, addr, _size: project.insns.get(addr),
+    )
+    monkeypatch.setattr(
+        anomalies,
+        "InsnSemantics",
+        lambda insn: SimpleNamespace(is_control_transfer=lambda: insn.control_transfer),
+    )
+
+    assert not anomalies._has_complete_capstone_block_at(
+        Project({0x1004: partial}), bounds, 0x1004
+    )
+    assert anomalies._has_complete_capstone_block_at(
+        Project({0x1004: transfer}), bounds, 0x1004
+    )

@@ -65,11 +65,6 @@ class InsnSemantics:
     def is_control_transfer(self) -> bool:
         """Return whether this instruction changes normal control flow."""
 
-        # Some architectures use a direct branch or call to the immediately
-        # following instruction as a PC-relative register setup idiom. It has
-        # side effects, but all executable paths remain linear in the CFG.
-        if self.direct_target() == self.address + self.size:
-            return False
         return self.is_ret() or self.is_call() or self.is_jump()
 
     def is_avx512(self) -> bool:
@@ -127,15 +122,23 @@ def arch_has_delay_slot(arch_name: str) -> bool:
     return arch_name in {"MIPS32", "MIPS64"}
 
 
-def control_transfer_index(arch_name: str, insns: list[CsInsn]) -> int | None:
-    """Return the effective control-transfer index, accounting for delay slots."""
+def control_transfer_index(
+    arch_name: str, insns: list[CsInsn], *, strict: bool = True
+) -> int | None:
+    """Return the effective control-transfer index, accounting for delay slots.
+
+    ``strict=False`` permits inspection of CFGFast seed blocks where an
+    architecture-specific PC setup instruction appears before later linear
+    instructions. Recovery keeps the default because rebuilt blocks must end
+    at their first real control-transfer instruction.
+    """
 
     has_delay_slot = arch_has_delay_slot(arch_name)
     for index in range(len(insns) - 1, -1, -1):
         if not InsnSemantics(insns[index]).is_control_transfer():
             continue
 
-        if index != len(insns) - 1 and not has_delay_slot:
+        if index != len(insns) - 1 and not has_delay_slot and strict:
             raise RuntimeError(
                 f"Recovered non-delay block at {insns[0].address:#x} has trailing "
                 f"instructions after control transfer {insns[index].address:#x}"

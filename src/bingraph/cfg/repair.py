@@ -121,6 +121,7 @@ from .decode import (
     DecodedNode,
     clear_decoded_node_cache as _clear_decoded_node_cache,
     decode_one as _decode_one,
+    is_post_prefix_instruction_entry as _is_post_prefix_instruction_entry,
 )
 from .models import (
     BlockLeaderRegistry,
@@ -250,6 +251,10 @@ class _RepairSession:
         self.pending: dict[tuple[str, int], PendingObligation] = {}
         self.repaired_nodes: set[CFGNode] = set()
         self.recovered_blocks: dict[CFGNode, BlockSpec] = {}
+        self._overlapping_entry_starts: set[int] = set()
+        self._deferred_unresolved_control_edges: dict[
+            int, list[tuple[CFGNode, EdgeJumpKind]]
+        ] = {}
         self.leaders = BlockLeaderRegistry({func_addr: {"function_entry"}})
         self.processed_counts: dict[int, int] = {}
         self.last_requeue_states: dict[
@@ -328,46 +333,50 @@ class _RepairSession:
             node,
         )
 
-    def _is_required_prefixed_instruction_entry(
+    def _has_preserved_predecessor(self, node: CFGNode) -> bool:
+        """Return whether a valid live edge must continue to enter ``node``."""
+
+        return any(
+            node.addr in direct_targets or fallthrough_addr == node.addr
+            for predecessor in self.graph.predecessors(node)
+            if self._is_preservable_seed_node(predecessor)
+            for direct_targets, fallthrough_addr in [
+                self._preserved_successor_starts(predecessor)
+            ]
+        )
+
+    def _is_required_overlapping_entry(
         self,
         node: CFGNode,
         block: BlockSpec,
     ) -> bool:
-        """Return whether ``node`` is a direct target after an instruction prefix.
+        """Return whether overlap must preserve a valid alternate instruction stream.
 
         Some binaries intentionally branch after a prefix byte. For example,
         x86 may target the instruction following a LOCK prefix while another
-        path executes the prefixed form. Preserve that alternate, valid entry
-        only when the seed graph proves that it is a direct branch target.
-        A branch into any other part of a decoded instruction is a malformed
-        CFGFast edge, not an alternative instruction stream.
+        path executes the prefixed form. Thumb code can likewise branch to the
+        second halfword of a Thumb-2 instruction, where it begins another
+        valid instruction stream. Preserve either existing stream only when a
+        live predecessor proves it remains reachable.
         """
 
         if not self._is_preservable_seed_node(node):
             return False
 
-        has_direct_predecessor = any(
-            node.addr in _seed_graph_direct_targets(self.graph, predecessor)
-            for predecessor in self.graph.predecessors(node)
-            if self._is_preservable_seed_node(predecessor)
-        )
-        if not has_direct_predecessor:
+        if not self._has_preserved_predecessor(node):
             return False
+
+        if {node.addr, block.addr} & (
+            self._explicit_split_starts() | self._overlapping_entry_starts
+        ):
+            return True
 
         max_inst_bytes = getattr(self.project.arch, "max_inst_bytes", 16)
         insn = _decode_one(self.project, block.addr, max_inst_bytes)
         if insn is None:
             return False
 
-        # Capstone exposes leading instruction prefixes separately from the
-        # opcode. Entering just after all of them is an intentional alternate
-        # stream; other interior byte offsets are not.
-        prefix_size = sum(1 for prefix in getattr(insn, "prefix", ()) if prefix)
-        return (
-            prefix_size > 0
-            and node.addr == insn.address + prefix_size
-            and node.addr < insn.address + insn.size
-        )
+        return _is_post_prefix_instruction_entry(insn, node.addr)
 
     def _note_mutation(self) -> None:
         """Advance the revision after a live CFG graph mutation."""
@@ -682,6 +691,27 @@ class _RepairSession:
             key=lambda node: node.addr,
         )
 
+    def _is_unresolved_fallback_mode_candidate(self, node: CFGNode) -> bool:
+        """Return whether an unknown indirect jump may conservatively reach ``node``.
+
+        CFGFast can retain a disconnected instruction stream decoded in the
+        alternate ARM execution mode. It is not evidence that an unresolved
+        indirect jump reaches that stream: connecting it would turn a
+        speculative candidate edge into a new recovery root, which can grow a
+        second, invalid CFG. Keep such nodes out of the fallback only when the
+        live function entry has an unambiguous execution-mode tag. Nodes that
+        are already reachable remain untouched, including real mode switches.
+        """
+
+        entry_modes = {
+            getattr(entry, "thumb", None)
+            for entry in self._nodes_at_addr(self.func_addr)
+            if _node_is_materialized_cfg_node(entry)
+            and getattr(entry, "thumb", None) is not None
+        }
+        node_mode = getattr(node, "thumb", None)
+        return not entry_modes or node_mode is None or node_mode in entry_modes
+
     def _attach_unresolved_jump_fallbacks(self) -> bool:
         """Keep disconnected seed regions reachable through unresolved jump leaves."""
 
@@ -692,6 +722,8 @@ class _RepairSession:
         reachable_nodes = self._reachable_from_entry()
         candidate_nodes: set[CFGNode] = set()
         for node in disconnected_nodes:
+            if not self._is_unresolved_fallback_mode_candidate(node):
+                continue
             candidate = self._unresolved_fallback_candidate(node)
             if candidate not in reachable_nodes:
                 candidate_nodes.add(candidate)
@@ -862,6 +894,22 @@ class _RepairSession:
         if not (self.bounds.addr <= addr < self.bounds.end_addr):
             return None
 
+        # A direct target can land inside a recovered linear block. Split that
+        # covering block before decoding the target itself; otherwise an
+        # immediate decode replaces the entire covering block and disconnects
+        # its existing fallthrough predecessors. Stale CFGFast coverage keeps
+        # the normal immediate path: replacing it is exactly what recovery is
+        # supposed to do.
+        if (
+            obligation.resolution_policy == "immediate"
+            and self._recovered_coverage_has_live_predecessor(addr)
+        ):
+            covering_entry = self._resolve_covering_entry(
+                replace(obligation, resolution_policy="queued")
+            )
+            if covering_entry is not None:
+                return covering_entry
+
         if obligation.resolution_policy == "immediate":
             recovered = self._recover_entry_now(obligation)
             if recovered is not None:
@@ -884,6 +932,63 @@ class _RepairSession:
         self._queue_if_needed(obligation)
         return placeholder
 
+    def _recovered_coverage_has_live_predecessor(self, addr: int) -> bool:
+        """Return whether replacing recovered coverage would sever a valid entry."""
+
+        for node in self._covering_nodes(addr):
+            if node.addr == addr or node not in self.recovered_blocks:
+                continue
+
+            # A direct target immediately after an x86 instruction prefix is
+            # a valid alternate stream. It must not force a split of the
+            # recovered prefixed instruction, or the two paths requeue one
+            # another indefinitely.
+            block = self.recovered_blocks[node]
+            max_inst_bytes = getattr(self.project.arch, "max_inst_bytes", 16)
+            insn = _decode_one(self.project, block.addr, max_inst_bytes)
+            if insn is not None and _is_post_prefix_instruction_entry(insn, addr):
+                continue
+
+            for predecessor in self.graph.predecessors(node):
+                direct_targets, fallthrough_addr = self._preserved_successor_starts(
+                    predecessor
+                )
+                if node.addr in direct_targets or fallthrough_addr == node.addr:
+                    return True
+
+        return False
+
+    def _route_unresolved_control_edges(
+        self,
+        block: BlockSpec,
+        edges: list[tuple[CFGNode, EdgeJumpKind]],
+    ) -> list[tuple[CFGNode, EdgeJumpKind]]:
+        """Keep unresolved leaves with the recovered block that owns the transfer.
+
+        Splitting a recovered indirect-call block can replace it with a linear
+        prefix and a later suffix containing the transfer. The prefix must not
+        retain the unresolved-call edge, but losing it would erase the call
+        target altogether. Carry that edge to the prefix's fallthrough entry
+        until recovery reaches the suffix.
+        """
+
+        edges = [*self._deferred_unresolved_control_edges.pop(block.addr, ()), *edges]
+        if _block_has_unresolved_indirect_transfer(block):
+            return edges
+        if block.fallthrough_addr is not None and edges:
+            self._deferred_unresolved_control_edges.setdefault(
+                block.fallthrough_addr, []
+            ).extend(edges)
+        return []
+
+    def _is_thumb_entry(self, addr: int) -> bool:
+        """Return whether ``addr`` selects Thumb execution mode for this project."""
+
+        try:
+            return bool(self.project.arch.is_thumb(addr))
+        except AttributeError:
+            return False
+
     def _resolve_covering_entry(
         self,
         obligation: RepairObligation,
@@ -896,20 +1001,23 @@ class _RepairSession:
                 continue
 
             if _addr_is_mid_instruction_start(node, addr):
-                allow_exact_split = (
-                    obligation.preserve_exact_addr
-                    and not self._is_preservable_seed_node(node)
-                )
-                if allow_exact_split:
-                    continue
+                if obligation.preserve_exact_addr and self._is_thumb_entry(addr):
+                    # A VEX-derived direct target can legitimately enter an
+                    # alternate Thumb stream in the second halfword of a
+                    # Thumb-2 instruction. It is not an ordinary split: both
+                    # overlapping streams remain reachable, so recover the
+                    # target independently without forcing the original node
+                    # to end at this byte offset.
+                    self._overlapping_entry_starts.add(addr)
+                    placeholder = self._claim_placeholder(obligation)
+                    self._queue_if_needed(obligation)
+                    return placeholder
+
                 # The requested address falls inside a decoded instruction of
-                # a covering node. Unless this is an explicit direct-branch
-                # target punching through a stale covering node, do not freeze
-                # the byte offset as a synthetic block leader: it only causes
-                # placeholder ping-pong around invalid starts such as 0x4358ff
-                # / 0x43597e in __strstr_avx512. Legitimate taken targets like
-                # 0x42367a / 0x445a5e still get through when the covering node
-                # is itself stale.
+                # a covering node. Do not freeze an arbitrary byte offset as
+                # a synthetic block leader: it only causes placeholder
+                # ping-pong around invalid starts such as 0x4358ff /
+                # 0x43597e in __strstr_avx512.
                 if not self._is_preservable_seed_node(node):
                     self._queue_if_needed(
                         RepairObligation(
@@ -1339,7 +1447,7 @@ class _RepairSession:
             if not replaces_same_start and not overlaps_recovered_range:
                 continue
 
-            if not replaces_same_start and self._is_required_prefixed_instruction_entry(
+            if not replaces_same_start and self._is_required_overlapping_entry(
                 node, block
             ):
                 continue
@@ -1367,6 +1475,10 @@ class _RepairSession:
             for src, dst, data in list(self.graph.edges(data=True))
             if src in removed_set and _is_unresolvable_control_target(dst)
         ]
+        unresolved_jump_edges = self._route_unresolved_control_edges(
+            block,
+            unresolved_jump_edges,
+        )
 
         _remove_nodes(self.graph, removed_nodes)
         for node in removed_nodes:
@@ -1403,9 +1515,8 @@ class _RepairSession:
         # A recovered indirect transfer has no concrete BlockSpec target.
         # Retain CFGFast's unresolved placeholder until static table recovery
         # proves real jump targets, or another analysis resolves the call.
-        if _block_has_unresolved_indirect_transfer(block):
-            for unresolved_target, jumpkind in unresolved_jump_edges:
-                self._add_edge(recovered_node, unresolved_target, jumpkind)
+        for unresolved_target, jumpkind in unresolved_jump_edges:
+            self._add_edge(recovered_node, unresolved_target, jumpkind)
 
         for target in block.direct_targets:
             edge_jumpkind = "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
@@ -1644,7 +1755,7 @@ class _RepairSession:
             for node in self._covering_nodes(addr)
             if node.addr != addr and not _node_is_placeholder(node)
         ]
-        if covering_nodes:
+        if covering_nodes and addr not in self._overlapping_entry_starts:
             if addr in self._explicit_split_starts():
                 # Another node still covers this forced split point. Requeue
                 # both the covering node and the split address so the target

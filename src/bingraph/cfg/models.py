@@ -111,6 +111,8 @@ class CustomCFGStats:
     edges_added: int = 0
     static_jump_tables_resolved: int = 0
     static_jump_targets_added: int = 0
+    arithmetic_pc_dispatches_pruned: int = 0
+    arithmetic_pc_targets_removed: int = 0
     static_jump_dispatchers_unresolved: int = 0
     static_jump_no_vex: int = 0
     static_jump_no_table_shape: int = 0

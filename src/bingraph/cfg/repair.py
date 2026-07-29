@@ -95,6 +95,9 @@ from angr import KnowledgeBase, Project
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGNode
 from loguru import logger
+import pyvex
+
+from bingraph.helpers.capstone import arch_has_delay_slot
 
 from .graph import (
     add_successor_edge as _add_successor_edge,
@@ -143,6 +146,7 @@ from .anomalies import (
     overlapping_instruction_entries,
 )
 from .jumps import (
+    arithmetic_pc_dispatch_targets as _arithmetic_pc_dispatch_targets,
     _constant_register_from_predecessors,
     _guarded_jump_table_entry_count,
     _in_function_jump_table_entry_count,
@@ -242,7 +246,14 @@ class _RepairSession:
         # API. Its private backing graph stores tuple keys that the renderer
         # cannot consume directly.
         self.graph = _cfg_graph(seed_cfg)
-        self.anomalies = CFGAnomalyDetector(project, self.graph, self.bounds, func_addr)
+        self.protected_block_starts: set[int] = set()
+        self.anomalies = CFGAnomalyDetector(
+            project,
+            self.graph,
+            self.bounds,
+            func_addr,
+            self.protected_block_starts,
+        )
         self.mutation_revision = 0
         self._bound_nodes_revision = -1
         self._bound_nodes_snapshot: tuple[CFGNode, ...] = ()
@@ -333,6 +344,15 @@ class _RepairSession:
             self._forced_split_starts(),
             node,
         )
+
+    @staticmethod
+    def _node_has_delay_slot(node) -> bool:
+        """Return whether ``node`` belongs to an architecture with delay slots."""
+
+        try:
+            return arch_has_delay_slot(node.block.arch.name)
+        except Exception:
+            return False
 
     def _has_preserved_predecessor(self, node: CFGNode) -> bool:
         """Return whether a valid live edge must continue to enter ``node``."""
@@ -590,6 +610,64 @@ class _RepairSession:
             resolved_sources += 1
 
         return resolved_sources
+
+    def _prune_arithmetic_pc_dispatches(self) -> int:
+        """Drop CFGFast candidates disproven by a VEX-proven target stride."""
+
+        pruned_dispatches = 0
+        for node in self._bound_nodes():
+            if not _node_is_materialized_cfg_node(node):
+                continue
+            target_addrs = _arithmetic_pc_dispatch_targets(
+                self.project, self.graph, self.bounds, node
+            )
+            if target_addrs is None:
+                continue
+
+            target_set = set(target_addrs)
+            vex = _node_vex(node)
+            if vex is None:
+                continue
+            direct_exit_targets = {
+                statement.dst.value
+                for statement in vex.statements
+                if isinstance(statement, pyvex.stmt.Exit)
+                and isinstance(getattr(statement.dst, "value", None), int)
+            }
+            removed = 0
+            for successor in list(self.graph.successors(node)):
+                if _is_unresolvable_jump_target(successor):
+                    self.graph.remove_edge(node, successor)
+                    self.stats.unresolved_jump_edges_removed += 1
+                    removed += 1
+                    continue
+                if (
+                    _node_is_materialized_cfg_node(successor)
+                    and _node_intersects_bounds(successor, self.bounds)
+                    and successor.addr not in direct_exit_targets
+                    and successor.addr not in target_set
+                ):
+                    self.graph.remove_edge(node, successor)
+                    removed += 1
+            if not removed:
+                continue
+            # The computed-PC instruction remains a distinct leader. Its
+            # predecessor may otherwise look like an artificial linear split
+            # after invalid target edges are removed and absorb the dispatcher
+            # before its remaining resolved targets can be preserved.
+            self.protected_block_starts.add(node.addr)
+            self.leaders.add(node.addr, "arithmetic_pc_dispatch")
+            for target_addr in target_addrs:
+                self.leaders.add(target_addr, "arithmetic_pc_target")
+            self._note_mutation()
+            self.stats.arithmetic_pc_dispatches_pruned += 1
+            self.stats.arithmetic_pc_targets_removed += removed
+            pruned_dispatches += 1
+            logger.info(
+                f"Pruned {removed} disproven arithmetic-PC targets at {node.addr:#x}; "
+                f"retained {len(target_addrs)} stride-aligned target(s)"
+            )
+        return pruned_dispatches
 
     def _unresolved_indirect_dispatchers(self) -> tuple[CFGNode, ...]:
         """Return live dispatch blocks that still lead to an unresolved target."""
@@ -1478,22 +1556,26 @@ class _RepairSession:
             if not _node_is_materialized_cfg_node(node):
                 continue
 
-            if self._is_preservable_seed_node(node) or node in self.repaired_nodes:
-                direct_targets, fallthrough_addr = self._preserved_successor_starts(
-                    node
-                )
+            direct_targets, fallthrough_addr = self._preserved_successor_starts(node)
+            if self._is_preservable_seed_node(node) or self._node_has_delay_slot(node):
+                # For delayed branches, the final decoded instruction is the
+                # delay slot rather than the branch. Preserve an existing
+                # direct target even when its source needs repair; otherwise
+                # rebuilding another predecessor can absorb that target into
+                # a larger block.
                 for target in direct_targets:
                     if self.bounds.addr <= target < self.bounds.end_addr:
                         starts.add(target)
-                # Only recovered blocks have trustworthy fallthrough
-                # semantics. CFGFast seed fallthrough edges may be the split
-                # artifacts this repair pass is meant to remove.
-                if (
-                    node in self.repaired_nodes
-                    and fallthrough_addr is not None
-                    and self.bounds.addr <= fallthrough_addr < self.bounds.end_addr
-                ):
-                    starts.add(fallthrough_addr)
+
+            # Only recovered blocks have trustworthy fallthrough semantics.
+            # CFGFast seed fallthrough edges may be the split artifacts this
+            # repair pass is meant to remove.
+            if (
+                node in self.repaired_nodes
+                and fallthrough_addr is not None
+                and self.bounds.addr <= fallthrough_addr < self.bounds.end_addr
+            ):
+                starts.add(fallthrough_addr)
 
         return starts
 
@@ -1880,6 +1962,7 @@ class _RepairSession:
         # original order so the repair behavior itself does not change.
         initial_bad_addrs = self._initial_anomalous_addrs()
         self.stats.input_anomalies = len(initial_bad_addrs)
+        self._prune_arithmetic_pc_dispatches()
         resolved_tables = self._resolve_static_jump_tables()
         if resolved_tables:
             # Table resolution changes the seed graph, so only then does a
@@ -1912,6 +1995,7 @@ class _RepairSession:
             # Worklist recovery can replace an indirect-dispatch source and
             # therefore discard table edges found before repair. Re-scan the
             # live nodes so a recovered source receives its proven targets.
+            self._prune_arithmetic_pc_dispatches()
             resolved_tables += self._resolve_static_jump_tables()
 
             cleanup_changed = self._cleanup()

@@ -25,10 +25,13 @@ def _bare_session() -> cfg_module._RepairSession:
     session = object.__new__(cfg_module._RepairSession)
     session.queue = deque()
     session.pending = {}
+    session.repaired_nodes = set()
     session.leaders = models_module.BlockLeaderRegistry({})
     session._overlapping_entry_starts = set()
     session._deferred_unresolved_control_edges = {}
     session.mutation_revision = 0
+    session._stop_starts_revision = -1
+    session._stop_starts = set()
     session.last_requeue_states = {}
     session.stats = models_module.CustomCFGStats()
     session.func_addr = 0x1000
@@ -91,6 +94,17 @@ class _BlockNode:
         )
 
 
+class _MaterializedNode:
+    """Minimal ordinary CFG-node stand-in for recovery-boundary tests."""
+
+    def __init__(self, addr: int, size: int = 1) -> None:
+        """Create a live materialized node at one address."""
+
+        self.addr = addr
+        self.size = size
+        self.is_simprocedure = False
+
+
 def test_queue_merges_edge_claims_by_source_identity() -> None:
     """Merge different source nodes for one target into one pending obligation."""
 
@@ -143,6 +157,33 @@ def test_queue_keeps_recovery_and_reconciliation_separate() -> None:
     assert session._queue_if_needed(reconciliation)
     assert list(session.queue) == [("recover", 0x1200), ("reconcile", 0x1200)]
     assert set(session.pending) == {("recover", 0x1200), ("reconcile", 0x1200)}
+
+
+def test_live_delayed_direct_cfgfast_target_remains_a_recovery_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep a delayed-branch CFGFast target while its source is repaired."""
+
+    session = _bare_session()
+    recovered_start = _MaterializedNode(0x1200)
+    direct_target = _MaterializedNode(0x1210)
+    monkeypatch.setattr(
+        session,
+        "_bound_nodes",
+        lambda: (recovered_start, direct_target),
+    )
+    monkeypatch.setattr(session, "_is_preservable_seed_node", lambda _node: False)
+    monkeypatch.setattr(session, "_node_has_delay_slot", lambda _node: True)
+    monkeypatch.setattr(
+        session,
+        "_preserved_successor_starts",
+        lambda node: (
+            ((direct_target.addr,), None) if node is recovered_start else ((), None)
+        ),
+    )
+    monkeypatch.setattr(session, "_nodes_at_addr", lambda _addr: [])
+
+    assert 0x1210 in session.current_stop_addrs(0x1200)
 
 
 def test_static_jump_diagnostics_count_final_unbounded_dispatchers(

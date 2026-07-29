@@ -120,6 +120,22 @@ class InsnSemantics:
 
         return None
 
+    def direct_target_for_arch(self, arch_name: str) -> int | None:
+        """Return the direct target in the address form used by ``arch_name``.
+
+        Capstone exposes RISC-V direct branch operands as signed PC-relative
+        displacements, unlike its absolute targets on the architectures used
+        by most callers. Keep ``direct_target()`` as the raw Capstone value
+        and normalize only consumers that compare it with CFG node addresses.
+        """
+
+        target = self.direct_target()
+        if target is None:
+            return None
+        if arch_name in {"RISCV32", "RISCV64"} and self.is_jump():
+            return self.address + target
+        return target
+
 
 def arch_has_delay_slot(arch_name: str) -> bool:
     """Return whether a named architecture consumes one delay-slot instruction."""

@@ -20,7 +20,7 @@ from angr.knowledge_plugins.cfg import CFGNode
 from loguru import logger
 import pyvex
 
-from bingraph.helpers.capstone import InsnSemantics
+from bingraph.helpers.capstone import InsnSemantics, control_transfer_index
 from .decode import DecodedNode, lift_instruction_vex
 from .graph import (
     CFGGraph,
@@ -806,6 +806,229 @@ def _read_static_jump_table_targets(
     return tuple(sorted(targets))
 
 
+def _vex_expr_key(expr, definitions: dict[int, Any]) -> tuple[Any, ...] | None:
+    """Return a structural key for a local VEX expression.
+
+    VEX temporary numbers are local to one lifted block, so matching branch
+    predicates across adjacent blocks requires recursively replacing them with
+    their definitions. Unsupported expressions deliberately return ``None``:
+    callers use this only as a proof, never as a best-effort guess.
+    """
+
+    expr = _resolve_vex_expr(expr, definitions)
+    if expr is None:
+        return None
+    if isinstance(expr, pyvex.expr.Const):
+        value = expr.con.value
+        return ("const", value) if isinstance(value, int) else None
+    if isinstance(expr, pyvex.expr.Get):
+        return ("get", expr.offset, expr.result_size(None))
+    if isinstance(expr, pyvex.expr.Unop):
+        argument = _vex_expr_key(expr.args[0], definitions)
+        return ("unop", expr.op, argument) if argument is not None else None
+    if isinstance(expr, pyvex.expr.Binop):
+        arguments = tuple(_vex_expr_key(arg, definitions) for arg in expr.args)
+        return ("binop", expr.op, *arguments) if all(arguments) else None
+    if isinstance(expr, pyvex.expr.ITE):
+        condition = _vex_expr_key(expr.cond, definitions)
+        if_true = _vex_expr_key(expr.iftrue, definitions)
+        if_false = _vex_expr_key(expr.iffalse, definitions)
+        if condition is None or if_true is None or if_false is None:
+            return None
+        return ("ite", condition, if_true, if_false)
+    if isinstance(expr, pyvex.expr.CCall):
+        arguments = tuple(_vex_expr_key(arg, definitions) for arg in expr.args)
+        if not all(arguments):
+            return None
+        return ("ccall", expr.cee.name, *arguments)
+    return None
+
+
+def _vex_scaled_register_target(
+    vex,
+) -> tuple[tuple[Any, ...], tuple[int, int], int, int] | None:
+    """Describe one conditional ``base + (register << shift)`` VEX target."""
+
+    definitions = _vex_tmp_definitions(vex)
+    next_expr = _resolve_vex_expr(vex.next, definitions)
+    if not isinstance(next_expr, pyvex.expr.ITE):
+        return None
+
+    target_expr = _resolve_vex_expr(next_expr.iftrue, definitions)
+    if not isinstance(target_expr, pyvex.expr.Binop) or not target_expr.op.startswith(
+        "Iop_Add"
+    ):
+        return None
+
+    base_addr = None
+    index_key = None
+    shift = None
+    for term in _vex_add_terms(target_expr, definitions) or ():
+        value = _vex_const_value(term, definitions)
+        if value is not None and base_addr is None:
+            base_addr = value
+            continue
+        term = _resolve_vex_expr(term, definitions)
+        if not isinstance(term, pyvex.expr.Binop) or not term.op.startswith("Iop_Shl"):
+            return None
+        candidate_shift = _vex_const_value(term.args[1], definitions)
+        candidate_index = _vex_get_key(term.args[0], definitions, vex)
+        if candidate_shift is None or candidate_index is None or index_key is not None:
+            return None
+        index_key = candidate_index
+        shift = candidate_shift
+
+    condition = _vex_expr_key(next_expr.cond, definitions)
+    if condition is None or base_addr is None or index_key is None or shift is None:
+        return None
+    return condition, index_key, base_addr, shift
+
+
+def _vex_conditionally_scaled_register(
+    vex,
+    register_key: tuple[int, int],
+    condition_key: tuple[Any, ...],
+) -> int | None:
+    """Return a conditionally assigned register multiplier, if VEX proves one."""
+
+    definitions = _vex_tmp_definitions(vex)
+    register_expr = ("get", *register_key)
+    for statement in reversed(vex.statements):
+        if (
+            not isinstance(statement, pyvex.stmt.Put)
+            or statement.offset != register_key[0]
+        ):
+            continue
+        assignment = _resolve_vex_expr(statement.data, definitions)
+        if not isinstance(assignment, pyvex.expr.ITE):
+            return None
+        if _vex_expr_key(assignment.cond, definitions) != condition_key:
+            return None
+
+        unchanged = _vex_expr_key(assignment.iffalse, definitions)
+        scaled_expr = _resolve_vex_expr(assignment.iftrue, definitions)
+        if unchanged != register_expr or not isinstance(scaled_expr, pyvex.expr.Binop):
+            return None
+        if not scaled_expr.op.startswith("Iop_Add"):
+            return None
+
+        terms = _vex_add_terms(scaled_expr, definitions)
+        if terms is None or len(terms) != 2:
+            return None
+        direct_reads = [
+            _vex_expr_key(term, definitions) == register_expr for term in terms
+        ]
+        shifted_terms = [
+            _resolve_vex_expr(term, definitions)
+            for term, is_direct_read in zip(terms, direct_reads, strict=True)
+            if not is_direct_read
+        ]
+        if direct_reads.count(True) != 1 or len(shifted_terms) != 1:
+            return None
+
+        shifted = shifted_terms[0]
+        if not isinstance(shifted, pyvex.expr.Binop) or not shifted.op.startswith(
+            "Iop_Shl"
+        ):
+            return None
+        if _vex_expr_key(shifted.args[0], definitions) != register_expr:
+            return None
+        shift = _vex_const_value(shifted.args[1], definitions)
+        return 1 + (1 << shift) if shift is not None else None
+    return None
+
+
+def _immediate_linear_predecessor(
+    graph: CFGGraph, bounds: FunctionBounds, node
+) -> CFGNode | None:
+    """Return one sole fallthrough predecessor ending immediately before ``node``."""
+
+    predecessors = [
+        predecessor
+        for predecessor in graph.predecessors(node)
+        if _node_is_materialized_cfg_node(predecessor)
+        and _node_intersects_bounds(predecessor, bounds)
+        and predecessor.addr + predecessor.size == node.addr
+        and tuple(graph.successors(predecessor)) == (node,)
+    ]
+    return predecessors[0] if len(predecessors) == 1 else None
+
+
+def arithmetic_pc_dispatch_targets(
+    project: Project, graph: CFGGraph, bounds: FunctionBounds, node
+) -> tuple[int, ...] | None:
+    """Return a proven target subset for one arithmetic computed-PC dispatch.
+
+    This covers a VEX-level pattern where a conditional indirect branch writes
+    ``base + (index << shift)`` to the program counter, and a sole linear
+    predecessor conditionally scales that same index under the exact same VEX
+    predicate. CFGFast may conservatively fan this out to every instruction
+    boundary. We retain only the stride-aligned candidates it already found;
+    the function never invents targets or applies architecture-specific
+    mnemonic rules.
+    """
+
+    vex = _node_vex(node)
+    if vex is None:
+        return None
+    dispatch = _vex_scaled_register_target(vex)
+    if dispatch is None:
+        return None
+    condition_key, index_key, base_addr, shift = dispatch
+
+    predecessor = _immediate_linear_predecessor(graph, bounds, node)
+    # A neutral instruction may separate the scale and computed branch. Walk
+    # only unique linear predecessors, so no unproven control-flow path is
+    # included in the proof.
+    for _ in range(3):
+        if predecessor is None:
+            return None
+        predecessor_vex = _node_vex(predecessor)
+        if predecessor_vex is not None:
+            multiplier = _vex_conditionally_scaled_register(
+                predecessor_vex, index_key, condition_key
+            )
+            if multiplier is None:
+                # CFGFast may group the scale with the instruction that sets
+                # condition flags, allowing VEX to simplify its predicate.
+                # Re-lift only the last instruction to compare the preserved
+                # condition-code form used by the computed-PC branch.
+                last_insn = DecodedNode.from_node(predecessor).last
+                if last_insn is not None:
+                    single_insn_vex = lift_instruction_vex(project, last_insn)
+                    if single_insn_vex is not None:
+                        multiplier = _vex_conditionally_scaled_register(
+                            single_insn_vex, index_key, condition_key
+                        )
+            if multiplier is not None:
+                stride = (1 << shift) * multiplier
+                break
+        predecessor = _immediate_linear_predecessor(graph, bounds, predecessor)
+    else:
+        return None
+
+    direct_exit_targets = {
+        statement.dst.value
+        for statement in vex.statements
+        if isinstance(statement, pyvex.stmt.Exit)
+        and isinstance(getattr(statement.dst, "value", None), int)
+    }
+    candidates = {
+        successor.addr
+        for successor in graph.successors(node)
+        if _node_is_materialized_cfg_node(successor)
+        and _node_intersects_bounds(successor, bounds)
+        and successor.addr not in direct_exit_targets
+    }
+    if base_addr not in candidates:
+        return None
+    upper_bound = max(candidates)
+    expected_targets = tuple(range(base_addr, upper_bound + 1, stride))
+    if not expected_targets or not set(expected_targets).issubset(candidates):
+        return None
+    return expected_targets
+
+
 def _seed_node_expected_successors(node) -> tuple[tuple[int, ...], int | None]:
     """
     Return the local direct targets and fallthrough encoded in one seed node.
@@ -874,18 +1097,21 @@ def _seed_graph_direct_targets(graph: CFGGraph, node) -> tuple[int, ...]:
     except Exception:
         return ()
 
-    if decoded.is_empty:
+    insns = decoded.insns
+    if not insns:
         return ()
 
-    last_insn = decoded.last
-    if last_insn is None:
+    transfer_index = control_transfer_index(
+        node.block.arch.name, list(insns), strict=False
+    )
+    if transfer_index is None:
         return ()
 
-    last = InsnSemantics(last_insn)
-    if not last.is_jump():
+    transfer = InsnSemantics(insns[transfer_index])
+    if not transfer.is_jump():
         return ()
 
-    target = last.direct_target()
+    target = transfer.direct_target()
     if not isinstance(target, int):
         return ()
 

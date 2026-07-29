@@ -205,6 +205,17 @@ def _control_transfer_tail(edge):
     source_node = edge.src.obj
     try:
         insns = [wrapped.insn for wrapped in source_node.block.capstone.insns]
+        ins_addr = edge.meta.get("ins_addr")
+        if isinstance(ins_addr, int):
+            for index, insn in enumerate(insns):
+                if insn.address != ins_addr:
+                    continue
+                if InsnSemantics(insn).is_control_transfer():
+                    # CFGFast associates an edge with the instruction that
+                    # created it. Prefer that precise provenance over a
+                    # full-block VEX lift, which can stop at an older split.
+                    return insns[index:]
+                break
         terminator_index = control_transfer_index(edge.src.project.arch.name, insns)
         if terminator_index is None:
             return None
@@ -229,25 +240,33 @@ def _lift_control_transfer_tail(edge, tail):
         return None
 
 
-def _capstone_folded_conditional_edge_type(edge, exit_targets: set[int]) -> str | None:
-    """Classify a direct conditional branch that VEX has constant-folded.
+def _capstone_direct_branch_edge_type(edge, exit_targets: set[int]) -> str | None:
+    """Classify a direct branch obscured by VEX block semantics.
 
-    VEX may model a system-register read as a concrete value and eliminate a
-    later conditional branch. When CFGFast still retains both architectural
-    successors, preserve that static CFG information for presentation.
+    VEX can constant-fold a branch or assign a non-branch jumpkind to a block
+    because of an earlier instruction such as x86 ``pause`` or ``syscall``.
+    Preserve the branch only when Capstone's exact immediate target matches
+    the CFG edge being styled.
     """
 
-    if exit_targets:
-        return None
     tail = _control_transfer_tail(edge)
     if tail is None:
         return None
     semantics = InsnSemantics(tail[0])
+    target_addr = semantics.direct_target_for_arch(edge.src.project.arch.name)
+    if not semantics.is_jump() or target_addr is None:
+        return None
     if not semantics.is_conditional_jump():
-        return None
-    target_addr = semantics.direct_target()
-    if target_addr is None:
-        return None
+        # Prefer VEX when it still exposes an explicit conditional exit. A
+        # Thumb branch can look unconditional to Capstone while VEX retains
+        # architecture-specific condition semantics for the CFG edge.
+        if exit_targets:
+            return None
+        fallthrough_addr = tail[-1].address + tail[-1].size
+        if target_addr == fallthrough_addr:
+            return None
+        return "UNCONDITIONAL" if edge.dst.obj.addr == target_addr else None
+
     fallthrough_addr = tail[-1].address + tail[-1].size
     # Some control-transfer instructions, such as x86 XBEGIN with a zero
     # displacement, encode the sequential address as their only target. They
@@ -262,11 +281,58 @@ def _capstone_folded_conditional_edge_type(edge, exit_targets: set[int]) -> str 
         return None
     if {target_addr, fallthrough_addr} - successor_addrs:
         return None
+
+    # A long normalized node can retain exits from a VEX lift that stopped at
+    # an earlier instruction. They are not evidence about this edge when they
+    # reach neither successor of the exact Capstone branch that CFGFast tagged
+    # in ``ins_addr``.
+    if exit_targets.intersection({target_addr, fallthrough_addr}):
+        return None
     if edge.dst.obj.addr == target_addr:
         return "CONDITIONAL_TRUE"
     if edge.dst.obj.addr == fallthrough_addr:
         return "CONDITIONAL_FALSE"
     return None
+
+
+def _capstone_linear_tail_edge_type(edge, vex) -> str | None:
+    """Classify a sole fall-through after VEX stops inside a recovered block.
+
+    CFGFast can cap VEX lifting before a recovered block's actual end. When
+    Capstone finds no control transfer in the complete block, VEX's default
+    target remains inside its byte range, and the source has one successor at
+    that decoded end, the edge is the architectural fall-through. A VEX
+    warning jumpkind may instead preserve the decoded next address exactly;
+    that narrow case is also linear. Both patterns occur on multiple
+    architectures after custom repair merges CFGFast fragments into one block.
+    """
+
+    source_node = edge.src.obj
+    try:
+        insns = [wrapped.insn for wrapped in source_node.block.capstone.insns]
+        if not insns:
+            return None
+        if control_transfer_index(edge.src.project.arch.name, insns) is not None:
+            return None
+        next_addr = vex.next.con.value
+        fallthrough_addr = insns[-1].address + insns[-1].size
+        successor_addrs = {
+            successor.addr for successor in edge.src.graph.successors(source_node)
+        }
+    except (AttributeError, KeyError, RuntimeError):
+        return None
+
+    if not isinstance(next_addr, int):
+        return None
+    next_is_internal = source_node.addr <= next_addr < fallthrough_addr
+    next_is_warning_fallthrough = (
+        vex.jumpkind == "Ijk_EmWarn" and next_addr == fallthrough_addr
+    )
+    if not (next_is_internal or next_is_warning_fallthrough):
+        return None
+    if successor_addrs != {fallthrough_addr}:
+        return None
+    return "NEXT" if edge.dst.obj.addr == fallthrough_addr else None
 
 
 def _vex_boring_edge_type(edge) -> str:
@@ -300,10 +366,6 @@ def _vex_boring_edge_type(edge) -> str:
         # the style when the edge lands at that exact lifted target.
         return "CALL" if edge.dst.obj.addr == call_target else "UNKNOWN"
 
-    terminal_default = vex_jumpkind_is_terminal(vex.jumpkind)
-    if vex.jumpkind != "Ijk_Boring" and not terminal_default:
-        return "UNKNOWN"
-
     try:
         next_addr = vex.next.con.value
     except AttributeError:
@@ -323,9 +385,17 @@ def _vex_boring_edge_type(edge) -> str:
         if isinstance(target, int):
             exit_targets.add(target)
 
-    folded_conditional_type = _capstone_folded_conditional_edge_type(edge, exit_targets)
-    if folded_conditional_type is not None:
-        return folded_conditional_type
+    capstone_branch_type = _capstone_direct_branch_edge_type(edge, exit_targets)
+    if capstone_branch_type is not None:
+        return capstone_branch_type
+
+    capstone_linear_type = _capstone_linear_tail_edge_type(edge, vex)
+    if capstone_linear_type is not None:
+        return capstone_linear_type
+
+    terminal_default = vex_jumpkind_is_terminal(vex.jumpkind)
+    if vex.jumpkind != "Ijk_Boring" and not terminal_default:
+        return "UNKNOWN"
 
     if exit_targets:
         if terminal_default:
@@ -352,6 +422,11 @@ def _vex_boring_edge_type(edge) -> str:
             return "CONDITIONAL_FALSE"
         if edge.dst.obj.addr in exit_targets or edge.dst.obj.addr == next_addr:
             return "CONDITIONAL_TRUE"
+        if next_addr is None:
+            # A conditional computed-PC write has an explicit not-taken exit
+            # plus a dynamic taken destination. CFG recovery may resolve that
+            # destination into concrete table targets, which remain indirect.
+            return "INDIRECT"
         return "UNKNOWN"
 
     if next_addr is None:

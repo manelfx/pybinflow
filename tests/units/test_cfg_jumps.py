@@ -8,6 +8,7 @@ import networkx as nx
 import pyvex
 
 from bingraph.cfg.jumps import (
+    arithmetic_pc_dispatch_targets,
     _jump_table_target_addr,
     _read_static_jump_table_targets,
     _vex_direct_jump_table,
@@ -298,6 +299,44 @@ def test_unreadable_static_jump_table_returns_none() -> None:
     )
 
     assert _read_static_jump_table_targets(project, _table(), 0x1000, 2) is None
+
+
+def test_arithmetic_pc_dispatch_keeps_only_conditionally_scaled_targets() -> None:
+    """Prune CFGFast's byte-stride over-approximation using local VEX proof."""
+
+    scale = _Node(
+        0x1000,
+        4,
+        pyvex.lift(bytes.fromhex("82208210"), 0x1000, archinfo.ArchARMEL()),
+    )
+    neutral = _Node(
+        0x1004,
+        4,
+        pyvex.lift(bytes.fromhex("0000a0e3"), 0x1004, archinfo.ArchARMEL()),
+    )
+    dispatch = _Node(
+        0x1008,
+        4,
+        pyvex.lift(bytes.fromhex("02f18f10"), 0x1008, archinfo.ArchARMEL()),
+    )
+    fallthrough = _Node(0x100C, 4, SimpleNamespace())
+    candidates = tuple(
+        _Node(addr, 4, SimpleNamespace()) for addr in range(0x1010, 0x1040, 4)
+    )
+    graph = nx.DiGraph(
+        [
+            (scale, neutral),
+            (neutral, dispatch),
+            (dispatch, fallthrough),
+            *((dispatch, candidate) for candidate in candidates),
+        ]
+    )
+    bounds = FunctionBounds(0x1000, 0x1100, 0x100, SimpleNamespace(name="f"))
+
+    project = SimpleNamespace()
+    assert arithmetic_pc_dispatch_targets(project, graph, bounds, dispatch) == tuple(
+        range(0x1010, 0x1040, 12)
+    )
 
 
 @dataclass(frozen=True)

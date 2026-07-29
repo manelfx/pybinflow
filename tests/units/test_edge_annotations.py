@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from capstone import CS_GRP_JUMP, CS_OP_IMM
+from capstone.x86 import X86_INS_JMP
 
 from bingraph.core.annotators import _edge_type
 
@@ -15,6 +16,7 @@ def _node(
     vex: SimpleNamespace | None = None,
     capstone_insns: tuple[SimpleNamespace, ...] = (),
     graph: SimpleNamespace | None = None,
+    arch_name: str = "X86",
     is_simprocedure: bool = False,
     simprocedure_name: str | None = None,
 ) -> SimpleNamespace:
@@ -38,7 +40,7 @@ def _node(
             is_simprocedure=is_simprocedure,
             simprocedure_name=simprocedure_name,
         ),
-        project=SimpleNamespace(arch=SimpleNamespace(name="X86")),
+        project=SimpleNamespace(arch=SimpleNamespace(name=arch_name)),
         graph=graph,
     )
 
@@ -158,6 +160,11 @@ def test_unresolvable_jump_target_edges_remain_unresolved(
             0x1004,
             "CONDITIONAL_FALSE",
         ),
+        (
+            _vex("Ijk_Boring", exit_targets=(0x1004,)),
+            0x2000,
+            "INDIRECT",
+        ),
         (_vex("Ijk_Boring"), 0x2000, "INDIRECT"),
         (_vex("Ijk_Boring", next_addr=0x2000), 0x3000, "UNKNOWN"),
     ],
@@ -210,6 +217,214 @@ def test_capstone_conditional_branch_overrides_folded_vex_default() -> None:
     assert (
         _edge_type(_edge(source, fallthrough, jumpkind="Ijk_Boring"))
         == "CONDITIONAL_FALSE"
+    )
+
+
+def test_capstone_conditional_branch_ignores_stale_internal_vex_exit() -> None:
+    """Use CFGFast's instruction provenance when VEX stopped before the tail."""
+
+    target = _node(0x2000)
+    fallthrough = _node(0x1008)
+    graph = SimpleNamespace(successors=lambda _node: (target.obj, fallthrough.obj))
+    branch = SimpleNamespace(
+        address=0x1004,
+        size=4,
+        id=0,
+        groups=(CS_GRP_JUMP,),
+        operands=(SimpleNamespace(type=CS_OP_IMM, imm=0x2000),),
+    )
+    source = _node(
+        0x1000,
+        size=8,
+        vex=_vex("Ijk_Boring", next_addr=0x1004, exit_targets=(0x1004,)),
+        capstone_insns=(branch,),
+        graph=graph,
+    )
+
+    assert (
+        _edge_type(_edge(source, target, jumpkind="Ijk_Boring", ins_addr=0x1004))
+        == "CONDITIONAL_TRUE"
+    )
+    assert (
+        _edge_type(_edge(source, fallthrough, jumpkind="Ijk_Boring", ins_addr=0x1004))
+        == "CONDITIONAL_FALSE"
+    )
+
+
+def test_capstone_conditional_branch_overrides_non_branch_vex_jumpkind() -> None:
+    """Recover a direct branch after a VEX-modeled x86 ``pause`` instruction."""
+
+    target = _node(0x2000)
+    fallthrough = _node(0x1008)
+    graph = SimpleNamespace(successors=lambda _node: (target.obj, fallthrough.obj))
+    branch = SimpleNamespace(
+        address=0x1004,
+        size=4,
+        id=0,
+        groups=(CS_GRP_JUMP,),
+        operands=(SimpleNamespace(type=CS_OP_IMM, imm=0x2000),),
+    )
+    source = _node(
+        0x1000,
+        size=8,
+        vex=_vex("Ijk_Yield", next_addr=0x1004),
+        capstone_insns=(branch,),
+        graph=graph,
+    )
+
+    assert (
+        _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "CONDITIONAL_TRUE"
+    )
+    assert (
+        _edge_type(_edge(source, fallthrough, jumpkind="Ijk_Boring"))
+        == "CONDITIONAL_FALSE"
+    )
+
+
+@pytest.mark.parametrize(
+    ("branch_addr", "displacement", "target_addr", "fallthrough_addr"),
+    [
+        (0x84C2, -0x2BC, 0x8206, 0x84C6),
+        (0x87F6, 0xA, 0x8800, 0x87FA),
+    ],
+)
+def test_capstone_riscv_relative_conditional_branch_overrides_truncated_vex(
+    branch_addr: int,
+    displacement: int,
+    target_addr: int,
+    fallthrough_addr: int,
+) -> None:
+    """Resolve RISC-V's PC-relative direct branch operands for edge styles."""
+
+    target = _node(target_addr)
+    fallthrough = _node(fallthrough_addr)
+    graph = SimpleNamespace(successors=lambda _node: (target.obj, fallthrough.obj))
+    branch = SimpleNamespace(
+        address=branch_addr,
+        size=4,
+        id=0,
+        groups=(CS_GRP_JUMP,),
+        operands=(
+            SimpleNamespace(type=0, imm=0),
+            SimpleNamespace(type=CS_OP_IMM, imm=displacement),
+        ),
+    )
+    source = _node(
+        0x8206,
+        size=branch_addr + 4 - 0x8206,
+        vex=_vex("Ijk_Boring", next_addr=0x8374),
+        capstone_insns=(branch,),
+        graph=graph,
+        arch_name="RISCV64",
+    )
+
+    assert (
+        _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "CONDITIONAL_TRUE"
+    )
+    assert (
+        _edge_type(_edge(source, fallthrough, jumpkind="Ijk_Boring"))
+        == "CONDITIONAL_FALSE"
+    )
+
+
+@pytest.mark.parametrize("arch_name", ["RISCV64", "AMD64"])
+def test_capstone_linear_tail_overrides_truncated_vex_default(
+    arch_name: str,
+) -> None:
+    """Keep the decoded fall-through when VEX stops inside a long repaired block."""
+
+    fallthrough = _node(0x403C)
+    graph = SimpleNamespace(successors=lambda _node: (fallthrough.obj,))
+    source = _node(
+        0x3EA2,
+        size=0x19A,
+        vex=_vex("Ijk_Boring", next_addr=0x401A),
+        capstone_insns=(
+            SimpleNamespace(
+                address=0x403A,
+                size=2,
+                id=0,
+                groups=(),
+                operands=(),
+            ),
+        ),
+        graph=graph,
+        arch_name=arch_name,
+    )
+
+    assert _edge_type(_edge(source, fallthrough, jumpkind="Ijk_Boring")) == "NEXT"
+
+
+def test_capstone_linear_tail_overrides_vex_warning_jumpkind() -> None:
+    """Classify a non-branch instruction despite VEX's warning jumpkind."""
+
+    fallthrough = _node(0x40B692)
+    graph = SimpleNamespace(successors=lambda _node: (fallthrough.obj,))
+    source = _node(
+        0x40B68A,
+        size=8,
+        vex=_vex("Ijk_EmWarn", next_addr=0x40B692),
+        capstone_insns=(
+            SimpleNamespace(
+                address=0x40B68E,
+                size=4,
+                id=0,
+                groups=(),
+                operands=(),
+            ),
+        ),
+        graph=graph,
+        arch_name="S390X",
+    )
+
+    assert _edge_type(_edge(source, fallthrough, jumpkind="Ijk_Boring")) == "NEXT"
+
+
+@pytest.mark.parametrize("jumpkind", ["Ijk_Yield", "Ijk_Sys_syscall"])
+def test_capstone_direct_jump_overrides_non_branch_vex_jumpkind(jumpkind: str) -> None:
+    """Recover a direct jump following a VEX-obscuring instruction."""
+
+    target = _node(0x2000)
+    graph = SimpleNamespace(successors=lambda _node: (target.obj,))
+    jump = SimpleNamespace(
+        address=0x1004,
+        size=4,
+        id=X86_INS_JMP,
+        groups=(CS_GRP_JUMP,),
+        operands=(SimpleNamespace(type=CS_OP_IMM, imm=0x2000),),
+    )
+    source = _node(
+        0x1000,
+        size=8,
+        vex=_vex(jumpkind, next_addr=0x1004),
+        capstone_insns=(jump,),
+        graph=graph,
+    )
+
+    assert _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "UNCONDITIONAL"
+
+
+def test_capstone_direct_jump_keeps_vex_conditional_semantics() -> None:
+    """Do not override a direct branch when VEX still exposes a condition."""
+
+    target = _node(0x2000)
+    source = _node(
+        0x1000,
+        size=8,
+        vex=_vex("Ijk_Boring", next_addr=0x1008, exit_targets=(0x2000,)),
+        capstone_insns=(
+            SimpleNamespace(
+                address=0x1004,
+                size=4,
+                id=X86_INS_JMP,
+                groups=(CS_GRP_JUMP,),
+                operands=(SimpleNamespace(type=CS_OP_IMM, imm=0x2000),),
+            ),
+        ),
+    )
+
+    assert (
+        _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "CONDITIONAL_TRUE"
     )
 
 

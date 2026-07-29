@@ -329,7 +329,9 @@ def _missing_linear_fallthrough_anomaly(
     )
 
 
-def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
+def node_has_linear_merge_successor(
+    graph: CFGGraph, node, protected_starts: set[int] | None = None
+) -> bool:
     """Return whether ``node`` should absorb its only straight-line successor.
 
     This targets the specific malformed shape where CFGFast left an artificial
@@ -343,6 +345,8 @@ def node_has_linear_merge_successor(graph: CFGGraph, node) -> bool:
         return False
 
     succ = successors[0]
+    if protected_starts is not None and succ.addr in protected_starts:
+        return False
     if getattr(succ, "is_simprocedure", False):
         return False
     if _node_is_placeholder(succ):
@@ -636,6 +640,7 @@ class CFGAnomalyDetector:
         graph: CFGGraph,
         bounds: FunctionBounds,
         func_addr: int,
+        protected_starts: set[int] | None = None,
     ) -> None:
         """Bind anomaly checks to one live CFG graph and function range."""
 
@@ -643,6 +648,9 @@ class CFGAnomalyDetector:
         self.graph = graph
         self.bounds = bounds
         self.func_addr = func_addr
+        self.protected_starts = (
+            protected_starts if protected_starts is not None else set()
+        )
         self.reported_anomalies: set[tuple[str, int]] = set()
 
     def _report(self, anomaly: CFGAnomaly) -> None:
@@ -714,7 +722,7 @@ class CFGAnomalyDetector:
     def check_linear_merge_successor(self, node) -> bool:
         """Check for an artificial linear split and report it once."""
 
-        if not node_has_linear_merge_successor(self.graph, node):
+        if not node_has_linear_merge_successor(self.graph, node, self.protected_starts):
             return False
         successor = next(iter(self.graph.successors(node)))
         self._report(

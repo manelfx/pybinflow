@@ -20,7 +20,11 @@ from angr.knowledge_plugins.cfg import CFGNode
 from loguru import logger
 import pyvex
 
-from bingraph.helpers.capstone import InsnSemantics, control_transfer_index
+from bingraph.helpers.capstone import (
+    InsnSemantics,
+    arch_has_delay_slot,
+    control_transfer_index,
+)
 from .decode import DecodedNode, lift_instruction_vex
 from .graph import (
     CFGGraph,
@@ -1184,28 +1188,45 @@ def _analyze_jump_successors(
     if decoded.is_empty or node_has_decoding_coverage_mismatch(node):
         return None
 
-    last_insn = decoded.last
-    if last_insn is None:
+    insns = decoded.insns
+    if not insns:
         return None
+
+    # On delayed-branch architectures, the final decoded instruction is the
+    # delay slot. Classify the branch itself, but retain the final instruction
+    # for the architectural fall-through address after that delay slot.
+    try:
+        arch_name = node.block.arch.name
+    except AttributeError:
+        arch_name = ""
+    transfer_index = (
+        control_transfer_index(arch_name, list(insns), strict=False)
+        if arch_has_delay_slot(arch_name)
+        else len(insns) - 1
+    )
+    if transfer_index is None:
+        return None
+    transfer_insn = insns[transfer_index]
+    final_insn = insns[-1]
 
     try:
         vex = node.block.vex
     except Exception:
         vex = None
 
-    last = InsnSemantics(last_insn)
-    if not last.is_jump():
+    transfer = InsnSemantics(transfer_insn)
+    if not transfer.is_jump():
         return None
     # Calls may be members of Capstone's generic jump group. They have their
     # own call/fake-return edge semantics and must not be checked as branches.
-    if last.is_call() or (vex is not None and vex.jumpkind == "Ijk_Call"):
+    if transfer.is_call() or (vex is not None and vex.jumpkind == "Ijk_Call"):
         return None
 
     # Some instruction encodings, including RISC-V ``c.jr ra``, are exposed
     # by Capstone as generic jumps rather than returns. Re-lift just the
     # terminator to avoid treating an old CFG node's stale fallthrough as a
     # successor required by the recovered block.
-    terminator_vex = lift_instruction_vex(project, last_insn)
+    terminator_vex = lift_instruction_vex(project, transfer_insn)
     terminator_jumpkind = getattr(terminator_vex, "jumpkind", "")
     if terminator_jumpkind == "Ijk_Ret" or terminator_jumpkind.startswith("Ijk_Sig"):
         return None
@@ -1224,14 +1245,19 @@ def _analyze_jump_successors(
     exit_targets: list[int] = []
     if vex_has_control_flow:
         for ins_addr, _, stmt in vex.exit_statements:
-            if ins_addr != last_insn.address:
+            if ins_addr not in {transfer_insn.address, final_insn.address}:
                 continue
             target = getattr(stmt.dst, "value", None)
             if isinstance(target, int) and target not in exit_targets:
                 exit_targets.append(target)
 
-    is_conditional = bool(exit_targets)
-    if not is_conditional and last.is_conditional_jump():
+    # A one-instruction VEX lift on a delay-slot ISA can omit the branch Exit
+    # entirely. Preserve only an explicit Capstone condition operand here: a
+    # one-target branch can be unconditional and must not gain a fallthrough.
+    is_conditional = bool(exit_targets) or (
+        arch_has_delay_slot(arch_name) and transfer.has_explicit_branch_condition()
+    )
+    if not is_conditional and transfer.is_conditional_jump():
         # A malformed CFG node can retain stale VEX without the final branch
         # exit. Re-lift only the ambiguous terminator: this keeps genuine x86
         # conditionals conditional, while correctly classifying S390 `j` as a
@@ -1248,7 +1274,7 @@ def _analyze_jump_successors(
             exit_targets = [
                 target
                 for ins_addr, _, stmt in fresh_vex.exit_statements
-                if ins_addr == last_insn.address
+                if ins_addr in {transfer_insn.address, final_insn.address}
                 if isinstance(target := getattr(stmt.dst, "value", None), int)
             ]
             is_conditional = bool(exit_targets)
@@ -1258,7 +1284,7 @@ def _analyze_jump_successors(
         not is_conditional
         and vex_has_control_flow
         and target_vex is not None
-        and isinstance(target_vex.next, pyvex.expr.Const)
+        and isinstance(getattr(target_vex, "next", None), pyvex.expr.Const)
         and isinstance(target_vex.next.con.value, int)
     ):
         # An unconditional branch is represented by VEX's default successor,
@@ -1269,7 +1295,7 @@ def _analyze_jump_successors(
     direct_target = _resolve_direct_branch_target(
         project,
         bounds,
-        last.direct_target(),
+        transfer.direct_target(),
         vex_branch_targets,
     )
     if direct_target is None:
@@ -1277,7 +1303,7 @@ def _analyze_jump_successors(
 
     expected: list[JumpSuccessorExpectation] = []
     kind: Literal["conditional", "direct"]
-    fallthrough_addr = last_insn.address + last_insn.size
+    fallthrough_addr = final_insn.address + final_insn.size
     if is_conditional:
         expected.append(JumpSuccessorExpectation(direct_target, "Ijk_Boring", True))
         if _can_decode_block_at(project, bounds, fallthrough_addr):

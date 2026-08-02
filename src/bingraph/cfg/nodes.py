@@ -15,6 +15,15 @@ from .graph import (
 from .models import BlockSpec, FunctionBounds
 
 
+def _block_thumb_mode(seed_cfg: CFGBase, addr: int) -> bool:
+    """Return the execution mode encoded by an ARM/Thumb block address."""
+
+    try:
+        return bool(seed_cfg.project.arch.is_thumb(addr))
+    except AttributeError:
+        return False
+
+
 def prune_orphan_simprocedures(graph: CFGGraph) -> int:
     """Remove simprocedure nodes that no longer have incoming edges."""
 
@@ -57,6 +66,10 @@ def make_cfg_node(
         function_address=func_addr,
         block_id=block.addr,
         instruction_addrs=block.instruction_addrs,
+        # CFGNode defaults to ARM mode. Preserve the address-tagged Thumb mode
+        # so later anomaly checks do not mistake a valid linear edge for a
+        # stale ARM-to-Thumb transition.
+        thumb=_block_thumb_mode(seed_cfg, block.addr),
         name=name,
     )
 

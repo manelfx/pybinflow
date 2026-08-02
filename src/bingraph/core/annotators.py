@@ -240,6 +240,21 @@ def _lift_control_transfer_tail(edge, tail):
         return None
 
 
+def _tail_lift_confirms_unconditional_direct_branch(
+    edge, tail, target_addr: int
+) -> bool:
+    """Return whether a focused VEX lift confirms one direct target and no exits."""
+
+    tail_vex = _lift_control_transfer_tail(edge, tail)
+    if tail_vex is None or tail_vex.jumpkind != "Ijk_Boring":
+        return False
+    try:
+        next_addr = tail_vex.next.con.value
+    except AttributeError:
+        return False
+    return next_addr == target_addr and not tail_vex.exit_statements
+
+
 def _capstone_direct_branch_edge_type(edge, exit_targets: set[int]) -> str | None:
     """Classify a direct branch obscured by VEX block semantics.
 
@@ -256,11 +271,30 @@ def _capstone_direct_branch_edge_type(edge, exit_targets: set[int]) -> str | Non
     target_addr = semantics.direct_target_for_arch(edge.src.project.arch.name)
     if not semantics.is_jump() or target_addr is None:
         return None
-    if not semantics.is_conditional_jump():
+    is_conditional = semantics.is_conditional_jump()
+    if is_conditional:
+        try:
+            successor_addrs = {
+                successor.addr for successor in edge.src.graph.successors(edge.src.obj)
+            }
+        except (AttributeError, KeyError):
+            successor_addrs = set()
+
+        if successor_addrs == {target_addr}:
+            if _tail_lift_confirms_unconditional_direct_branch(edge, tail, target_addr):
+                # Several architectures encode an unconditional direct branch
+                # as a one-operand generic jump. Capstone cannot distinguish
+                # it from a flag-conditioned branch, but a focused VEX lift
+                # has no Exit for its sole target.
+                is_conditional = False
+
+    if not is_conditional:
         # Prefer VEX when it still exposes an explicit conditional exit. A
         # Thumb branch can look unconditional to Capstone while VEX retains
         # architecture-specific condition semantics for the CFG edge.
-        if exit_targets:
+        if exit_targets and not _tail_lift_confirms_unconditional_direct_branch(
+            edge, tail, target_addr
+        ):
             return None
         fallthrough_addr = tail[-1].address + tail[-1].size
         if target_addr == fallthrough_addr:
@@ -325,10 +359,10 @@ def _capstone_linear_tail_edge_type(edge, vex) -> str | None:
     if not isinstance(next_addr, int):
         return None
     next_is_internal = source_node.addr <= next_addr < fallthrough_addr
-    next_is_warning_fallthrough = (
-        vex.jumpkind == "Ijk_EmWarn" and next_addr == fallthrough_addr
+    next_is_error_fallthrough = (
+        vex.jumpkind in {"Ijk_EmWarn", "Ijk_EmFail"} and next_addr == fallthrough_addr
     )
-    if not (next_is_internal or next_is_warning_fallthrough):
+    if not (next_is_internal or next_is_error_fallthrough):
         return None
     if successor_addrs != {fallthrough_addr}:
         return None
@@ -360,11 +394,29 @@ def _vex_boring_edge_type(edge) -> str:
         try:
             call_target = vex.next.con.value
         except AttributeError:
-            return "UNKNOWN"
+            call_target = None
         # CFGFast occasionally retains a direct call target as Ijk_Boring even
         # though VEX identifies the source transfer as a call. Only recover
         # the style when the edge lands at that exact lifted target.
-        return "CALL" if edge.dst.obj.addr == call_target else "UNKNOWN"
+        if edge.dst.obj.addr == call_target:
+            return "CALL"
+
+        # A conditional call has an explicit boring exit to its architectural
+        # fall-through, while VEX's default target remains the call itself.
+        # This also covers conditional indirect calls, whose call target is
+        # not a concrete VEX value.
+        fallthrough_addr = source_node.addr + source_node.size
+        if edge.dst.obj.addr != fallthrough_addr:
+            return "UNKNOWN"
+        for _, _, stmt in vex.exit_statements:
+            if stmt.jumpkind != "Ijk_Boring":
+                continue
+            try:
+                if stmt.dst.value == fallthrough_addr:
+                    return "CONDITIONAL_FALSE"
+            except AttributeError:
+                continue
+        return "UNKNOWN"
 
     try:
         next_addr = vex.next.con.value

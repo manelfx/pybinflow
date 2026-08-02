@@ -6,6 +6,7 @@ import pytest
 from capstone import CS_GRP_JUMP, CS_OP_IMM
 from capstone.x86 import X86_INS_JMP
 
+import bingraph.core.annotators as annotators
 from bingraph.core.annotators import _edge_type
 
 
@@ -190,6 +191,21 @@ def test_boring_edge_to_direct_vex_call_target_is_a_call() -> None:
     assert _edge_type(_edge(source, _node(0x1004), jumpkind="Ijk_Boring")) == "UNKNOWN"
 
 
+def test_conditional_indirect_call_uses_its_explicit_fallthrough_exit() -> None:
+    """Style a conditional indirect call's not-taken path as a branch edge."""
+
+    source = _node(
+        0x1000,
+        size=4,
+        vex=_vex("Ijk_Call", exit_targets=(0x1004,)),
+    )
+
+    assert (
+        _edge_type(_edge(source, _node(0x1004), jumpkind="Ijk_Boring"))
+        == "CONDITIONAL_FALSE"
+    )
+
+
 def test_capstone_conditional_branch_overrides_folded_vex_default() -> None:
     """Keep both static successors when VEX has folded a branch condition."""
 
@@ -355,15 +371,16 @@ def test_capstone_linear_tail_overrides_truncated_vex_default(
     assert _edge_type(_edge(source, fallthrough, jumpkind="Ijk_Boring")) == "NEXT"
 
 
-def test_capstone_linear_tail_overrides_vex_warning_jumpkind() -> None:
-    """Classify a non-branch instruction despite VEX's warning jumpkind."""
+@pytest.mark.parametrize("jumpkind", ["Ijk_EmWarn", "Ijk_EmFail"])
+def test_capstone_linear_tail_overrides_vex_error_jumpkind(jumpkind: str) -> None:
+    """Classify a non-branch instruction despite VEX's error jumpkind."""
 
     fallthrough = _node(0x40B692)
     graph = SimpleNamespace(successors=lambda _node: (fallthrough.obj,))
     source = _node(
         0x40B68A,
         size=8,
-        vex=_vex("Ijk_EmWarn", next_addr=0x40B692),
+        vex=_vex(jumpkind, next_addr=0x40B692),
         capstone_insns=(
             SimpleNamespace(
                 address=0x40B68E,
@@ -426,6 +443,67 @@ def test_capstone_direct_jump_keeps_vex_conditional_semantics() -> None:
     assert (
         _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "CONDITIONAL_TRUE"
     )
+
+
+def test_tail_lift_disambiguates_one_operand_direct_jump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use the transfer-tail lift for generic unconditional branch encodings."""
+
+    target = _node(0x2000)
+    graph = SimpleNamespace(successors=lambda _node: (target.obj,))
+    jump = SimpleNamespace(
+        address=0x1004,
+        size=4,
+        id=0,
+        groups=(CS_GRP_JUMP,),
+        operands=(SimpleNamespace(type=CS_OP_IMM, imm=0x2000),),
+    )
+    source = _node(
+        0x1000,
+        size=8,
+        vex=_vex("Ijk_Boring", next_addr=0x1004, exit_targets=(0x1004,)),
+        capstone_insns=(jump,),
+        graph=graph,
+        arch_name="MIPS32",
+    )
+    monkeypatch.setattr(
+        annotators,
+        "_lift_control_transfer_tail",
+        lambda _edge, _tail: _vex("Ijk_Boring", next_addr=0x2000),
+    )
+
+    assert _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "UNCONDITIONAL"
+
+
+def test_tail_lift_overrides_stale_full_block_exit_for_direct_jump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use the direct branch tail when the full VEX lift stopped earlier."""
+
+    target = _node(0x2000)
+    graph = SimpleNamespace(successors=lambda _node: (target.obj,))
+    jump = SimpleNamespace(
+        address=0x1004,
+        size=4,
+        id=X86_INS_JMP,
+        groups=(CS_GRP_JUMP,),
+        operands=(SimpleNamespace(type=CS_OP_IMM, imm=0x2000),),
+    )
+    source = _node(
+        0x1000,
+        size=8,
+        vex=_vex("Ijk_Boring", next_addr=0x1004, exit_targets=(0x1004,)),
+        capstone_insns=(jump,),
+        graph=graph,
+    )
+    monkeypatch.setattr(
+        annotators,
+        "_lift_control_transfer_tail",
+        lambda _edge, _tail: _vex("Ijk_Boring", next_addr=0x2000),
+    )
+
+    assert _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "UNCONDITIONAL"
 
 
 def test_folded_conditional_with_sequential_target_remains_fallthrough() -> None:

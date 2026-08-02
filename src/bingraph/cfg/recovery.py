@@ -290,9 +290,16 @@ def lift_block_terminator(
                 f"(terminator {last.address:#x}: {last.mnemonic} {last.op_str})"
             ) from exc
 
+    # VEX associates MIPS branch exits with the executed delay-slot
+    # instruction, not with the preceding branch. Treat both instructions as
+    # the recovered terminator's provenance so direct loop targets survive.
+    terminator_addrs = {last.address}
+    if arch_has_delay_slot(project.arch.name) and len(tail_insns) > 1:
+        terminator_addrs.add(tail_insns[1].address)
+
     exit_targets: list[int] = []
     for ins_addr, _, stmt in vex.exit_statements:
-        if ins_addr != last.address:
+        if ins_addr not in terminator_addrs:
             continue
         target = getattr(stmt.dst, "value", None)
         if isinstance(target, int):

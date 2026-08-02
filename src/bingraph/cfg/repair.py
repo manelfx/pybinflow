@@ -97,7 +97,7 @@ from angr.knowledge_plugins.cfg import CFGNode
 from loguru import logger
 import pyvex
 
-from bingraph.helpers.capstone import arch_has_delay_slot
+from bingraph.helpers.capstone import arch_has_delay_slot, control_transfer_index
 
 from .graph import (
     add_successor_edge as _add_successor_edge,
@@ -789,7 +789,45 @@ class _RepairSession:
             and getattr(entry, "thumb", None) is not None
         }
         node_mode = getattr(node, "thumb", None)
-        return not entry_modes or node_mode is None or node_mode in entry_modes
+        if entry_modes and node_mode is not None and node_mode not in entry_modes:
+            return False
+        return not self._has_stale_linear_mode_transition(node)
+
+    def _has_stale_linear_mode_transition(self, node: CFGNode) -> bool:
+        """Return whether ``node`` falls through into an incompatible ARM mode.
+
+        A normal ARM/Thumb mode transition needs a control-transfer instruction
+        such as ``bx`` or ``blx``. CFGFast can retain a stale ``Ijk_Boring``
+        edge from an ARM block into a disconnected Thumb decode stream. Before
+        unresolved-jump fallback makes that ARM block reachable, reject this
+        impossible linear transition rather than preserving the alternate
+        stream as a speculative indirect-jump target.
+        """
+
+        source_mode = self._block_execution_mode(node)
+        if source_mode is None or node not in set(self.graph.nodes()):
+            return False
+
+        alternate_successor = any(
+            edge_data.get("jumpkind") == "Ijk_Boring"
+            and _node_is_materialized_cfg_node(successor)
+            and (successor_mode := self._block_execution_mode(successor)) is not None
+            and successor_mode != source_mode
+            for successor in self.graph.successors(node)
+            if (edge_data := self.graph.get_edge_data(node, successor)) is not None
+        )
+        if not alternate_successor:
+            return False
+
+        decoded = DecodedNode.from_node(node)
+        if decoded.insns is None:
+            return False
+        return (
+            control_transfer_index(
+                self.project.arch.name, list(decoded.insns), strict=False
+            )
+            is None
+        )
 
     def _attach_unresolved_jump_fallbacks(self) -> bool:
         """Keep disconnected seed regions reachable through unresolved jump leaves."""
@@ -1400,6 +1438,9 @@ class _RepairSession:
     def _reconcile_node(self, node: CFGNode) -> None:
         """Satisfy local edge invariants before scheduling a full block recovery."""
 
+        if self._repair_proven_inval_icache_self_loop(node):
+            return
+
         for expectation in self.anomalies.missing_jump_successors(node):
             self._resolve_successor(
                 node,
@@ -1418,6 +1459,29 @@ class _RepairSession:
                     reason=f"remaining_anomaly_at_{node.addr:#x}",
                 )
             )
+
+    def _repair_proven_inval_icache_self_loop(self, node: CFGNode) -> bool:
+        """Replace a VEX invalidation self-edge with its proven continuation."""
+
+        fallthrough_addr = self.anomalies.proven_inval_icache_fallthrough(node)
+        if fallthrough_addr is None:
+            return False
+        edge_data = self.graph.get_edge_data(node, node) or {}
+        if edge_data.get("jumpkind") != "Ijk_InvalICache":
+            return False
+
+        self.graph.remove_edge(node, node)
+        self.stats.inval_icache_self_loops_resolved += 1
+        self._note_mutation()
+        self._resolve_successor(
+            node,
+            fallthrough_addr,
+            "Ijk_Boring",
+            reason=f"resolved_inval_icache_of_{node.addr:#x}",
+            preserve_exact_addr=False,
+            resolution_policy="immediate",
+        )
+        return True
 
     def _reconcile_addr(self, addr: int) -> None:
         """Reconcile every materialized node currently starting at ``addr``."""
@@ -1925,6 +1989,11 @@ class _RepairSession:
                         )
                     )
                 self._requeue_pending(obligation)
+            return
+
+        if any(
+            self._repair_proven_inval_icache_self_loop(node) for node in current_nodes
+        ):
             return
 
         acceptable_node = self._first_acceptable_entry(current_nodes)

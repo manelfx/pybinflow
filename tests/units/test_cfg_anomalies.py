@@ -121,6 +121,59 @@ def test_anomaly_detector_logs_each_kind_and_address_once() -> None:
     assert messages == ["coverage warning\n", "jump warning\n"]
 
 
+def test_inval_icache_self_loop_is_anomalous_when_fallthrough_is_proven(
+    monkeypatch,
+) -> None:
+    """Report only invalidated self-loops with a statically safe continuation."""
+
+    node = SimpleNamespace(addr=0x1000, size=4)
+    graph = SimpleNamespace()
+    bounds = FunctionBounds(0x1000, 0x1010, 0x10, SimpleNamespace(name="f"))
+    monkeypatch.setattr(
+        anomalies,
+        "_proven_inval_icache_fallthrough",
+        lambda *_args: 0x1004,
+    )
+
+    assert anomalies._inval_icache_self_loop_anomaly(object(), graph, bounds, node) == (
+        CFGAnomaly(
+            "inval_icache_self_loop",
+            0x1000,
+            "Node 0x1000 has a resolved Ijk_InvalICache self-loop; "
+            "execution falls through to 0x1004",
+        )
+    )
+
+
+def test_detects_linear_arm_to_thumb_transition_without_branch(monkeypatch) -> None:
+    """Reject a stale mode-changing boring edge without a control transfer."""
+
+    source = SimpleNamespace(
+        addr=0x1000,
+        thumb=False,
+        is_simprocedure=False,
+        block=SimpleNamespace(arch=SimpleNamespace(name="ARMEL")),
+    )
+    target = SimpleNamespace(addr=0x1005, thumb=True, is_simprocedure=False)
+    graph = SimpleNamespace(
+        successors=lambda node: (target,) if node is source else (),
+        get_edge_data=lambda _source, _target: {"jumpkind": "Ijk_Boring"},
+    )
+    monkeypatch.setattr(
+        anomalies.DecodedNode,
+        "from_node",
+        lambda _node: DecodedNode(()),
+    )
+
+    assert anomalies._stale_linear_execution_mode_transition_anomaly(
+        graph, source
+    ) == CFGAnomaly(
+        "stale_linear_execution_mode_transition",
+        0x1000,
+        "Node 0x1000 falls through from ARM to Thumb at 0x1005",
+    )
+
+
 def test_terminal_vex_node_with_successor_needs_repair() -> None:
     """Reject CFGFast's stale fallthrough after a VEX-level return."""
 
@@ -283,6 +336,109 @@ def test_fresh_vex_target_overrides_relative_capstone_branch_operand(
 
     assert analysis is not None
     assert [expectation.addr for expectation in analysis.expected] == [0x4000, 0x1004]
+
+
+def test_delayed_direct_branch_keeps_capstone_condition_without_vex_exit(
+    monkeypatch,
+) -> None:
+    """Keep MIPS conditional flow when a narrow VEX lift omits its Exit."""
+
+    branch = SimpleNamespace(
+        address=0x1000,
+        size=4,
+        groups=(CS_GRP_JUMP,),
+        operands=(
+            SimpleNamespace(type=None),
+            SimpleNamespace(type=CS_OP_IMM, imm=0x2000),
+        ),
+        id=None,
+    )
+    delay_slot = SimpleNamespace(
+        address=0x1004,
+        size=4,
+        groups=(),
+        operands=(),
+        id=None,
+    )
+    vex = SimpleNamespace(
+        jumpkind="Ijk_Boring",
+        exit_statements=(),
+    )
+    node = SimpleNamespace(
+        addr=0x1000,
+        size=8,
+        block=SimpleNamespace(arch=SimpleNamespace(name="MIPS64"), vex=vex),
+    )
+    project = SimpleNamespace(
+        loader=SimpleNamespace(
+            find_object_containing=lambda addr: object() if addr == 0x2000 else None
+        )
+    )
+    graph = SimpleNamespace(successors=lambda _node: ())
+    bounds = FunctionBounds(0x1000, 0x3000, 0x2000, SimpleNamespace(name="f"))
+    monkeypatch.setattr(
+        jumps.DecodedNode,
+        "from_node",
+        lambda _node: DecodedNode((branch, delay_slot)),
+    )
+    monkeypatch.setattr(
+        anomalies, "node_has_decoding_coverage_mismatch", lambda _node: False
+    )
+    monkeypatch.setattr(anomalies, "_can_decode_block_at", lambda *_args: True)
+    monkeypatch.setattr(jumps, "lift_instruction_vex", lambda *_args: vex)
+
+    analysis = jumps._analyze_jump_successors(project, graph, bounds, node)
+
+    assert analysis is not None
+    assert [expectation.addr for expectation in analysis.expected] == [0x2000, 0x1008]
+
+
+def test_delayed_direct_branch_without_condition_stays_unconditional(
+    monkeypatch,
+) -> None:
+    """Do not infer a MIPS fallthrough from a one-target direct branch."""
+
+    branch = SimpleNamespace(
+        address=0x1000,
+        size=4,
+        groups=(CS_GRP_JUMP,),
+        operands=(SimpleNamespace(type=CS_OP_IMM, imm=0x2000),),
+        id=None,
+    )
+    delay_slot = SimpleNamespace(
+        address=0x1004,
+        size=4,
+        groups=(),
+        operands=(),
+        id=None,
+    )
+    vex = SimpleNamespace(jumpkind="Ijk_Boring", exit_statements=())
+    node = SimpleNamespace(
+        addr=0x1000,
+        size=8,
+        block=SimpleNamespace(arch=SimpleNamespace(name="MIPS64"), vex=vex),
+    )
+    project = SimpleNamespace(
+        loader=SimpleNamespace(
+            find_object_containing=lambda addr: object() if addr == 0x2000 else None
+        )
+    )
+    graph = SimpleNamespace(successors=lambda _node: ())
+    bounds = FunctionBounds(0x1000, 0x3000, 0x2000, SimpleNamespace(name="f"))
+    monkeypatch.setattr(
+        jumps.DecodedNode,
+        "from_node",
+        lambda _node: DecodedNode((branch, delay_slot)),
+    )
+    monkeypatch.setattr(
+        anomalies, "node_has_decoding_coverage_mismatch", lambda _node: False
+    )
+    monkeypatch.setattr(jumps, "lift_instruction_vex", lambda *_args: vex)
+
+    analysis = jumps._analyze_jump_successors(project, graph, bounds, node)
+
+    assert analysis is not None
+    assert [expectation.addr for expectation in analysis.expected] == [0x2000]
 
 
 def test_fresh_vex_target_overrides_stale_node_target_for_direct_branch(

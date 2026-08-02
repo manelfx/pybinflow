@@ -42,7 +42,9 @@ def _bare_session() -> cfg_module._RepairSession:
         SimpleNamespace(addr=0x1000, end_addr=0x2000),
     )
     session.graph = object()
-    session.project = SimpleNamespace(arch=SimpleNamespace(is_thumb=lambda addr: False))
+    session.project = SimpleNamespace(
+        arch=SimpleNamespace(name="X86", is_thumb=lambda addr: False)
+    )
     return session
 
 
@@ -380,6 +382,41 @@ def test_unresolved_fallback_skips_disconnected_alternate_mode_nodes() -> None:
     assert session._attach_unresolved_jump_fallbacks()
     assert session.graph.has_edge(fallback, same_mode)
     assert not session.graph.has_edge(fallback, alternate_mode)
+
+
+def test_unresolved_fallback_skips_stale_linear_arm_to_thumb_transition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not root a Thumb stream through an ARM block without a branch."""
+
+    session = _bare_session()
+    fallback = _source_node(0x601050)
+    fallback.is_simprocedure = True
+    fallback.simprocedure_name = "UnresolvableJumpTarget"
+    entry = _source_node(0x1000)
+    entry.size = 1
+    entry.thumb = False
+    arm_candidate = _source_node(0x1100)
+    arm_candidate.size = 4
+    arm_candidate.thumb = False
+    arm_candidate.is_simprocedure = False
+    thumb_successor = _source_node(0x1105)
+    thumb_successor.size = 2
+    thumb_successor.thumb = True
+    thumb_successor.is_simprocedure = False
+    session.graph = nx.DiGraph()
+    session.graph.add_edge(arm_candidate, thumb_successor, jumpkind="Ijk_Boring")
+    session.graph.add_node(entry)
+    session._unresolved_jump_fallback_nodes = lambda: [fallback]
+    session._disconnected_function_nodes = lambda: [arm_candidate, thumb_successor]
+    monkeypatch.setattr(
+        cfg_module.DecodedNode,
+        "from_node",
+        classmethod(lambda _cls, _node: cfg_module.DecodedNode(())),
+    )
+
+    assert not session._attach_unresolved_jump_fallbacks()
+    assert not session.graph.has_edge(fallback, arm_candidate)
 
 
 def test_immediate_entry_downgrades_to_queued_work(

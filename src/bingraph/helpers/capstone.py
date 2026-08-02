@@ -105,6 +105,15 @@ class InsnSemantics:
 
         return True
 
+    def has_explicit_branch_condition(self) -> bool:
+        """Return whether a direct branch carries its condition as an operand."""
+
+        return (
+            self.is_jump()
+            and self.direct_target() is not None
+            and len(self.insn.operands) > 1
+        )
+
     def direct_target(self) -> int | None:
         """Return the final immediate operand when it is a branch target."""
 

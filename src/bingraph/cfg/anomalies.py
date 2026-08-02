@@ -8,6 +8,7 @@ from angr import Project
 from angr.analyses.cfg import CFGBase
 from angr.knowledge_plugins.cfg import CFGNode
 from loguru import logger
+import pyvex
 
 from bingraph.helpers.capstone import (
     InsnSemantics,
@@ -27,8 +28,13 @@ from .graph import (
     node_is_placeholder as _node_is_placeholder,
     node_is_simprocedure as _node_is_simprocedure,
     node_range_end as _node_range_end,
+    node_vex as _node_vex,
 )
-from .jumps import _missing_jump_successor_anomaly, _missing_jump_successors
+from .jumps import (
+    _constant_register_from_predecessors,
+    _missing_jump_successor_anomaly,
+    _missing_jump_successors,
+)
 from .models import (
     CFGAnomaly,
     FunctionBounds,
@@ -157,6 +163,102 @@ def _can_decode_block_at(project: Project, bounds: FunctionBounds, addr: int) ->
     """Return cached decodeability for one address in a function's bounds."""
 
     return _can_decode_block_at_cached(project, bounds.addr, bounds.end_addr, addr)
+
+
+def _inval_icache_loaded_register_offset(vex) -> int | None:
+    """Return the register used as one invalidated block's instruction address."""
+
+    definitions = {
+        statement.tmp: statement.data
+        for statement in vex.statements
+        if isinstance(statement, pyvex.stmt.WrTmp)
+    }
+    for statement in vex.statements:
+        if not (
+            isinstance(statement, pyvex.stmt.WrTmp)
+            and isinstance(statement.data, pyvex.expr.Load)
+        ):
+            continue
+        address = statement.data.addr
+        seen: set[int] = set()
+        while isinstance(address, pyvex.expr.RdTmp):
+            if address.tmp in seen:
+                break
+            seen.add(address.tmp)
+            address = definitions.get(address.tmp)
+        if isinstance(address, pyvex.expr.Get):
+            return address.offset
+    return None
+
+
+def _proven_inval_icache_fallthrough(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node,
+) -> int | None:
+    """Return a safe fallthrough for a statically resolved invalidated block.
+
+    VEX uses ``Ijk_InvalICache`` for instructions that execute an instruction
+    selected at runtime. Most such transfers must remain unknown. A self-edge
+    is recoverable only when the target register has one VEX-proven constant
+    definition and the selected instruction itself lifts as plain linear code.
+    """
+
+    vex = _node_vex(node)
+    if vex is None:
+        return None
+    edge_data = graph.get_edge_data(node, node) or {}
+    if (
+        vex.jumpkind != "Ijk_InvalICache"
+        or edge_data.get("jumpkind") != "Ijk_InvalICache"
+    ):
+        return None
+
+    register_offset = _inval_icache_loaded_register_offset(vex)
+    if register_offset is None:
+        return None
+    target = _constant_register_from_predecessors(graph, bounds, node, register_offset)
+    if target is None:
+        return None
+
+    insn = decode_one(project, target, getattr(project.arch, "max_inst_bytes", 16))
+    if insn is None or InsnSemantics(insn).is_control_transfer():
+        return None
+    target_vex = lift_instruction_vex(project, insn)
+    next_addr = getattr(getattr(target_vex, "next", None), "con", None)
+    if (
+        target_vex is None
+        or target_vex.jumpkind != "Ijk_Boring"
+        or getattr(next_addr, "value", None) != target + insn.size
+    ):
+        return None
+
+    fallthrough_addr = node.addr + node.size
+    return (
+        fallthrough_addr
+        if _can_decode_block_at(project, bounds, fallthrough_addr)
+        else None
+    )
+
+
+def _inval_icache_self_loop_anomaly(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node,
+) -> CFGAnomaly | None:
+    """Return an anomaly for a statically provable invalidated self-loop."""
+
+    fallthrough_addr = _proven_inval_icache_fallthrough(project, graph, bounds, node)
+    if fallthrough_addr is None:
+        return None
+    return CFGAnomaly(
+        "inval_icache_self_loop",
+        node.addr,
+        f"Node {node.addr:#x} has a resolved Ijk_InvalICache self-loop; "
+        f"execution falls through to {fallthrough_addr:#x}",
+    )
 
 
 @lru_cache(maxsize=10_000)
@@ -327,6 +429,52 @@ def _missing_linear_fallthrough_anomaly(
         node.addr,
         f"Node {node.addr:#x} is missing straight-line successor {fallthrough_addr:#x}",
     )
+
+
+def _stale_linear_execution_mode_transition_anomaly(
+    graph: CFGGraph, node
+) -> CFGAnomaly | None:
+    """Return an anomaly for an ARM/Thumb switch without a branch instruction.
+
+    CFGFast can retain a speculative alternate-mode stream and connect it with
+    an ``Ijk_Boring`` edge from an ARM or Thumb block. A normal mode switch
+    requires a control-transfer instruction such as ``bx`` or ``blx``; a
+    linear edge between different execution modes is therefore stale. Queue
+    the source for ordinary recovery so bounded decoding rebuilds its real
+    terminator and physical fall-through.
+    """
+
+    source_mode = getattr(node, "thumb", None)
+    if not isinstance(source_mode, bool):
+        return None
+
+    decoded = DecodedNode.from_node(node)
+    if decoded.insns is None:
+        return None
+    if (
+        control_transfer_index(node.block.arch.name, list(decoded.insns), strict=False)
+        is not None
+    ):
+        return None
+
+    for successor in graph.successors(node):
+        if _node_is_simprocedure(successor):
+            continue
+        successor_mode = getattr(successor, "thumb", None)
+        edge_data = graph.get_edge_data(node, successor) or {}
+        if (
+            isinstance(successor_mode, bool)
+            and successor_mode != source_mode
+            and edge_data.get("jumpkind") == "Ijk_Boring"
+        ):
+            return CFGAnomaly(
+                "stale_linear_execution_mode_transition",
+                node.addr,
+                f"Node {node.addr:#x} falls through from "
+                f"{'Thumb' if source_mode else 'ARM'} to "
+                f"{'Thumb' if successor_mode else 'ARM'} at {successor.addr:#x}",
+            )
+    return None
 
 
 def node_has_linear_merge_successor(
@@ -719,6 +867,33 @@ class CFGAnomalyDetector:
         self._report(anomaly)
         return True
 
+    def proven_inval_icache_fallthrough(self, node) -> int | None:
+        """Return a statically proved fallthrough for one invalidated node."""
+
+        return _proven_inval_icache_fallthrough(
+            self.project, self.graph, self.bounds, node
+        )
+
+    def check_inval_icache_self_loop(self, node) -> bool:
+        """Check for a dynamic-execution self-loop with a proven continuation."""
+
+        anomaly = _inval_icache_self_loop_anomaly(
+            self.project, self.graph, self.bounds, node
+        )
+        if anomaly is None:
+            return False
+        self._report(anomaly)
+        return True
+
+    def check_stale_linear_execution_mode_transition(self, node) -> bool:
+        """Check that a linear edge does not change ARM/Thumb execution mode."""
+
+        anomaly = _stale_linear_execution_mode_transition_anomaly(self.graph, node)
+        if anomaly is None:
+            return False
+        self._report(anomaly)
+        return True
+
     def check_linear_merge_successor(self, node) -> bool:
         """Check for an artificial linear split and report it once."""
 
@@ -763,6 +938,8 @@ class CFGAnomalyDetector:
             or self.check_missing_jump_successor(node)
             or self.check_missing_call_fallthrough(node)
             or self.check_missing_linear_fallthrough(node)
+            or self.check_inval_icache_self_loop(node)
+            or self.check_stale_linear_execution_mode_transition(node)
             or self.check_linear_merge_successor(node)
         )
 

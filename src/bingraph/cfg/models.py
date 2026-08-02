@@ -131,6 +131,7 @@ class CustomCFGStats:
     unresolved_fallback_edges_added: int = 0
     unresolved_fallbacks_flattened: int = 0
     unresolved_candidate_edges_flattened: int = 0
+    inval_icache_self_loops_resolved: int = 0
     unreachable_blocks_removed: int = 0
     placeholders_pruned: int = 0
     orphan_simprocedures_pruned: int = 0

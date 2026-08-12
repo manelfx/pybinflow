@@ -1,0 +1,13 @@
+digraph G {
+rankdir=TB;
+node [shape=Mrecord, fontname=monospace, fontsize=8];
+edge [fontname=monospace, fontsize=8];
+"0x483d5c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x483d5c)</TD><TD ><B>lookup_free_ino_inode</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00483d5c&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">&#123;r3, r4, r5, lr&#125;</TD></TR><TR><TD ALIGN="LEFT">0x00483d60&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r5, r0</TD></TR><TR><TD ALIGN="LEFT">0x00483d64&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r4, r1</TD></TR><TR><TD ALIGN="LEFT">0x00483d68&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r0, [r0, &#35;0x228]</TD></TR><TR><TD ALIGN="LEFT">0x00483d6c&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00483d70&#58;&nbsp;</TD><TD ALIGN="LEFT">beq</TD><TD ALIGN="LEFT">&#35;0x483d78</TD></TR></TABLE> }>];
+"0x483d74" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x483d74)</TD><TD ><B>lookup_free_ino_inode+0x18</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00483d74&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500588</TD></TR></TABLE> }>];
+"0x483d78" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x483d78)</TD><TD ><B>lookup_free_ino_inode+0x1c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00483d78&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00483d7c&#58;&nbsp;</TD><TD ALIGN="LEFT">popne</TD><TD ALIGN="LEFT">&#123;r3, r4, r5, pc&#125;</TD></TR></TABLE> }>];
+"0x500588" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500588)</TD><TD ><B>igrab</B></TD><TD > SIMP</TD></TR></TABLE> }>];
+"0x483d5c" -> "0x483d74" [color=red];
+"0x483d5c" -> "0x483d78" [color=green];
+"0x483d74" -> "0x483d78" [color=gray, style=dashed];
+"0x483d74" -> "0x500588" [color=gray];
+}

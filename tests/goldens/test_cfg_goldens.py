@@ -69,7 +69,7 @@ import traceback
 from dataclasses import asdict, dataclass, field
 import shutil
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterable, Iterator
 from unittest.mock import patch
 
 import pytest
@@ -95,8 +95,12 @@ MIN_BBS_ENV = "BINGRAPH_GOLDEN_MIN_BBS"
 SKIPPED_BINARIES = [
     # These binaries currently make CFG golden runs disproportionately slow.
     # Keep them out of the parametrized corpus until we revisit the analysis
-    # strategy for them.
+    # strategy for them. Curated checkpoint artifacts remain selected so this
+    # does not remove regression coverage for these binary families.
     "x86_64/ALLSTAR*",
+    "x86_64/decompiler*",
+    "x86_64/langdetect*",
+    "*lib*",
 ]
 
 
@@ -217,18 +221,6 @@ def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
     with CSV_PATH.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for index, row in enumerate(reader, start=1):
-            # Skip known-problematic binaries before counting rows toward the
-            # optional local test limit.
-            if any(
-                fnmatch.fnmatch(row["filepath"], pattern)
-                for pattern in SKIPPED_BINARIES
-            ):
-                continue
-            if _csv_bool(row["duplicate"]):
-                continue
-            if int(row["num_bbs"]) < min_bbs:
-                continue
-
             normalized_row = {
                 "index": index,
                 "filepath": row["filepath"],
@@ -236,6 +228,24 @@ def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
                 "function_addr": row["funcaddr"],
                 "num_bbs": int(row["num_bbs"]),
             }
+            is_checkpoint = _is_checkpoint(normalized_row)
+
+            # Checkpoints are a curated regression contract. They must remain
+            # part of the normal full golden matrix even when their binary is
+            # skipped, their CSV row is duplicate, or it falls below the BB
+            # threshold used to reduce broad corpus coverage.
+            if (
+                any(
+                    fnmatch.fnmatch(row["filepath"], pattern)
+                    for pattern in SKIPPED_BINARIES
+                )
+                and not is_checkpoint
+            ):
+                continue
+            if _csv_bool(row["duplicate"]) and not is_checkpoint:
+                continue
+            if int(row["num_bbs"]) < min_bbs and not is_checkpoint:
+                continue
 
             # Keep one deterministic representative for each format/name pair.
             # This runs after the BB threshold so a small first variant cannot
@@ -243,9 +253,7 @@ def _iter_rows(limit: int | None = None) -> Iterator[dict[str, Any]]:
             # Curated checkpoint cases remain selected in addition to the
             # ordinary representative for their format/name group.
             function_format = (row["fileformat"], row["funcname"])
-            if function_format in seen_function_formats and not _is_checkpoint(
-                normalized_row
-            ):
+            if function_format in seen_function_formats and not is_checkpoint:
                 continue
             seen_function_formats.add(function_format)
 
@@ -294,6 +302,18 @@ def _is_checkpoint(row: dict[str, Any]) -> bool:
     """Return whether one corpus row belongs to the curated smoke suite."""
 
     return _artifact_relative_path(row).as_posix() in CHECKPOINT_ARTIFACTS
+
+
+def _assert_all_checkpoints_selected(rows: Iterable[dict[str, Any]]) -> None:
+    """Fail collection when a full golden run omits a declared checkpoint."""
+
+    selected = {_artifact_relative_path(row).as_posix() for row in rows}
+    missing = sorted(CHECKPOINT_ARTIFACTS - selected)
+    if missing:
+        raise ValueError(
+            "Full golden selection omitted checkpoint artifact(s): "
+            f"{', '.join(missing)}"
+        )
 
 
 def _summary_payload(
@@ -554,6 +574,8 @@ def _build_test_settings(config: GoldenConfig) -> settings_module.Settings:
 CURRENT_MODE = _golden_mode()
 ACTIVE_CONFIGS = _selected_configs()
 ROWS = tuple(_iter_rows(_env_limit())) if CURRENT_MODE == "compare" else ()
+if CURRENT_MODE == "compare" and _env_limit() is None:
+    _assert_all_checkpoints_selected(ROWS)
 
 
 def _golden_cases():

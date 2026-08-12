@@ -1,0 +1,22 @@
+digraph G {
+rankdir=TB;
+node [shape=Mrecord, fontname=monospace, fontsize=8];
+edge [fontname=monospace, fontsize=8];
+"0x44d480" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d480)</TD><TD ><B>free_extent_map</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d480&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x0044d484&#58;&nbsp;</TD><TD ALIGN="LEFT">bxeq</TD><TD ALIGN="LEFT">lr</TD></TR></TABLE> }>];
+"0x44d488" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d488)</TD><TD ><B>free_extent_map+0x8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d488&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">&#123;r4, lr&#125;</TD></TR><TR><TD ALIGN="LEFT">0x0044d48c&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r4, r0</TD></TR><TR><TD ALIGN="LEFT">0x0044d490&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r3, [r0, &#35;0x68]</TD></TR><TR><TD ALIGN="LEFT">0x0044d494&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r3, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x0044d498&#58;&nbsp;</TD><TD ALIGN="LEFT">beq</TD><TD ALIGN="LEFT">&#35;0x44d534</TD></TR></TABLE> }>];
+"0x44d49c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d49c)</TD><TD ><B>free_extent_map+0x1c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d49c&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">r3, r4, &#35;0x68</TD></TR><TR><TD ALIGN="LEFT">0x0044d4a0&#58;&nbsp;</TD><TD ALIGN="LEFT">pld</TD><TD ALIGN="LEFT">[r3]</TD></TR></TABLE> }>];
+"0x44d4a4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d4a4)</TD><TD ><B>free_extent_map+0x24</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d4a4&#58;&nbsp;</TD><TD ALIGN="LEFT">ldrex</TD><TD ALIGN="LEFT">r2, [r3]</TD></TR><TR><TD ALIGN="LEFT">0x0044d4a8&#58;&nbsp;</TD><TD ALIGN="LEFT">sub</TD><TD ALIGN="LEFT">r2, r2, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x0044d4ac&#58;&nbsp;</TD><TD ALIGN="LEFT">strex</TD><TD ALIGN="LEFT">r1, r2, [r3]</TD></TR><TR><TD ALIGN="LEFT">0x0044d4b0&#58;&nbsp;</TD><TD ALIGN="LEFT">teq</TD><TD ALIGN="LEFT">r1, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x0044d4b4&#58;&nbsp;</TD><TD ALIGN="LEFT">bne</TD><TD ALIGN="LEFT">&#35;0x44d4a4</TD></TR></TABLE> }>];
+"0x44d4b8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d4b8)</TD><TD ><B>free_extent_map+0x38</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d4b8&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r2, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x0044d4bc&#58;&nbsp;</TD><TD ALIGN="LEFT">popne</TD><TD ALIGN="LEFT">&#123;r4, pc&#125;</TD></TR></TABLE> }>];
+"0x44d534" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d534)</TD><TD ><B>free_extent_map+0xb4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d534&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0xfe98</TD></TR><TR><TD ALIGN="LEFT">0x0044d538&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r1, &#35;0x4b</TD></TR><TR><TD ALIGN="LEFT">0x0044d53c&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4b</TD></TR><TR><TD ALIGN="LEFT">0x0044d540&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
+"0x44d544" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d544)</TD><TD ><B>free_extent_map+0xc4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d544&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x44d49c</TD></TR></TABLE> }>];
+"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
+"0x44d480" -> "0x44d488" [color=green];
+"0x44d488" -> "0x44d49c" [color=red];
+"0x44d488" -> "0x44d534" [color=green];
+"0x44d49c" -> "0x44d4a4" [color=blue, style=dashed];
+"0x44d4a4" -> "0x44d4a4" [color=green];
+"0x44d4a4" -> "0x44d4b8" [color=red];
+"0x44d534" -> "0x44d544" [color=gray, style=dashed];
+"0x44d534" -> "0x500048" [color=gray];
+"0x44d544" -> "0x44d49c" [color=blue];
+}

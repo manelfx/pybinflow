@@ -1,0 +1,8 @@
+digraph G {
+rankdir=TB;
+node [shape=Mrecord, fontname=monospace, fontsize=8];
+edge [fontname=monospace, fontsize=8];
+"0x4ba7e0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4ba7e0)</TD><TD ><B>init_module</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004ba7e0&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">&#123;r4, lr&#125;</TD></TR><TR><TD ALIGN="LEFT">0x004ba7e4&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x4bac18</TD></TR></TABLE> }>];
+"0x4ba7e8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4ba7e8)</TD><TD ><B>init_module+0x8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004ba7e8&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x004ba7ec&#58;&nbsp;</TD><TD ALIGN="LEFT">popne</TD><TD ALIGN="LEFT">&#123;r4, pc&#125;</TD></TR></TABLE> }>];
+"0x4ba7e0" -> "0x4ba7e8" [color=gray, style=dashed];
+}

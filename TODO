@@ -112,6 +112,39 @@ inspection found stack-held callbacks and MIPS GOT-style transfers whose `gp`
 base cannot be proven statically. Revisit it only with a stronger provenance
 analysis rather than a heuristic resolver.
 
+=== Move from CFGFast repair to independent CFG construction
+
+The current `cfg_mode=custom` path starts from a bounded CFGFast graph and
+repairs malformed blocks, missing successors, stale splits, overlap, and
+unresolved indirect dispatches. This has improved many corpus artifacts, but
+the growing anomaly and repair surface suggests that CFGFast should eventually
+become optional enrichment rather than the source of CFG topology.
+
+The end state is to construct the function CFG without invoking CFGFast:
+
+- Decode blocks from the function entry and discovered leaders, using exact
+  instruction coverage to make block boundaries canonical by construction.
+- Derive direct fallthrough, call, return, and direct-branch edges from decoded
+  terminators, preserving architecture details such as Thumb mode and delay
+  slots through angr/Capstone/VEX helpers.
+- Reuse VEX selectively for hard control-transfer semantics and static
+  jump-table recovery, but represent unresolved indirect transfers explicitly
+  instead of connecting them to CFGFast-discovered disconnected regions.
+- Expose the result through the existing CFG-compatible wrapper so rendering,
+  knowledge-base integration, and downstream consumers continue to work.
+- Replace CFGFast-derived comments and other metadata with optional enrichment
+  passes over the canonical graph.
+
+Do this incrementally and in parallel with the current repair path:
+
+- Implement a direct-control-flow prototype over the checkpoint corpus.
+- Compare it with custom mode for instruction coverage, unique block ranges,
+  direct-edge correctness, indirect-edge uncertainty, and runtime.
+- Port only the existing VEX/table analyses that improve the new builder.
+- Switch the default only once the independent builder wins broadly; retain
+  CFGFast temporarily as an optional hint and comparison oracle during the
+  migration.
+
 === Address comments
 
 - Bring back comments by default.

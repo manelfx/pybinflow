@@ -1,0 +1,13 @@
+digraph G {
+rankdir=TB;
+node [shape=Mrecord, fontname=monospace, fontsize=8];
+edge [fontname=monospace, fontsize=8];
+"0x481e30" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x481e30)</TD><TD ><B>lookup_free_space_inode</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00481e30&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, lr&#125;</TD></TR><TR><TD ALIGN="LEFT">0x00481e34&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r6, r0</TD></TR><TR><TD ALIGN="LEFT">0x00481e38&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r5, r1</TD></TR><TR><TD ALIGN="LEFT">0x00481e3c&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r4, r2</TD></TR><TR><TD ALIGN="LEFT">0x00481e40&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r0, [r1, &#35;0x30]</TD></TR><TR><TD ALIGN="LEFT">0x00481e44&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00481e48&#58;&nbsp;</TD><TD ALIGN="LEFT">beq</TD><TD ALIGN="LEFT">&#35;0x481e50</TD></TR></TABLE> }>];
+"0x481e4c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x481e4c)</TD><TD ><B>lookup_free_space_inode+0x1c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00481e4c&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500588</TD></TR></TABLE> }>];
+"0x481e50" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x481e50)</TD><TD ><B>lookup_free_space_inode+0x20</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00481e50&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00481e54&#58;&nbsp;</TD><TD ALIGN="LEFT">popne</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, pc&#125;</TD></TR></TABLE> }>];
+"0x500588" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500588)</TD><TD ><B>igrab</B></TD><TD > SIMP</TD></TR></TABLE> }>];
+"0x481e30" -> "0x481e4c" [color=red];
+"0x481e30" -> "0x481e50" [color=green];
+"0x481e4c" -> "0x481e50" [color=gray, style=dashed];
+"0x481e4c" -> "0x500588" [color=gray];
+}

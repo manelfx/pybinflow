@@ -2,7 +2,8 @@ UV := uv run
 
 # These are commands, not filesystem targets. Declaring them phony prevents
 # existing directories such as `tests/` from making Make skip their recipes.
-.PHONY: units format format-check lint typecheck check coverage goldens goldens-checkpoint goldens-promote
+.PHONY: units format format-check lint typecheck check coverage goldens \
+	goldens-checkpoint goldens-promote goldens-symbols
 
 # Run the default fast unit-test suite selected by pytest's `testpaths` setting.
 units:
@@ -39,9 +40,10 @@ coverage:
 	$(UV) coverage report
 	$(UV) coverage html
 
-# Render and compare the complete golden matrix. This can be expensive and
-# writes fresh candidate artifacts under `tests/_actual/`.
-goldens:
+# Render and compare the complete CFG golden matrix. This can be expensive and
+# writes fresh candidate artifacts under `tests/_actual/`. It also verifies
+# that application symbol discovery remains aligned with the CSV corpus.
+goldens: goldens-symbols
 	$(UV) pytest -v --durations=5 tests/goldens/test_cfg_goldens.py
 
 # Render and compare only checkpoint-marked goldens. The selected-test set
@@ -55,3 +57,9 @@ goldens-checkpoint:
 goldens-promote:
 	BINGRAPH_GOLDEN_MODE=promote \
 		$(UV) pytest -v tests/goldens/test_cfg_goldens.py
+
+# Compare application symbol discovery against the CSV corpus, loading one
+# playground binary per test case. This is a semantic audit, not a renderer,
+# so it has no promotion mode or generated graph artifacts.
+goldens-symbols:
+	$(UV) pytest -v --durations=5 tests/goldens/test_symbols_goldens.py

@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x806de47" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x806de47)</TD><TD ><B>tdestroy_recurse+0x47</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0806de47&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x806de21</TD></TR></TABLE> }>];
 "0x806de50" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x806de50)</TD><TD ><B>tdestroy_recurse+0x50</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0806de50&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x806de00</TD></TR></TABLE> }>];
 "0x806de55" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x806de55)</TD><TD ><B>tdestroy_recurse+0x55</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0806de55&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x806de1a</TD></TR></TABLE> }>];
-"0x8100050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8100050)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 subgraph entry_rank {
 rank=source;
 "0x806de00";
@@ -23,7 +22,6 @@ rank=source;
 "0x806de1a" -> "0x806de21" [color=red];
 "0x806de1a" -> "0x806de40" [color=green];
 "0x806de21" -> "0x806de28" [color=gray, style=dashed];
-"0x806de21" -> "0x8100050" [color=gray];
 "0x806de28" -> "0x806de30" [color=gray, style=dashed];
 "0x806de40" -> "0x806de00" [color=gray];
 "0x806de40" -> "0x806de47" [color=gray, style=dashed];

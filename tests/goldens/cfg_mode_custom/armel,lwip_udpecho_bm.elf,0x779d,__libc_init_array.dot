@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x77c7" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x0077c7)</TD><TD ><B>__libc_init_array+0x2a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x000077c7&#58;&nbsp;</TD><TD ALIGN="LEFT">adds</TD><TD ALIGN="LEFT">r5, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x000077c9&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x77a9</TD></TR></TABLE> }>];
 "0x77cb" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x0077cb)</TD><TD ><B>__libc_init_array+0x2e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x000077cb&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr.w</TD><TD ALIGN="LEFT">r3, [r6, r5, lsl &#35;2]</TD></TR><TR><TD ALIGN="LEFT">0x000077cf&#58;&nbsp;</TD><TD ALIGN="LEFT">blx</TD><TD ALIGN="LEFT">r3</TD></TR></TABLE> }>];
 "0x77d1" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x0077d1)</TD><TD ><B>__libc_init_array+0x34</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x000077d1&#58;&nbsp;</TD><TD ALIGN="LEFT">adds</TD><TD ALIGN="LEFT">r5, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x000077d3&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x77bb</TD></TR></TABLE> }>];
-"0x20100050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x20100050)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x779d" -> "0x77a9" [color=blue, style=dashed];
 "0x77a9" -> "0x77ad" [color=red];
 "0x77a9" -> "0x77c1" [color=green];
@@ -21,9 +20,7 @@ edge [fontname=monospace, fontsize=8];
 "0x77bb" -> "0x77bf" [color=red];
 "0x77bb" -> "0x77cb" [color=green];
 "0x77c1" -> "0x77c7" [color=gray, style=dashed];
-"0x77c1" -> "0x20100050" [color=gray];
 "0x77c7" -> "0x77a9" [color=blue];
 "0x77cb" -> "0x77d1" [color=gray, style=dashed];
-"0x77cb" -> "0x20100050" [color=gray];
 "0x77d1" -> "0x77bb" [color=blue];
 }

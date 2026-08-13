@@ -15,10 +15,7 @@ edge [fontname=monospace, fontsize=8];
 "0x47485c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47485c)</TD><TD ><B>read_cmdline+0xc0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047485c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$gp, 0x10($sp)</TD></TR></TABLE> }>];
 "0x474860" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x474860)</TD><TD ><B>read_cmdline+0xc4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00474860&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$ra, 0x44($sp)</TD></TR></TABLE> }>];
 "0x474864" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x474864)</TD><TD ><B>read_cmdline+0xc8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00474864&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s2, 0x40($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00474868&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s1, 0x3c($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0047486c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s0, 0x38($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00474870&#58;&nbsp;</TD><TD ALIGN="LEFT">jr</TD><TD ALIGN="LEFT">$ra</TD></TR><TR><TD ALIGN="LEFT">0x00474874&#58;&nbsp;</TD><TD ALIGN="LEFT">addiu</TD><TD ALIGN="LEFT">$sp, $sp, 0x48</TD></TR></TABLE> }>];
-"0x500134" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500134)</TD><TD ><B>sprintf</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x5004d0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5004d0)</TD><TD ><B>snprintf</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x47479c" -> "0x4747e0" [color=gray, style=dashed];
-"0x47479c" -> "0x500134" [color=gray];
 "0x4747e0" -> "0x4747f8" [color=gray, style=dashed];
 "0x4747f8" -> "0x474804" [color=red];
 "0x4747f8" -> "0x474840" [color=green];
@@ -32,7 +29,6 @@ edge [fontname=monospace, fontsize=8];
 "0x474830" -> "0x474838" [color=red];
 "0x474838" -> "0x474864" [color=blue];
 "0x474840" -> "0x47485c" [color=gray, style=dashed];
-"0x474840" -> "0x5004d0" [color=gray];
 "0x47485c" -> "0x474860" [color=blue, style=dashed];
 "0x474860" -> "0x474864" [color=blue, style=dashed];
 }

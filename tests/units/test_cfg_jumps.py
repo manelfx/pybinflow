@@ -10,6 +10,7 @@ import pyvex
 from bingraph.cfg.jumps import (
     arithmetic_pc_dispatch_targets,
     _jump_table_target_addr,
+    plan_static_jump_table,
     _read_static_jump_table_targets,
     _vex_direct_jump_table,
     _vex_guarded_index_upper_bound,
@@ -18,6 +19,7 @@ from bingraph.cfg.jumps import (
     _x86_pc_thunk_guarded_entry_count,
     static_jump_target_rejection_reason,
 )
+from bingraph.cfg import jumps as jumps_module
 from bingraph.cfg.models import FunctionBounds, StaticJumpTable
 
 
@@ -222,6 +224,43 @@ def test_direct_jump_table_keeps_absolute_entries() -> None:
     assert table.entry_size == 4
     assert not table.entries_are_relative
     assert _jump_table_target_addr(0x1000, table, 0x2000) == 0x2000
+
+
+def test_shared_static_table_plan_is_graph_strategy_neutral(monkeypatch) -> None:
+    """Keep table recognition reusable by fixup and independent extraction."""
+
+    table = StaticJumpTable(
+        base_register_offset=None,
+        base_bits=32,
+        table_displacement=0,
+        index_register_offset=8,
+        index_bits=32,
+        entry_size=4,
+        endness="Iend_LE",
+        signed_entries=False,
+        static_base_addr=0x2000,
+    )
+    dispatcher = _Node(0x1000, 4, SimpleNamespace())
+    graph = nx.DiGraph()
+    graph.add_node(dispatcher)
+    bounds = FunctionBounds(0x1000, 0x1100, 0x100, SimpleNamespace(name="f"))
+    project = SimpleNamespace(arch=SimpleNamespace(name="ARMEL", bits=32))
+    monkeypatch.setattr(
+        jumps_module, "_vex_relative_jump_table", lambda *_args, **_kwargs: table
+    )
+    monkeypatch.setattr(
+        jumps_module, "_vex_direct_jump_table", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        jumps_module, "_guarded_jump_table_entry_count", lambda *_args: 3
+    )
+
+    plan, reason = plan_static_jump_table(project, graph, bounds, dispatcher)
+
+    assert reason is None
+    assert plan is not None
+    assert plan.base_addr == 0x2000
+    assert plan.entry_count == 3
 
 
 def test_relative_jump_table_accepts_a_guarded_full_width_index() -> None:

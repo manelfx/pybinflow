@@ -27,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4226dc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4226dc)</TD><TD ><B>btrfs_print_tree+0x1dc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004226dc&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r3, [r6, &#35;0x58]</TD></TR><TR><TD ALIGN="LEFT">0x004226e0&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r1, [sl]</TD></TR><TR><TD ALIGN="LEFT">0x004226e4&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r2, [sb]</TD></TR><TR><TD ALIGN="LEFT">0x004226e8&#58;&nbsp;</TD><TD ALIGN="LEFT">rsb</TD><TD ALIGN="LEFT">r3, r1, r3</TD></TR><TR><TD ALIGN="LEFT">0x004226ec&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">r3, r2, r3, asr &#35;5</TD></TR><TR><TD ALIGN="LEFT">0x004226f0&#58;&nbsp;</TD><TD ALIGN="LEFT">subs</TD><TD ALIGN="LEFT">r2, r8, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x004226f4&#58;&nbsp;</TD><TD ALIGN="LEFT">lsl</TD><TD ALIGN="LEFT">r3, r3, &#35;0xc</TD></TR><TR><TD ALIGN="LEFT">0x004226f8&#58;&nbsp;</TD><TD ALIGN="LEFT">movne</TD><TD ALIGN="LEFT">r2, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x004226fc&#58;&nbsp;</TD><TD ALIGN="LEFT">sub</TD><TD ALIGN="LEFT">r3, r3, &#35;0x81000000</TD></TR><TR><TD ALIGN="LEFT">0x00422700&#58;&nbsp;</TD><TD ALIGN="LEFT">ldrb</TD><TD ALIGN="LEFT">r3, [r3, &#35;0x64]</TD></TR><TR><TD ALIGN="LEFT">0x00422704&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r3, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00422708&#58;&nbsp;</TD><TD ALIGN="LEFT">movne</TD><TD ALIGN="LEFT">r2, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x0042270c&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r2, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00422710&#58;&nbsp;</TD><TD ALIGN="LEFT">beq</TD><TD ALIGN="LEFT">&#35;0x422654</TD></TR></TABLE> }>];
 "0x422714" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x422714)</TD><TD ><B>btrfs_print_tree+0x214</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00422714&#58;&nbsp;</TD><TD ALIGN="LEFT">udf</TD><TD ALIGN="LEFT">&#35;0x12</TD></TR></TABLE> }>];
 "0x422718" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x422718)</TD><TD ><B>btrfs_print_tree+0x218</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00422718&#58;&nbsp;</TD><TD ALIGN="LEFT">udf</TD><TD ALIGN="LEFT">&#35;0x12</TD></TR></TABLE> }>];
-"0x5000a8" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5000a8)</TD><TD ><B>printk</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 subgraph entry_rank {
 rank=source;
 "0x422500";
@@ -44,7 +43,6 @@ rank=source;
 "0x4225bc" -> "0x4225cc" [color=gray, style=dashed];
 "0x4225cc" -> "0x4225fc" [color=gray, style=dashed];
 "0x4225fc" -> "0x422628" [color=gray, style=dashed];
-"0x4225fc" -> "0x5000a8" [color=gray];
 "0x422628" -> "0x4225bc" [color=green];
 "0x422628" -> "0x422630" [color=red];
 "0x422630" -> "0x422680" [color=blue];

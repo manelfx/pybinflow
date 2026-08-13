@@ -21,7 +21,6 @@ edge [fontname=monospace, fontsize=8];
 "0x475248" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x475248)</TD><TD ><B>run_shell+0x110</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00475248&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$t9, -0x7958($gp)</TD></TR></TABLE> }>];
 "0x47524c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47524c)</TD><TD ><B>run_shell+0x114</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047524c&#58;&nbsp;</TD><TD ALIGN="LEFT">sll</TD><TD ALIGN="LEFT">$v0, $s2, 2</TD></TR><TR><TD ALIGN="LEFT">0x00475250&#58;&nbsp;</TD><TD ALIGN="LEFT">addu</TD><TD ALIGN="LEFT">$v0, $v0, $s0</TD></TR><TR><TD ALIGN="LEFT">0x00475254&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$a1, $s0</TD></TR><TR><TD ALIGN="LEFT">0x00475258&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$a0, $s3</TD></TR><TR><TD ALIGN="LEFT">0x0047525c&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x00475260&#58;&nbsp;</TD><TD ALIGN="LEFT">sw</TD><TD ALIGN="LEFT">$zero, ($v0)</TD></TR></TABLE> }>];
 "0x475264" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x475264)</TD><TD ><B>run_shell+0x12c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00475264&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$gp, 0x10($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00475268&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$a1, $s3</TD></TR><TR><TD ALIGN="LEFT">0x0047526c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$a0, -0x7fd8($gp)</TD></TR><TR><TD ALIGN="LEFT">0x00475270&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$t9, -0x782c($gp)</TD></TR><TR><TD ALIGN="LEFT">0x00475274&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x00475278&#58;&nbsp;</TD><TD ALIGN="LEFT">addiu</TD><TD ALIGN="LEFT">$a0, $a0, -0x1a64</TD></TR></TABLE> }>];
-"0x500228" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500228)</TD><TD ><B>execv</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x475138" -> "0x475198" [color=blue];
 "0x475188" -> "0x475194" [color=red];
 "0x475188" -> "0x4751a0" [color=green];
@@ -47,5 +46,4 @@ edge [fontname=monospace, fontsize=8];
 "0x475230" -> "0x475248" [color=red];
 "0x475248" -> "0x47524c" [color=blue, style=dashed];
 "0x47524c" -> "0x475264" [color=gray, style=dashed];
-"0x47524c" -> "0x500228" [color=gray];
 }

@@ -12,9 +12,7 @@ edge [fontname=monospace, fontsize=8];
 "0x4521ac" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4521ac)</TD><TD ><B>_ZN64_$LT$core..str..error..Utf8Error$u20$as$u20$core..fmt..Debug$GT$3fmt17hcb456900ccce4273E+0xbc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004521ac&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rdi, qword ptr [rax + 0x20]</TD></TR><TR><TD ALIGN="LEFT">0x004521b0&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rax, qword ptr [rax + 0x28]</TD></TR><TR><TD ALIGN="LEFT">0x004521b4&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rsi, [rip + 0xebdf]</TD></TR><TR><TD ALIGN="LEFT">0x004521bb&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 1</TD></TR></TABLE> }>];
 "0x4521c0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4521c0)</TD><TD ><B>_ZN64_$LT$core..str..error..Utf8Error$u20$as$u20$core..fmt..Debug$GT$3fmt17hcb456900ccce4273E+0xd0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004521c0&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">qword ptr [rax + 0x18]</TD></TR></TABLE> }>];
 "0x4521c3" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4521c3)</TD><TD ><B>_ZN64_$LT$core..str..error..Utf8Error$u20$as$u20$core..fmt..Debug$GT$3fmt17hcb456900ccce4273E+0xd3</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004521c3&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 0x20</TD></TR><TR><TD ALIGN="LEFT">0x004521c7&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbx</TD></TR><TR><TD ALIGN="LEFT">0x004521c8&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r14</TD></TR><TR><TD ALIGN="LEFT">0x004521ca&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r15</TD></TR><TR><TD ALIGN="LEFT">0x004521cc&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
-"0x601058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x601058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4520f0" -> "0x45211a" [color=gray, style=dashed];
-"0x4520f0" -> "0x601058" [color=gray];
 "0x45211a" -> "0x452157" [color=gray, style=dashed];
 "0x452157" -> "0x45217a" [color=gray, style=dashed];
 "0x45217a" -> "0x452185" [color=red];
@@ -26,5 +24,4 @@ edge [fontname=monospace, fontsize=8];
 "0x452196" -> "0x4521c0" [color=blue];
 "0x4521ac" -> "0x4521c0" [color=blue, style=dashed];
 "0x4521c0" -> "0x4521c3" [color=gray, style=dashed];
-"0x4521c0" -> "0x601058" [color=gray];
 }

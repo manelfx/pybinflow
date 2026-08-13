@@ -27,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x403278" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x403278)</TD><TD ><B>LibVEX_EmNote_string+0x105</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00403278&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rax, [rip + 0x2421]</TD></TR><TR><TD ALIGN="LEFT">0x0040327f&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x40328d</TD></TR></TABLE> }>];
 "0x403281" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x403281)</TD><TD ><B>LibVEX_EmNote_string+0x10e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00403281&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdi, [rip + 0x2488]</TD></TR><TR><TD ALIGN="LEFT">0x00403288&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x5002b8</TD></TR></TABLE> }>];
 "0x40328d" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40328d)</TD><TD ><B>LibVEX_EmNote_string+0x11a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040328d&#58;&nbsp;</TD><TD ALIGN="LEFT">leave</TD><TD></TD></TR><TR><TD ALIGN="LEFT">0x0040328e&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
-"0x5002b8" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5002b8)</TD><TD ><B>vpanic</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x403173" -> "0x403188" [color=red];
 "0x403173" -> "0x403281" [color=green];
 "0x403188" -> "0x4031ac" [color=orange];
@@ -73,5 +72,4 @@ edge [fontname=monospace, fontsize=8];
 "0x40326f" -> "0x40328d" [color=blue];
 "0x403278" -> "0x40328d" [color=blue];
 "0x403281" -> "0x40328d" [color=gray, style=dashed];
-"0x403281" -> "0x5002b8" [color=gray];
 }

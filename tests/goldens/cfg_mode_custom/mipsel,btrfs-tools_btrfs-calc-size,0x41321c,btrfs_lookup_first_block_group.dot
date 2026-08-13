@@ -13,7 +13,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4132c8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4132c8)</TD><TD ><B>btrfs_lookup_first_block_group+0xac</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004132c8&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$a0, 0x44($sp)</TD></TR><TR><TD ALIGN="LEFT">0x004132cc&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$v1, ($s1)</TD></TR><TR><TD ALIGN="LEFT">0x004132d0&#58;&nbsp;</TD><TD ALIGN="LEFT">beq</TD><TD ALIGN="LEFT">$a0, $v1, 0x4132e4</TD></TR><TR><TD ALIGN="LEFT">0x004132d4&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$ra, 0x54($sp)</TD></TR></TABLE> }>];
 "0x4132d8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4132d8)</TD><TD ><B>btrfs_lookup_first_block_group+0xbc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004132d8&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$t9, -0x7b28($gp)</TD></TR><TR><TD ALIGN="LEFT">0x004132dc&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x004132e0&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$at, $at</TD></TR></TABLE> }>];
 "0x4132e4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4132e4)</TD><TD ><B>btrfs_lookup_first_block_group+0xc8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004132e4&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s1, 0x50($sp)</TD></TR><TR><TD ALIGN="LEFT">0x004132e8&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s0, 0x4c($sp)</TD></TR><TR><TD ALIGN="LEFT">0x004132ec&#58;&nbsp;</TD><TD ALIGN="LEFT">jr</TD><TD ALIGN="LEFT">$ra</TD></TR><TR><TD ALIGN="LEFT">0x004132f0&#58;&nbsp;</TD><TD ALIGN="LEFT">addiu</TD><TD ALIGN="LEFT">$sp, $sp, 0x58</TD></TR></TABLE> }>];
-"0x500134" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500134)</TD><TD ><B>__stack_chk_fail</B></TD><TD > SIMP  NORET</TD></TR></TABLE> }>];
 "0x41321c" -> "0x413258" [color=red];
 "0x41321c" -> "0x41326c" [color=green];
 "0x413258" -> "0x41326c" [color=red];
@@ -27,5 +26,4 @@ edge [fontname=monospace, fontsize=8];
 "0x4132c4" -> "0x4132c8" [color=blue, style=dashed];
 "0x4132c8" -> "0x4132d8" [color=red];
 "0x4132c8" -> "0x4132e4" [color=green];
-"0x4132d8" -> "0x500134" [color=gray];
 }

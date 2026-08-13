@@ -13,7 +13,7 @@ edge [fontname=monospace, fontsize=8];
 "0x1007ec80" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1007ec80)</TD><TD ><B>_dl_count_modids+0xa0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x1007ec80&#58;&nbsp;</TD><TD ALIGN="LEFT">blr</TD><TD></TD></TR></TABLE> }>];
 "0x1007ebe0" -> "0x1007ebfc" [color=red];
 "0x1007ebe0" -> "0x1007ec10" [color=green];
-"0x1007ec10" -> "0x1007ec28" [color=green];
+"0x1007ec10" -> "0x1007ec28" [color=red];
 "0x1007ec28" -> "0x1007ec30" [color=blue, style=dashed];
 "0x1007ec30" -> "0x1007ec44" [color=red];
 "0x1007ec30" -> "0x1007ec74" [color=green];

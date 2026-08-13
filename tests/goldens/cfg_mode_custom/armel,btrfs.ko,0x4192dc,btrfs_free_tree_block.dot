@@ -32,7 +32,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4195b8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4195b8)</TD><TD ><B>btrfs_free_tree_block+0x2dc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004195b8&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x41940c</TD></TR></TABLE> }>];
 "0x4195bc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4195bc)</TD><TD ><B>btrfs_free_tree_block+0x2e0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004195bc&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0xd3f4</TD></TR><TR><TD ALIGN="LEFT">0x004195c0&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r1, &#35;0x1c8d</TD></TR><TR><TD ALIGN="LEFT">0x004195c4&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4b</TD></TR><TR><TD ALIGN="LEFT">0x004195c8&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x4195cc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4195cc)</TD><TD ><B>btrfs_free_tree_block+0x2f0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004195cc&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x41951c</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4192dc" -> "0x419314" [color=red];
 "0x4192dc" -> "0x41942c" [color=green];
 "0x419314" -> "0x419394" [color=gray, style=dashed];
@@ -72,6 +71,5 @@ edge [fontname=monospace, fontsize=8];
 "0x4195b0" -> "0x4195b8" [color=gray, style=dashed];
 "0x4195b8" -> "0x41940c" [color=blue];
 "0x4195bc" -> "0x4195cc" [color=gray, style=dashed];
-"0x4195bc" -> "0x500048" [color=gray];
 "0x4195cc" -> "0x41951c" [color=blue];
 }

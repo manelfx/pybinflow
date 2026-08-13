@@ -13,7 +13,6 @@ edge [fontname=monospace, fontsize=8];
 "0x432e54" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x432e54)</TD><TD ><B>btrfs_merge_bio_hook+0xb4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00432e54&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r3, &#35;0x7c83</TD></TR><TR><TD ALIGN="LEFT">0x00432e58&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r3, &#35;0x4c</TD></TR><TR><TD ALIGN="LEFT">0x00432e5c&#58;&nbsp;</TD><TD ALIGN="LEFT">ldrb</TD><TD ALIGN="LEFT">r4, [r3]</TD></TR><TR><TD ALIGN="LEFT">0x00432e60&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r4, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00432e64&#58;&nbsp;</TD><TD ALIGN="LEFT">bne</TD><TD ALIGN="LEFT">&#35;0x432e00</TD></TR></TABLE> }>];
 "0x432e68" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x432e68)</TD><TD ><B>btrfs_merge_bio_hook+0xc8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00432e68&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0xf9c8</TD></TR><TR><TD ALIGN="LEFT">0x00432e6c&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r1, &#35;0x189</TD></TR><TR><TD ALIGN="LEFT">0x00432e70&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4b</TD></TR><TR><TD ALIGN="LEFT">0x00432e74&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r2, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x00432e78&#58;&nbsp;</TD><TD ALIGN="LEFT">strb</TD><TD ALIGN="LEFT">r2, [r3]</TD></TR><TR><TD ALIGN="LEFT">0x00432e7c&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x432e80" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x432e80)</TD><TD ><B>btrfs_merge_bio_hook+0xe0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00432e80&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r1, r4</TD></TR><TR><TD ALIGN="LEFT">0x00432e84&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x432e00</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x432da0" -> "0x432dd0" [color=red];
 "0x432da0" -> "0x432e4c" [color=green];
 "0x432dd0" -> "0x432df0" [color=red];
@@ -29,6 +28,5 @@ edge [fontname=monospace, fontsize=8];
 "0x432e54" -> "0x432e00" [color=green];
 "0x432e54" -> "0x432e68" [color=red];
 "0x432e68" -> "0x432e80" [color=gray, style=dashed];
-"0x432e68" -> "0x500048" [color=gray];
 "0x432e80" -> "0x432e00" [color=blue];
 }

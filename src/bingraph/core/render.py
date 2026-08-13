@@ -8,7 +8,7 @@ from angr import Project
 from angr.analyses.cfg import CFGBase
 from loguru import logger
 
-from bingraph.helpers import CfgMode
+from bingraph.helpers import CfgExits, CfgMode
 from . import get_cfg
 from .annotators import ColorSimprocedures, CommentsDataRef, ColorEdgesVex
 from .contents import NodeHead, NodeAsm
@@ -23,6 +23,7 @@ def plot_cfg(
     func_addr: int,
     dfs_rank: bool,
     comments: bool,
+    exits: CfgExits,
     format: str,
 ) -> None:
 
@@ -35,7 +36,7 @@ def plot_cfg(
     annotators.append(ColorEdgesVex())
 
     vis = Vis(
-        source=CFGSource(func_addr=func_addr),
+        source=CFGSource(func_addr=func_addr, exits=exits),
         output=DotOutput(
             fname=fname, format=format, dfs_rank=dfs_rank, entry_addr=func_addr
         ),
@@ -54,6 +55,7 @@ def render_cfg(
     dfs_rank: bool,
     comments: bool,
     cfg_mode: CfgMode,
+    cfg_exits: CfgExits,
     format: str,
 ) -> str:
     """
@@ -96,6 +98,7 @@ def render_cfg(
             func_addr=func_addr,
             dfs_rank=dfs_rank,
             comments=comments,
+            exits=cfg_exits,
             format=format,
         )
         output_path = output_base.with_suffix(f".{format}")

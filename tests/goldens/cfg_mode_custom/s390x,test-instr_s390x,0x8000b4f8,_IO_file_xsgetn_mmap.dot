@@ -21,7 +21,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8000b5e4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000b5e4)</TD><TD ><B>_IO_file_xsgetn_mmap+0xec</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000b5e4&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8000b532</TD></TR></TABLE> }>];
 "0x8000b5e8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000b5e8)</TD><TD ><B>_IO_file_xsgetn_mmap+0xf0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000b5e8&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r1, 0xd8(%r12)</TD></TR><TR><TD ALIGN="LEFT">0x8000b5ee&#58;&nbsp;</TD><TD ALIGN="LEFT">lgr</TD><TD ALIGN="LEFT">%r4, %r8</TD></TR><TR><TD ALIGN="LEFT">0x8000b5f2&#58;&nbsp;</TD><TD ALIGN="LEFT">lgr</TD><TD ALIGN="LEFT">%r2, %r12</TD></TR><TR><TD ALIGN="LEFT">0x8000b5f6&#58;&nbsp;</TD><TD ALIGN="LEFT">lgr</TD><TD ALIGN="LEFT">%r3, %r9</TD></TR><TR><TD ALIGN="LEFT">0x8000b5fa&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r1, 0x40(%r1)</TD></TR><TR><TD ALIGN="LEFT">0x8000b600&#58;&nbsp;</TD><TD ALIGN="LEFT">sgr</TD><TD ALIGN="LEFT">%r11, %r9</TD></TR><TR><TD ALIGN="LEFT">0x8000b604&#58;&nbsp;</TD><TD ALIGN="LEFT">basr</TD><TD ALIGN="LEFT">%r14, %r1</TD></TR></TABLE> }>];
 "0x8000b606" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000b606)</TD><TD ><B>_IO_file_xsgetn_mmap+0x10e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000b606&#58;&nbsp;</TD><TD ALIGN="LEFT">agr</TD><TD ALIGN="LEFT">%r2, %r11</TD></TR><TR><TD ALIGN="LEFT">0x8000b60a&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8000b566</TD></TR></TABLE> }>];
-"0x80100058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80100058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8000b4f8" -> "0x8000b526" [color=red];
 "0x8000b4f8" -> "0x8000b574" [color=green];
 "0x8000b526" -> "0x8000b52e" [color=red];
@@ -46,6 +45,5 @@ edge [fontname=monospace, fontsize=8];
 "0x8000b5ce" -> "0x8000b5e4" [color=red];
 "0x8000b5e4" -> "0x8000b532" [color=blue];
 "0x8000b5e8" -> "0x8000b606" [color=gray, style=dashed];
-"0x8000b5e8" -> "0x80100058" [color=gray];
 "0x8000b606" -> "0x8000b566" [color=blue];
 }

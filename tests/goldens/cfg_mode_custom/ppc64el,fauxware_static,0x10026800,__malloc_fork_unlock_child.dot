@@ -14,7 +14,7 @@ edge [fontname=monospace, fontsize=8];
 "0x100268bc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x100268bc)</TD><TD ><B>__malloc_fork_unlock_child+0xbc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x100268bc&#58;&nbsp;</TD><TD ALIGN="LEFT">li</TD><TD ALIGN="LEFT">r9, 0</TD></TR><TR><TD ALIGN="LEFT">0x100268c0&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR><TR><TD ALIGN="LEFT">0x100268c4&#58;&nbsp;</TD><TD ALIGN="LEFT">stw</TD><TD ALIGN="LEFT">r9, -0x5048(r2)</TD></TR><TR><TD ALIGN="LEFT">0x100268c8&#58;&nbsp;</TD><TD ALIGN="LEFT">blr</TD><TD></TD></TR></TABLE> }>];
 "0x100268cc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x100268cc)</TD><TD ><B>__malloc_fork_unlock_child+0xcc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x100268cc&#58;&nbsp;</TD><TD ALIGN="LEFT">mr</TD><TD ALIGN="LEFT">r9, r8</TD></TR></TABLE> }>];
 "0x100268d0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x100268d0)</TD><TD ><B>__malloc_fork_unlock_child+0xd0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x100268d0&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR><TR><TD ALIGN="LEFT">0x100268d4&#58;&nbsp;</TD><TD ALIGN="LEFT">std</TD><TD ALIGN="LEFT">r9, -0x5058(r2)</TD></TR><TR><TD ALIGN="LEFT">0x100268d8&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x100268bc</TD></TR></TABLE> }>];
-"0x10026800" -> "0x10026818" [color=green];
+"0x10026800" -> "0x10026818" [color=red];
 "0x10026818" -> "0x1002683c" [color=red];
 "0x10026818" -> "0x10026844" [color=green];
 "0x1002683c" -> "0x10026844" [color=blue, style=dashed];

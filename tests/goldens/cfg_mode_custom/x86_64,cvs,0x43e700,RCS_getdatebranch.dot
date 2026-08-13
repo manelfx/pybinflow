@@ -40,6 +40,7 @@ edge [fontname=monospace, fontsize=8];
 "0x43e8ab" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x43e8ab)</TD><TD ><B>RCS_getdatebranch+0x1ab</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0043e8ab&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rcx, [rip + 0x64e3e]</TD></TR><TR><TD ALIGN="LEFT">0x0043e8b2&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0xbe3</TD></TR><TR><TD ALIGN="LEFT">0x0043e8b7&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rsi, [rip + 0x6441e]</TD></TR><TR><TD ALIGN="LEFT">0x0043e8be&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdi, [rip + 0x5427d]</TD></TR><TR><TD ALIGN="LEFT">0x0043e8c5&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x4044a0</TD></TR></TABLE> }>];
 "0x458070" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x458070)</TD><TD ><B>Xstrdup</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x43e700" -> "0x43e71f" [color=gray, style=dashed];
+"0x43e700" -> "0x458070" [color=gray];
 "0x43e71f" -> "0x43e72f" [color=gray, style=dashed];
 "0x43e72f" -> "0x43e738" [color=red];
 "0x43e72f" -> "0x43e892" [color=green];

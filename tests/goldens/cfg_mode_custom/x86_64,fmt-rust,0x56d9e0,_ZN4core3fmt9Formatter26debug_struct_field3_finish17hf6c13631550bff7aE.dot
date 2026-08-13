@@ -13,9 +13,7 @@ edge [fontname=monospace, fontsize=8];
 "0x56da92" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x56da92)</TD><TD ><B>_ZN4core3fmt9Formatter26debug_struct_field3_finish17hf6c13631550bff7aE+0xb2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0056da92&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rdi, qword ptr [rax]</TD></TR><TR><TD ALIGN="LEFT">0x0056da95&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rax, qword ptr [rax + 8]</TD></TR><TR><TD ALIGN="LEFT">0x0056da99&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rsi, [rip - 0x12b803]</TD></TR><TR><TD ALIGN="LEFT">0x0056daa0&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 1</TD></TR></TABLE> }>];
 "0x56daa5" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x56daa5)</TD><TD ><B>_ZN4core3fmt9Formatter26debug_struct_field3_finish17hf6c13631550bff7aE+0xc5</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0056daa5&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">qword ptr [rax + 0x18]</TD></TR></TABLE> }>];
 "0x56daa8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x56daa8)</TD><TD ><B>_ZN4core3fmt9Formatter26debug_struct_field3_finish17hf6c13631550bff7aE+0xc8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0056daa8&#58;&nbsp;</TD><TD ALIGN="LEFT">and</TD><TD ALIGN="LEFT">al, 1</TD></TR><TR><TD ALIGN="LEFT">0x0056daaa&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 0x18</TD></TR><TR><TD ALIGN="LEFT">0x0056daae&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbx</TD></TR><TR><TD ALIGN="LEFT">0x0056daaf&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r12</TD></TR><TR><TD ALIGN="LEFT">0x0056dab1&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r13</TD></TR><TR><TD ALIGN="LEFT">0x0056dab3&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r14</TD></TR><TR><TD ALIGN="LEFT">0x0056dab5&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r15</TD></TR><TR><TD ALIGN="LEFT">0x0056dab7&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbp</TD></TR><TR><TD ALIGN="LEFT">0x0056dab8&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
-"0x701058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x701058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x56d9e0" -> "0x56da07" [color=gray, style=dashed];
-"0x56d9e0" -> "0x701058" [color=gray];
 "0x56da07" -> "0x56da30" [color=gray, style=dashed];
 "0x56da30" -> "0x56da46" [color=gray, style=dashed];
 "0x56da46" -> "0x56da5c" [color=gray, style=dashed];
@@ -27,5 +25,4 @@ edge [fontname=monospace, fontsize=8];
 "0x56da7d" -> "0x56daa5" [color=blue];
 "0x56da92" -> "0x56daa5" [color=blue, style=dashed];
 "0x56daa5" -> "0x56daa8" [color=gray, style=dashed];
-"0x56daa5" -> "0x701058" [color=gray];
 }

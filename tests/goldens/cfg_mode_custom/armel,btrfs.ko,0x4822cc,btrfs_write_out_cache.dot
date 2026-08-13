@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x482340" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x482340)</TD><TD ><B>btrfs_write_out_cache+0x74</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00482340&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r3, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x00482344&#58;&nbsp;</TD><TD ALIGN="LEFT">str</TD><TD ALIGN="LEFT">r3, [r4, &#35;0x88]</TD></TR><TR><TD ALIGN="LEFT">0x00482348&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r3, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x0048234c&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, r8</TD></TR><TR><TD ALIGN="LEFT">0x00482350&#58;&nbsp;</TD><TD ALIGN="LEFT">str</TD><TD ALIGN="LEFT">r3, [r4, &#35;0x100]</TD></TR><TR><TD ALIGN="LEFT">0x00482354&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x5002c0</TD></TR></TABLE> }>];
 "0x482358" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x482358)</TD><TD ><B>btrfs_write_out_cache+0x8c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00482358&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, r5</TD></TR><TR><TD ALIGN="LEFT">0x0048235c&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">sp, sp, &#35;8</TD></TR><TR><TD ALIGN="LEFT">0x00482360&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, r7, r8, pc&#125;</TD></TR></TABLE> }>];
 "0x482364" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x482364)</TD><TD ><B>btrfs_write_out_cache+0x98</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00482364&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00482368&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x4822e8</TD></TR></TABLE> }>];
-"0x5002c0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5002c0)</TD><TD ><B>iput</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4822cc" -> "0x4822e4" [color=red];
 "0x4822cc" -> "0x4822f0" [color=green];
 "0x4822e4" -> "0x4822e8" [color=blue, style=dashed];
@@ -23,6 +22,5 @@ edge [fontname=monospace, fontsize=8];
 "0x482334" -> "0x4822e8" [color=green];
 "0x482334" -> "0x482340" [color=red];
 "0x482340" -> "0x482358" [color=gray, style=dashed];
-"0x482340" -> "0x5002c0" [color=gray];
 "0x482364" -> "0x4822e8" [color=blue];
 }

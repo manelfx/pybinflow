@@ -25,10 +25,7 @@ edge [fontname=monospace, fontsize=8];
 "0x4512e4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4512e4)</TD><TD ><B>btrfs_wait_ordered_roots+0x1a8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004512e4&#58;&nbsp;</TD><TD ALIGN="LEFT">ldrd</TD><TD ALIGN="LEFT">r0, r1, [sp, &#35;0x10]</TD></TR><TR><TD ALIGN="LEFT">0x004512e8&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">sp, sp, &#35;0x34</TD></TR><TR><TD ALIGN="LEFT">0x004512ec&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, r7, r8, sb, sl, fp, pc&#125;</TD></TR></TABLE> }>];
 "0x4512f0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4512f0)</TD><TD ><B>btrfs_wait_ordered_roots+0x1b4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004512f0&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, fp</TD></TR><TR><TD ALIGN="LEFT">0x004512f4&#58;&nbsp;</TD><TD ALIGN="LEFT">strd</TD><TD ALIGN="LEFT">r2, r3, [sp, &#35;0x18]</TD></TR><TR><TD ALIGN="LEFT">0x004512f8&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500020</TD></TR></TABLE> }>];
 "0x4512fc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4512fc)</TD><TD ><B>btrfs_wait_ordered_roots+0x1c0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004512fc&#58;&nbsp;</TD><TD ALIGN="LEFT">ldrd</TD><TD ALIGN="LEFT">r2, r3, [sp, &#35;0x18]</TD></TR><TR><TD ALIGN="LEFT">0x00451300&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x451270</TD></TR></TABLE> }>];
-"0x500030" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500030)</TD><TD ><B>mutex_lock</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x500040" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500040)</TD><TD ><B>mutex_unlock</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x45113c" -> "0x451168" [color=gray, style=dashed];
-"0x45113c" -> "0x500030" [color=gray];
 "0x451168" -> "0x45117c" [color=red];
 "0x451168" -> "0x4511a0" [color=green];
 "0x45117c" -> "0x4511a0" [color=blue, style=dashed];
@@ -59,7 +56,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4512b0" -> "0x4512dc" [color=green];
 "0x4512bc" -> "0x4512dc" [color=blue, style=dashed];
 "0x4512dc" -> "0x4512e4" [color=gray, style=dashed];
-"0x4512dc" -> "0x500040" [color=gray];
 "0x4512f0" -> "0x4512fc" [color=gray, style=dashed];
 "0x4512fc" -> "0x451270" [color=blue];
 }

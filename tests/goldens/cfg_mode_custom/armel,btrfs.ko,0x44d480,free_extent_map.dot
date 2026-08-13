@@ -9,14 +9,12 @@ edge [fontname=monospace, fontsize=8];
 "0x44d4b8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d4b8)</TD><TD ><B>free_extent_map+0x38</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d4b8&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r2, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x0044d4bc&#58;&nbsp;</TD><TD ALIGN="LEFT">popne</TD><TD ALIGN="LEFT">&#123;r4, pc&#125;</TD></TR></TABLE> }>];
 "0x44d534" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d534)</TD><TD ><B>free_extent_map+0xb4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d534&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0xfe98</TD></TR><TR><TD ALIGN="LEFT">0x0044d538&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r1, &#35;0x4b</TD></TR><TR><TD ALIGN="LEFT">0x0044d53c&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4b</TD></TR><TR><TD ALIGN="LEFT">0x0044d540&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x44d544" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x44d544)</TD><TD ><B>free_extent_map+0xc4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0044d544&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x44d49c</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x44d480" -> "0x44d488" [color=green];
+"0x44d480" -> "0x44d488" [color=red];
 "0x44d488" -> "0x44d49c" [color=red];
 "0x44d488" -> "0x44d534" [color=green];
 "0x44d49c" -> "0x44d4a4" [color=blue, style=dashed];
 "0x44d4a4" -> "0x44d4a4" [color=green];
 "0x44d4a4" -> "0x44d4b8" [color=red];
 "0x44d534" -> "0x44d544" [color=gray, style=dashed];
-"0x44d534" -> "0x500048" [color=gray];
 "0x44d544" -> "0x44d49c" [color=blue];
 }

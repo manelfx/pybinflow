@@ -14,7 +14,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4b56ec" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4b56ec)</TD><TD ><B>raid56_parity_alloc_scrub_rbio+0xb8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004b56ec&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r3, &#35;0</TD></TR></TABLE> }>];
 "0x4b56f0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4b56f0)</TD><TD ><B>raid56_parity_alloc_scrub_rbio+0xbc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004b56f0&#58;&nbsp;</TD><TD ALIGN="LEFT">str</TD><TD ALIGN="LEFT">r3, [r6, &#35;0x74]</TD></TR><TR><TD ALIGN="LEFT">0x004b56f4&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x4b56c0</TD></TR></TABLE> }>];
 "0x4b56f8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4b56f8)</TD><TD ><B>raid56_parity_alloc_scrub_rbio+0xc4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004b56f8&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x004b56fc&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">&#123;r3, r4, r5, r6, r7, pc&#125;</TD></TR></TABLE> }>];
-"0x500098" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500098)</TD><TD ><B>memcpy</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4b5634" -> "0x4b5650" [color=gray, style=dashed];
 "0x4b5650" -> "0x4b565c" [color=red];
 "0x4b5650" -> "0x4b56f8" [color=green];
@@ -28,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4b56b0" -> "0x4b56a4" [color=green];
 "0x4b56b0" -> "0x4b56c0" [color=red];
 "0x4b56c0" -> "0x4b56dc" [color=gray, style=dashed];
-"0x4b56c0" -> "0x500098" [color=gray];
 "0x4b56ec" -> "0x4b56f0" [color=blue, style=dashed];
 "0x4b56f0" -> "0x4b56c0" [color=blue];
 }

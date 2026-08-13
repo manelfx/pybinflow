@@ -12,18 +12,14 @@ edge [fontname=monospace, fontsize=8];
 "0x41724c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41724c)</TD><TD ><B>btrfs_finish_extent_commit+0x130</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041724c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$a0, 0x3c($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00417250&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$v1, ($s0)</TD></TR><TR><TD ALIGN="LEFT">0x00417254&#58;&nbsp;</TD><TD ALIGN="LEFT">beq</TD><TD ALIGN="LEFT">$a0, $v1, 0x417268</TD></TR><TR><TD ALIGN="LEFT">0x00417258&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$v0, $zero</TD></TR></TABLE> }>];
 "0x41725c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41725c)</TD><TD ><B>btrfs_finish_extent_commit+0x140</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041725c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$t9, -0x7b28($gp)</TD></TR><TR><TD ALIGN="LEFT">0x00417260&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x00417264&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$at, $at</TD></TR></TABLE> }>];
 "0x417268" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x417268)</TD><TD ><B>btrfs_finish_extent_commit+0x14c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00417268&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$ra, 0x64($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0041726c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s7, 0x60($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00417270&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s6, 0x5c($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00417274&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s5, 0x58($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00417278&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s4, 0x54($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0041727c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s3, 0x50($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00417280&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s2, 0x4c($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00417284&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s1, 0x48($sp)</TD></TR><TR><TD ALIGN="LEFT">0x00417288&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s0, 0x44($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0041728c&#58;&nbsp;</TD><TD ALIGN="LEFT">jr</TD><TD ALIGN="LEFT">$ra</TD></TR><TR><TD ALIGN="LEFT">0x00417290&#58;&nbsp;</TD><TD ALIGN="LEFT">addiu</TD><TD ALIGN="LEFT">$sp, $sp, 0x68</TD></TR></TABLE> }>];
-"0x500134" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500134)</TD><TD ><B>__stack_chk_fail</B></TD><TD > SIMP  NORET</TD></TR></TABLE> }>];
-"0x601050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x601050)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x41711c" -> "0x417180" [color=blue, style=dashed];
 "0x417180" -> "0x4171a0" [color=gray, style=dashed];
 "0x4171a0" -> "0x4171a8" [color=red];
 "0x4171a0" -> "0x41724c" [color=green];
 "0x4171a8" -> "0x4171ec" [color=gray, style=dashed];
-"0x4171a8" -> "0x601050" [color=gray];
 "0x4171ec" -> "0x417218" [color=gray, style=dashed];
 "0x417218" -> "0x417244" [color=gray, style=dashed];
 "0x417244" -> "0x417180" [color=blue];
 "0x41724c" -> "0x41725c" [color=red];
 "0x41724c" -> "0x417268" [color=green];
-"0x41725c" -> "0x500134" [color=gray];
 }

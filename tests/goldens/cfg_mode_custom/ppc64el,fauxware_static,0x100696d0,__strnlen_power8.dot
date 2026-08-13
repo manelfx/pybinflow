@@ -80,5 +80,5 @@ edge [fontname=monospace, fontsize=8];
 "0x10069970" -> "0x10069990" [color=green];
 "0x10069980" -> "0x10069970" [color=green];
 "0x10069980" -> "0x10069988" [color=red];
-"0x10069990" -> "0x100699b0" [color=green];
+"0x10069990" -> "0x100699b0" [color=red];
 }

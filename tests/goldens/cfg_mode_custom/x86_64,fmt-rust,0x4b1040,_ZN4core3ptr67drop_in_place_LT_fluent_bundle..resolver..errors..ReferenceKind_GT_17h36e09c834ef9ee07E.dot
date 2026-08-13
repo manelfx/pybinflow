@@ -26,12 +26,16 @@ edge [fontname=monospace, fontsize=8];
 "0x4b1040" -> "0x4b10b4" [color=orange, style=dashed];
 "0x4b1040" -> "0x4b10bc" [color=orange, style=dashed];
 "0x4b1057" -> "0x4b0c30" [color=blue];
+"0x4b1067" -> "0x4b0c30" [color=gray];
 "0x4b1067" -> "0x4b1073" [color=gray, style=dashed];
 "0x4b1073" -> "0x4b1081" [color=blue];
+"0x4b1075" -> "0x4b0c30" [color=gray];
 "0x4b1075" -> "0x4b1081" [color=gray, style=dashed];
 "0x4b1081" -> "0x4b0c90" [color=blue];
+"0x4b1094" -> "0x4b0c90" [color=gray];
 "0x4b1094" -> "0x4b10a3" [color=gray, style=dashed];
 "0x4b10a3" -> "0x4b10b4" [color=blue];
+"0x4b10a5" -> "0x4b0c90" [color=gray];
 "0x4b10a5" -> "0x4b10b4" [color=gray, style=dashed];
 "0x4b10b4" -> "0x4b10bc" [color=gray, style=dashed];
 }

@@ -21,7 +21,6 @@ edge [fontname=monospace, fontsize=8];
 "0x474178" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x474178)</TD><TD ><B>btrfs_tree_unlock+0xd8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00474178&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x4740f8</TD></TR></TABLE> }>];
 "0x47417c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47417c)</TD><TD ><B>btrfs_tree_unlock+0xdc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047417c&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0x1824</TD></TR><TR><TD ALIGN="LEFT">0x00474180&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r1, &#35;0x129</TD></TR><TR><TD ALIGN="LEFT">0x00474184&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4c</TD></TR><TR><TD ALIGN="LEFT">0x00474188&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x47418c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47418c)</TD><TD ><B>btrfs_tree_unlock+0xec</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047418c&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x474140</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4740a0" -> "0x4740ac" [color=red];
 "0x4740a0" -> "0x474160" [color=green];
 "0x4740ac" -> "0x4740c0" [color=red];
@@ -44,9 +43,7 @@ edge [fontname=monospace, fontsize=8];
 "0x474160" -> "0x474164" [color=blue, style=dashed];
 "0x474164" -> "0x474168" [color=gray, style=dashed];
 "0x474168" -> "0x474178" [color=gray, style=dashed];
-"0x474168" -> "0x500048" [color=gray];
 "0x474178" -> "0x4740f8" [color=blue];
 "0x47417c" -> "0x47418c" [color=gray, style=dashed];
-"0x47417c" -> "0x500048" [color=gray];
 "0x47418c" -> "0x474140" [color=blue];
 }

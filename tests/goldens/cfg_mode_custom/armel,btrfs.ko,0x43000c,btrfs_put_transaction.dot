@@ -8,13 +8,11 @@ edge [fontname=monospace, fontsize=8];
 "0x43003c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x43003c)</TD><TD ><B>btrfs_put_transaction+0x30</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0043003c&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r2, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00430040&#58;&nbsp;</TD><TD ALIGN="LEFT">popne</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, pc&#125;</TD></TR></TABLE> }>];
 "0x430124" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x430124)</TD><TD ><B>btrfs_put_transaction+0x118</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00430124&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0xf7a4</TD></TR><TR><TD ALIGN="LEFT">0x00430128&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r1, &#35;0x3f</TD></TR><TR><TD ALIGN="LEFT">0x0043012c&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4b</TD></TR><TR><TD ALIGN="LEFT">0x00430130&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x430134" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x430134)</TD><TD ><B>btrfs_put_transaction+0x128</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00430134&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x430020</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x43000c" -> "0x430020" [color=red];
 "0x43000c" -> "0x430124" [color=green];
 "0x430020" -> "0x430028" [color=blue, style=dashed];
 "0x430028" -> "0x430028" [color=green];
 "0x430028" -> "0x43003c" [color=red];
 "0x430124" -> "0x430134" [color=gray, style=dashed];
-"0x430124" -> "0x500048" [color=gray];
 "0x430134" -> "0x430020" [color=blue];
 }

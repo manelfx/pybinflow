@@ -6,10 +6,8 @@ edge [fontname=monospace, fontsize=8];
 "0x45b724" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x45b724)</TD><TD ><B>copy_extent_buffer+0x34</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0045b724&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r5, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x0045b728&#58;&nbsp;</TD><TD ALIGN="LEFT">ubfx</TD><TD ALIGN="LEFT">r6, r6, &#35;0, &#35;0xc</TD></TR><TR><TD ALIGN="LEFT">0x0045b72c&#58;&nbsp;</TD><TD ALIGN="LEFT">popeq</TD><TD ALIGN="LEFT">&#123;r3, r4, r5, r6, r7, r8, sb, sl, fp, pc&#125;</TD></TR></TABLE> }>];
 "0x45b7d0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x45b7d0)</TD><TD ><B>copy_extent_buffer+0xe0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0045b7d0&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0x2bc</TD></TR><TR><TD ALIGN="LEFT">0x0045b7d4&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r1, &#35;0x1610</TD></TR><TR><TD ALIGN="LEFT">0x0045b7d8&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4c</TD></TR><TR><TD ALIGN="LEFT">0x0045b7dc&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x45b7e0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x45b7e0)</TD><TD ><B>copy_extent_buffer+0xf0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0045b7e0&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x45b724</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x45b6f0" -> "0x45b724" [color=red];
 "0x45b6f0" -> "0x45b7d0" [color=green];
 "0x45b7d0" -> "0x45b7e0" [color=gray, style=dashed];
-"0x45b7d0" -> "0x500048" [color=gray];
 "0x45b7e0" -> "0x45b724" [color=blue];
 }

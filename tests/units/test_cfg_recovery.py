@@ -7,8 +7,10 @@ from angr.knowledge_plugins.cfg import CFGNode
 
 from bingraph.cfg.models import BlockSpec
 from bingraph.cfg.models import FunctionBounds
+from bingraph.cfg import decode
 from bingraph.cfg import recovery
-from bingraph.cfg.recovery import (
+from bingraph.cfg.recovery import find_shared_instruction_tail
+from bingraph.cfg.decode import (
     _native_vex_transfer_end,
     call_fallthrough_addr,
     lift_block_terminator,
@@ -138,8 +140,8 @@ def test_delayed_branch_exit_uses_delay_slot_provenance(
         is_conditional_jump=lambda: True,
         direct_target=lambda: 0x1010,
     )
-    monkeypatch.setattr(recovery, "control_transfer_index", lambda *_args: 0)
-    monkeypatch.setattr(recovery, "InsnSemantics", lambda _insn: semantics)
+    monkeypatch.setattr(decode, "control_transfer_index", lambda *_args: 0)
+    monkeypatch.setattr(decode, "InsnSemantics", lambda _insn: semantics)
 
     terminator = lift_block_terminator(project, _bounds(), [branch, delay_slot])
 
@@ -167,9 +169,9 @@ def test_shared_instruction_tail_requires_linear_prefixes(
         second: (_Insn(0x1004), _Insn(0x1010)),
     }
     monkeypatch.setattr(
-        recovery.DecodedNode,
+        decode.DecodedNode,
         "from_node",
-        lambda node: recovery.DecodedNode(decoded[node]),
+        lambda node: decode.DecodedNode(decoded[node]),
     )
     monkeypatch.setattr(
         recovery,
@@ -177,7 +179,7 @@ def test_shared_instruction_tail_requires_linear_prefixes(
         lambda _arch, _insns: None,
     )
 
-    tail = recovery.find_shared_instruction_tail(
+    tail = find_shared_instruction_tail(
         "X86", [cast(CFGNode, first), cast(CFGNode, second)]
     )
 

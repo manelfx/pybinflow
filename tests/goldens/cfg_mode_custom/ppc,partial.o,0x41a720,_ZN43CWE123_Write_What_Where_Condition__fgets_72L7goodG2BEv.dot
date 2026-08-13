@@ -20,7 +20,6 @@ edge [fontname=monospace, fontsize=8];
 "0x41a8d0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41a8d0)</TD><TD ><B>_ZN43CWE123_Write_What_Where_Condition__fgets_72L7goodG2BEv+0x1b0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041a8d0&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x41a904</TD></TR></TABLE> }>];
 "0x41a904" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41a904)</TD><TD ><B>_ZN43CWE123_Write_What_Where_Condition__fgets_72L7goodG2BEv+0x1e4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041a904&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">0x500038</TD></TR></TABLE> }>];
 "0x41a908" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41a908)</TD><TD ><B>_ZN43CWE123_Write_What_Where_Condition__fgets_72L7goodG2BEv+0x1e8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041a908&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">r11, r31, 0x60</TD></TR><TR><TD ALIGN="LEFT">0x0041a90c&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r0, 4(r11)</TD></TR><TR><TD ALIGN="LEFT">0x0041a910&#58;&nbsp;</TD><TD ALIGN="LEFT">mtlr</TD><TD ALIGN="LEFT">r0</TD></TR><TR><TD ALIGN="LEFT">0x0041a914&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r30, -8(r11)</TD></TR><TR><TD ALIGN="LEFT">0x0041a918&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r31, -4(r11)</TD></TR><TR><TD ALIGN="LEFT">0x0041a91c&#58;&nbsp;</TD><TD ALIGN="LEFT">mr</TD><TD ALIGN="LEFT">r1, r11</TD></TR><TR><TD ALIGN="LEFT">0x0041a920&#58;&nbsp;</TD><TD ALIGN="LEFT">blr</TD><TD></TD></TR></TABLE> }>];
-"0x500038" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500038)</TD><TD ><B>__stack_chk_fail</B></TD><TD > SIMP  NORET</TD></TR></TABLE> }>];
 "0x41a720" -> "0x41a750" [color=gray, style=dashed];
 "0x41a750" -> "0x41a794" [color=gray, style=dashed];
 "0x41a794" -> "0x41a7a8" [color=gray, style=dashed];
@@ -38,5 +37,4 @@ edge [fontname=monospace, fontsize=8];
 "0x41a8b4" -> "0x41a8d0" [color=red];
 "0x41a8b4" -> "0x41a908" [color=green];
 "0x41a8d0" -> "0x41a904" [color=blue];
-"0x41a904" -> "0x500038" [color=gray];
 }

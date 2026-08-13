@@ -14,7 +14,13 @@ from starlette.requests import Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from loguru import logger
 
-from bingraph.helpers import CfgMode, get_settings, resolve_under_root, MODULE_NAME
+from bingraph.helpers import (
+    CfgExits,
+    CfgMode,
+    get_settings,
+    resolve_under_root,
+    MODULE_NAME,
+)
 from bingraph.core import (
     load_project,
     list_function_symbols,
@@ -168,13 +174,24 @@ def create_app() -> FastAPI:
         dfs: bool | None = None,
         comments: bool | None = None,
         mode: CfgMode | None = None,
+        exits: CfgExits | None = None,
         format: str = "svg",
     ) -> str:
         func_addr = _resolve_faddr(function)
         project = _get_project(filepath)
         dfs = settings.dfs_rank if dfs is None else dfs
         comments = settings.comments if comments is None else comments
-        return render_cfg(project, func_addr, dfs, comments, mode, format)
+        cfg_mode = mode or settings.cfg_mode
+        cfg_exits = exits or settings.cfg_exits
+        return render_cfg(
+            project,
+            func_addr,
+            dfs,
+            comments,
+            cfg_mode,
+            cfg_exits,
+            format,
+        )
 
     @app.get("/cfg")
     def cfg(
@@ -184,10 +201,11 @@ def create_app() -> FastAPI:
         dfs: bool | None = Query(None),
         comments: bool | None = Query(None),
         mode: CfgMode | None = Query(None),
+        exits: CfgExits | None = Query(None),
     ) -> Response:
         """Endpoint to return the CFG of a specified function as an SVG image."""
 
-        svg = _render_cfg(filepath, function, dfs, comments, mode, format="svg")
+        svg = _render_cfg(filepath, function, dfs, comments, mode, exits, format="svg")
         return Response(content=svg, media_type="image/svg+xml")
 
     @app.get("/api/cfg", response_model=dict[str, str])
@@ -199,10 +217,11 @@ def create_app() -> FastAPI:
         dfs: bool | None = Query(None),
         comments: bool | None = Query(None),
         mode: CfgMode | None = Query(None),
+        exits: CfgExits | None = Query(None),
     ) -> dict[str, str]:
         """Endpoint to return the CFG of a specified function."""
 
-        cfg = _render_cfg(filepath, function, dfs, comments, mode, format)
+        cfg = _render_cfg(filepath, function, dfs, comments, mode, exits, format)
         return {"graph": cfg}
 
     return app

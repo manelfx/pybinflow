@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x55fd" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x0055fd)</TD><TD ><B>sys_check_timeouts+0x38</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x000055fd&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, r8</TD></TR><TR><TD ALIGN="LEFT">0x000055ff&#58;&nbsp;</TD><TD ALIGN="LEFT">blx</TD><TD ALIGN="LEFT">r7</TD></TR></TABLE> }>];
 "0x5601" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x005601)</TD><TD ><B>sys_check_timeouts+0x3c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00005601&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x55d9</TD></TR></TABLE> }>];
 "0x5603" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x005603)</TD><TD ><B>sys_check_timeouts+0x3e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00005603&#58;&nbsp;</TD><TD ALIGN="LEFT">pop.w</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, r7, r8, pc&#125;</TD></TR></TABLE> }>];
-"0x20100050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x20100050)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x55c5" -> "0x55cf" [color=red];
 "0x55c5" -> "0x5603" [color=green];
 "0x55cf" -> "0x55d3" [color=gray, style=dashed];
@@ -25,6 +24,5 @@ edge [fontname=monospace, fontsize=8];
 "0x55f9" -> "0x55d9" [color=green];
 "0x55f9" -> "0x55fd" [color=red];
 "0x55fd" -> "0x5601" [color=gray, style=dashed];
-"0x55fd" -> "0x20100050" [color=gray];
 "0x5601" -> "0x55d9" [color=blue];
 }

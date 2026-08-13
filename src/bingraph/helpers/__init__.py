@@ -8,7 +8,7 @@ from .serializers import (
     serialize_symbol,
     serialize_xref,
 )
-from .settings import Settings, get_settings, CfgMode
+from .settings import CfgExits, CfgMode, Settings, get_settings
 from .styles import Style, get_style, set_style
 from .utils import demangle, resolve_under_root, time_it, MODULE_NAME
 
@@ -22,6 +22,7 @@ __all__ = [
     "serialize_xref",
     "Settings",
     "get_settings",
+    "CfgExits",
     "CfgMode",
     "Style",
     "get_style",

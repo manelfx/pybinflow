@@ -17,10 +17,7 @@ edge [fontname=monospace, fontsize=8];
 "0x419078" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x419078)</TD><TD ><B>btrfs_prepare_extent_commit+0xac</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00419078&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r0, [sp, &#35;4]</TD></TR><TR><TD ALIGN="LEFT">0x0041907c&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500190</TD></TR></TABLE> }>];
 "0x419080" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x419080)</TD><TD ><B>btrfs_prepare_extent_commit+0xb4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00419080&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, sl</TD></TR><TR><TD ALIGN="LEFT">0x00419084&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">sp, sp, &#35;0xc</TD></TR><TR><TD ALIGN="LEFT">0x00419088&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, r7, r8, sb, sl, fp, lr&#125;</TD></TR><TR><TD ALIGN="LEFT">0x0041908c&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x40ec18</TD></TR></TABLE> }>];
 "0x419090" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x419090)</TD><TD ><B>btrfs_prepare_extent_commit+0xc4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00419090&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">r3, sl, &#35;0x88</TD></TR><TR><TD ALIGN="LEFT">0x00419094&#58;&nbsp;</TD><TD ALIGN="LEFT">str</TD><TD ALIGN="LEFT">r3, [sl, &#35;0xa0]</TD></TR><TR><TD ALIGN="LEFT">0x00419098&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x419078</TD></TR></TABLE> }>];
-"0x500188" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500188)</TD><TD ><B>down_write</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x500190" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500190)</TD><TD ><B>up_write</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x418fcc" -> "0x418fec" [color=gray, style=dashed];
-"0x418fcc" -> "0x500188" [color=gray];
 "0x418fec" -> "0x419008" [color=red];
 "0x418fec" -> "0x41902c" [color=green];
 "0x419008" -> "0x419064" [color=blue];
@@ -36,7 +33,6 @@ edge [fontname=monospace, fontsize=8];
 "0x419064" -> "0x419078" [color=red];
 "0x419064" -> "0x419090" [color=green];
 "0x419078" -> "0x419080" [color=gray, style=dashed];
-"0x419078" -> "0x500190" [color=gray];
 "0x419080" -> "0x40ec18" [color=blue];
 "0x419090" -> "0x419078" [color=blue];
 }

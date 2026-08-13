@@ -259,7 +259,6 @@ edge [fontname=monospace, fontsize=8];
 "0x47575a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47575a)</TD><TD ><B>rpl_glob+0x114a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047575a&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">dword ptr [rbp - 0x1d4], 1</TD></TR><TR><TD ALIGN="LEFT">0x00475764&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x474aeb</TD></TR></TABLE> }>];
 "0x475769" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x475769)</TD><TD ><B>rpl_glob+0x1159</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00475769&#58;&nbsp;</TD><TD ALIGN="LEFT">test</TD><TD ALIGN="LEFT">rax, rax</TD></TR><TR><TD ALIGN="LEFT">0x0047576c&#58;&nbsp;</TD><TD ALIGN="LEFT">jne</TD><TD ALIGN="LEFT">0x4752ed</TD></TR></TABLE> }>];
 "0x475772" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x475772)</TD><TD ><B>rpl_glob+0x1162</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00475772&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x475301</TD></TR></TABLE> }>];
-"0x601058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x601058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 subgraph entry_rank {
 rank=source;
 "0x474610";
@@ -314,7 +313,6 @@ rank=source;
 "0x4747f4" -> "0x4747fd" [color=red];
 "0x4747f4" -> "0x474a60" [color=green];
 "0x4747fd" -> "0x47480c" [color=gray, style=dashed];
-"0x4747fd" -> "0x601058" [color=gray];
 "0x47480c" -> "0x474810" [color=red];
 "0x47480c" -> "0x474826" [color=green];
 "0x474810" -> "0x474826" [color=red];

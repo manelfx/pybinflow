@@ -23,7 +23,7 @@ edge [fontname=monospace, fontsize=8];
 "0x100353c0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x100353c0)</TD><TD ><B>__libc_disable_asynccancel+0x100</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x100353c0&#58;&nbsp;</TD><TD ALIGN="LEFT">mflr</TD><TD ALIGN="LEFT">r0</TD></TR><TR><TD ALIGN="LEFT">0x100353c4&#58;&nbsp;</TD><TD ALIGN="LEFT">addis</TD><TD ALIGN="LEFT">r3, r2, -4</TD></TR><TR><TD ALIGN="LEFT">0x100353c8&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">r3, r3, -0x4858</TD></TR><TR><TD ALIGN="LEFT">0x100353cc&#58;&nbsp;</TD><TD ALIGN="LEFT">std</TD><TD ALIGN="LEFT">r0, 0x50(r1)</TD></TR><TR><TD ALIGN="LEFT">0x100353d0&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">0x10014fc8</TD></TR></TABLE> }>];
 "0x100353d4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x100353d4)</TD><TD ><B>__libc_disable_asynccancel+0x114</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x100353d4&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
 "0x10300494" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x10300494)</TD><TD ><B>sys_293</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
-"0x100352c0" -> "0x100352d0" [color=green];
+"0x100352c0" -> "0x100352d0" [color=red];
 "0x100352d0" -> "0x100352e0" [color=blue, style=dashed];
 "0x100352e0" -> "0x100352e8" [color=blue, style=dashed];
 "0x100352e8" -> "0x100352f4" [color=red];

@@ -14,6 +14,7 @@ from bingraph.cfg import (
     build_custom_cfg,
     log_cfg_status,
 )
+from bingraph.cfg_extract import build_extracted_cfg
 from bingraph.cfg.decode import decode_raw_capstone_insns
 from bingraph.helpers.capstone import InsnSemantics
 from bingraph.helpers.symbols import list_function_symbols
@@ -248,7 +249,12 @@ def get_cfg(
     # related knowledge attached during the fast analysis.
     kb = KnowledgeBase(project)
 
-    fast_cfg = _get_fast_cfg(project, kb, func_addr)
+    if resolved_cfg_mode == "extract":
+        # This experimental path deliberately starts from bounded decoding,
+        # rather than using CFGFast as a seed graph to repair.
+        cfg = cast(CFGBase, build_extracted_cfg(project, kb, func_addr))
+    else:
+        fast_cfg = _get_fast_cfg(project, kb, func_addr)
 
     if resolved_cfg_mode == "none":
         cfg = fast_cfg
@@ -256,8 +262,9 @@ def get_cfg(
         # CustomCFG intentionally exposes the CFGBase subset consumed by the
         # rest of bingraph, but angr's nominal type hierarchy cannot express it.
         cfg = cast(CFGBase, build_custom_cfg(project, kb, func_addr, fast_cfg))
-    else:
+    elif resolved_cfg_mode != "extract":
         raise ValueError(f"Unsupported cfg mode: {resolved_cfg_mode}")
 
-    log_cfg_status(cfg, func_addr, f"Selected CFG ({resolved_cfg_mode})")
+    if resolved_cfg_mode != "extract":
+        log_cfg_status(cfg, func_addr, f"Selected CFG ({resolved_cfg_mode})")
     return cfg

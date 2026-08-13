@@ -27,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x411c30" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x411c30)</TD><TD ><B>_dl_fixup+0x218</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00411c30&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$t9, $v0</TD></TR><TR><TD ALIGN="LEFT">0x00411c34&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x00411c38&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
 "0x411c3c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x411c3c)</TD><TD ><B>_dl_fixup+0x224</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00411c3c&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x411b98</TD></TR><TR><TD ALIGN="LEFT">0x00411c40&#58;&nbsp;</TD><TD ALIGN="LEFT">ld</TD><TD ALIGN="LEFT">$v1, -0x7f40($gp)</TD></TR></TABLE> }>];
 "0x411c44" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x411c44)</TD><TD ><B>_dl_fixup+0x22c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00411c44&#58;&nbsp;</TD><TD ALIGN="LEFT">ld</TD><TD ALIGN="LEFT">$a0, -0x7f78($gp)</TD></TR><TR><TD ALIGN="LEFT">0x00411c48&#58;&nbsp;</TD><TD ALIGN="LEFT">ld</TD><TD ALIGN="LEFT">$a1, -0x7f78($gp)</TD></TR><TR><TD ALIGN="LEFT">0x00411c4c&#58;&nbsp;</TD><TD ALIGN="LEFT">ld</TD><TD ALIGN="LEFT">$a3, -0x7f78($gp)</TD></TR><TR><TD ALIGN="LEFT">0x00411c50&#58;&nbsp;</TD><TD ALIGN="LEFT">ld</TD><TD ALIGN="LEFT">$t9, -0x7e38($gp)</TD></TR><TR><TD ALIGN="LEFT">0x00411c54&#58;&nbsp;</TD><TD ALIGN="LEFT">daddiu</TD><TD ALIGN="LEFT">$a0, $a0, 0x1e18</TD></TR><TR><TD ALIGN="LEFT">0x00411c58&#58;&nbsp;</TD><TD ALIGN="LEFT">daddiu</TD><TD ALIGN="LEFT">$a1, $a1, 0x1f98</TD></TR><TR><TD ALIGN="LEFT">0x00411c5c&#58;&nbsp;</TD><TD ALIGN="LEFT">addiu</TD><TD ALIGN="LEFT">$a2, $zero, 0x4f</TD></TR><TR><TD ALIGN="LEFT">0x00411c60&#58;&nbsp;</TD><TD ALIGN="LEFT">bal</TD><TD ALIGN="LEFT">0x41b830</TD></TR><TR><TD ALIGN="LEFT">0x00411c64&#58;&nbsp;</TD><TD ALIGN="LEFT">daddiu</TD><TD ALIGN="LEFT">$a3, $a3, 0x1fc0</TD></TR></TABLE> }>];
-"0x500058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x7007c4" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x7007c4)</TD><TD ><B>futex</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x411a18" -> "0x411acc" [color=red];
 "0x411a18" -> "0x411c44" [color=green];
@@ -62,6 +61,5 @@ edge [fontname=monospace, fontsize=8];
 "0x411c0c" -> "0x7007c4" [color=gray];
 "0x411c28" -> "0x411b68" [color=blue];
 "0x411c30" -> "0x411c3c" [color=gray, style=dashed];
-"0x411c30" -> "0x500058" [color=gray];
 "0x411c3c" -> "0x411b98" [color=blue];
 }

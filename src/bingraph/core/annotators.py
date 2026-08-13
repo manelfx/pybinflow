@@ -4,7 +4,7 @@ from loguru import logger
 
 from bingraph.helpers import get_style
 from bingraph.helpers.capstone import InsnSemantics, control_transfer_index
-from bingraph.cfg.recovery import vex_jumpkind_is_terminal
+from bingraph.cfg.decode import vex_jumpkind_is_terminal
 from .vis import NodeAnnotator, ContentAnnotator, EdgeAnnotator, Node
 
 
@@ -453,7 +453,14 @@ def _vex_boring_edge_type(edge) -> str:
         if terminal_default:
             # Conditional return instructions can use a terminal default VEX
             # jumpkind together with an explicit Ijk_Boring exit for their
-            # non-returning path. The explicit exit remains a real branch.
+            # non-returning path. The terminal default is the taken return,
+            # so the explicit next-instruction exit is the red not-taken path.
+            fallthrough_addr = source_node.addr + source_node.size
+            if (
+                edge.dst.obj.addr == fallthrough_addr
+                and edge.dst.obj.addr in exit_targets
+            ):
+                return "CONDITIONAL_FALSE"
             if edge.dst.obj.addr in exit_targets:
                 return "CONDITIONAL_TRUE"
             if edge.dst.obj.addr == next_addr:

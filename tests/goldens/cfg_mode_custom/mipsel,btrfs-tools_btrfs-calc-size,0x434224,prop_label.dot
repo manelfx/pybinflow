@@ -12,8 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4342bc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4342bc)</TD><TD ><B>prop_label+0x98</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004342bc&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$a0, 0x11c($sp)</TD></TR><TR><TD ALIGN="LEFT">0x004342c0&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$v1, ($s2)</TD></TR><TR><TD ALIGN="LEFT">0x004342c4&#58;&nbsp;</TD><TD ALIGN="LEFT">beq</TD><TD ALIGN="LEFT">$a0, $v1, 0x4342d8</TD></TR><TR><TD ALIGN="LEFT">0x004342c8&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$v0, $s0</TD></TR></TABLE> }>];
 "0x4342cc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4342cc)</TD><TD ><B>prop_label+0xa8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004342cc&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$t9, -0x7b28($gp)</TD></TR><TR><TD ALIGN="LEFT">0x004342d0&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x004342d4&#58;&nbsp;</TD><TD ALIGN="LEFT">move</TD><TD ALIGN="LEFT">$at, $at</TD></TR></TABLE> }>];
 "0x4342d8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4342d8)</TD><TD ><B>prop_label+0xb4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004342d8&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$ra, 0x12c($sp)</TD></TR><TR><TD ALIGN="LEFT">0x004342dc&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s2, 0x128($sp)</TD></TR><TR><TD ALIGN="LEFT">0x004342e0&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s1, 0x124($sp)</TD></TR><TR><TD ALIGN="LEFT">0x004342e4&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s0, 0x120($sp)</TD></TR><TR><TD ALIGN="LEFT">0x004342e8&#58;&nbsp;</TD><TD ALIGN="LEFT">jr</TD><TD ALIGN="LEFT">$ra</TD></TR><TR><TD ALIGN="LEFT">0x004342ec&#58;&nbsp;</TD><TD ALIGN="LEFT">addiu</TD><TD ALIGN="LEFT">$sp, $sp, 0x130</TD></TR></TABLE> }>];
-"0x500044" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500044)</TD><TD ><B>__fprintf_chk</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x500134" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500134)</TD><TD ><B>__stack_chk_fail</B></TD><TD > SIMP  NORET</TD></TR></TABLE> }>];
 "0x434224" -> "0x434264" [color=red];
 "0x434224" -> "0x43427c" [color=green];
 "0x434264" -> "0x434270" [color=gray, style=dashed];
@@ -22,9 +20,7 @@ edge [fontname=monospace, fontsize=8];
 "0x43428c" -> "0x434298" [color=red];
 "0x43428c" -> "0x4342bc" [color=green];
 "0x434298" -> "0x4342b8" [color=gray, style=dashed];
-"0x434298" -> "0x500044" [color=gray];
 "0x4342b8" -> "0x4342bc" [color=blue, style=dashed];
 "0x4342bc" -> "0x4342cc" [color=red];
 "0x4342bc" -> "0x4342d8" [color=green];
-"0x4342cc" -> "0x500134" [color=gray];
 }

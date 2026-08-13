@@ -81,6 +81,15 @@ class StaticJumpTable:
 
 
 @dataclass(frozen=True)
+class StaticJumpTablePlan:
+    """A VEX-proven table, its concrete base, and finite entry count."""
+
+    table: StaticJumpTable
+    base_addr: int
+    entry_count: int
+
+
+@dataclass(frozen=True)
 class CFGAnomaly:
     """One node-local CFG invariant violation found during analysis or repair."""
 

@@ -21,6 +21,7 @@ edge [fontname=monospace, fontsize=8];
 "0x436476" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x436476)</TD><TD ><B>mydbm_close+0xb6</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00436476&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x43640c</TD></TR></TABLE> }>];
 "0x4363c0" -> "0x4363d9" [color=red];
 "0x4363c0" -> "0x4363f8" [color=green];
+"0x4363d9" -> "0x4040b0" [color=gray];
 "0x4363d9" -> "0x4363de" [color=gray, style=dashed];
 "0x4363de" -> "0x4363e6" [color=gray, style=dashed];
 "0x4363e6" -> "0x4040b0" [color=blue];

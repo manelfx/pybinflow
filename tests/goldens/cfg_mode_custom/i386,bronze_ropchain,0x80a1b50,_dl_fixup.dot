@@ -25,7 +25,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80a1cb0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a1cb0)</TD><TD ><B>_dl_fixup+0x160</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a1cb0&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">eax</TD></TR></TABLE> }>];
 "0x80a1cb2" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a1cb2)</TD><TD ><B>_dl_fixup+0x162</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a1cb2&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x80a1c36</TD></TR></TABLE> }>];
 "0x80a1cb4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a1cb4)</TD><TD ><B>_dl_fixup+0x164</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a1cb4&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">ebx, dword ptr [esp + 8]</TD></TR><TR><TD ALIGN="LEFT">0x080a1cb8&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">eax, [ebx - 0x1633c]</TD></TR><TR><TD ALIGN="LEFT">0x080a1cbe&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">eax</TD></TR><TR><TD ALIGN="LEFT">0x080a1cbf&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">eax, [ebx - 0x16394]</TD></TR><TR><TD ALIGN="LEFT">0x080a1cc5&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">0x50</TD></TR><TR><TD ALIGN="LEFT">0x080a1cc7&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">eax</TD></TR><TR><TD ALIGN="LEFT">0x080a1cc8&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">eax, [ebx - 0x16384]</TD></TR><TR><TD ALIGN="LEFT">0x080a1cce&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">eax</TD></TR><TR><TD ALIGN="LEFT">0x080a1ccf&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x80498d0</TD></TR></TABLE> }>];
-"0x8100050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8100050)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x80a1b50" -> "0x80a1b59" [color=gray, style=dashed];
 "0x80a1b59" -> "0x80a1b9f" [color=red];
 "0x80a1b59" -> "0x80a1cb4" [color=green];
@@ -54,9 +53,7 @@ edge [fontname=monospace, fontsize=8];
 "0x80a1c78" -> "0x80a1c17" [color=green];
 "0x80a1c78" -> "0x80a1c88" [color=red];
 "0x80a1c88" -> "0x80a1ca8" [color=gray, style=dashed];
-"0x80a1c88" -> "0x8100050" [color=gray];
 "0x80a1ca8" -> "0x80a1c17" [color=blue];
 "0x80a1cb0" -> "0x80a1cb2" [color=gray, style=dashed];
-"0x80a1cb0" -> "0x8100050" [color=gray];
 "0x80a1cb2" -> "0x80a1c36" [color=blue];
 }

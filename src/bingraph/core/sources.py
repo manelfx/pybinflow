@@ -3,10 +3,12 @@ from typing import Any
 
 from angr.analyses.cfg import CFGBase
 
+from bingraph.helpers import CfgExits
+
 from .vis import Edge, Graph, Node, Source, VisError
 
 
-_EXTERNAL_FRONTIER_JUMPKINDS = frozenset({"Ijk_Boring", "Ijk_FakeRet"})
+_EXTERNAL_FRONTIER_JUMPKINDS = frozenset({"Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"})
 
 
 def _is_path_terminator(node: Any) -> bool:
@@ -15,13 +17,50 @@ def _is_path_terminator(node: Any) -> bool:
     return node.is_simprocedure and node.simprocedure_name == "PathTerminator"
 
 
-def _select_cfg_nodes(cfg_graph: Any, func_addr: int | None) -> set[Any]:
+def _is_structural_simprocedure(
+    cfg_graph: Any, node: Any, selected_nodes: set[Any]
+) -> bool:
+    """Return whether a synthetic node connects selected function blocks."""
+
+    return node.is_simprocedure and any(
+        successor in selected_nodes for successor in cfg_graph.successors(node)
+    )
+
+
+def _simprocedures_by_addr(nodes: set[Any]) -> dict[int, Any]:
+    """Return selected synthetic nodes by their target address."""
+
+    return {node.addr: node for node in nodes if node.is_simprocedure}
+
+
+def _canonical_render_node(node: Any, simprocedures: dict[int, Any]) -> Any:
+    """Prefer a selected SIMP leaf over its foreign normal-node twin."""
+
+    return simprocedures.get(node.addr, node)
+
+
+def _selected_cfg_edges(cfg_graph: Any, selected_nodes: set[Any]):
+    """Yield selected edges after canonicalizing external target twins."""
+
+    simprocedures = _simprocedures_by_addr(selected_nodes)
+    for source, destination, data in cfg_graph.edges(data=True):
+        source = _canonical_render_node(source, simprocedures)
+        destination = _canonical_render_node(destination, simprocedures)
+        if source in selected_nodes and destination in selected_nodes:
+            yield source, destination, data
+
+
+def _select_cfg_nodes(
+    cfg_graph: Any,
+    func_addr: int | None,
+    exits: CfgExits = "jump",
+) -> set[Any]:
     """Choose function nodes and the one-hop exits needed to explain them.
 
     CFGFast may attach targets that belong to another function or a synthetic
-    procedure. Keep only nodes owned by the requested function, plus direct
-    semantic exits from those nodes. In particular, real external calls remain
-    hidden while fake returns and direct branches can show their known exit.
+    procedure. Keep only nodes owned by the requested function, plus selected
+    direct semantic exits. Structural simprocedures that connect selected
+    function blocks remain visible independently of the exit-display policy.
     """
 
     if func_addr is None:
@@ -30,8 +69,23 @@ def _select_cfg_nodes(cfg_graph: Any, func_addr: int | None) -> set[Any]:
     selected = {
         node
         for node in cfg_graph
-        if not _is_path_terminator(node) and node.function_address == func_addr
+        if (
+            not _is_path_terminator(node)
+            and not node.is_simprocedure
+            and node.function_address == func_addr
+        )
     }
+    synthetic_targets = _simprocedures_by_addr(
+        {
+            node
+            for node in cfg_graph
+            if (
+                not _is_path_terminator(node)
+                and node.is_simprocedure
+                and node.function_address == func_addr
+            )
+        }
+    )
 
     for source in tuple(selected):
         for destination in cfg_graph.successors(source):
@@ -39,8 +93,16 @@ def _select_cfg_nodes(cfg_graph: Any, func_addr: int | None) -> set[Any]:
                 continue
 
             edge_data = cfg_graph.get_edge_data(source, destination)
+            destination = _canonical_render_node(destination, synthetic_targets)
             jumpkind = edge_data.get("jumpkind")
-            if destination.is_simprocedure or jumpkind in _EXTERNAL_FRONTIER_JUMPKINDS:
+            is_semantic_exit = (
+                destination.is_simprocedure or jumpkind in _EXTERNAL_FRONTIER_JUMPKINDS
+            )
+            if _is_structural_simprocedure(cfg_graph, destination, selected):
+                selected.add(destination)
+            elif is_semantic_exit and (
+                exits == "always" or (exits == "jump" and jumpkind != "Ijk_Call")
+            ):
                 selected.add(destination)
 
     return selected
@@ -49,13 +111,14 @@ def _select_cfg_nodes(cfg_graph: Any, func_addr: int | None) -> set[Any]:
 @dataclass
 class CFGSource(Source):
     func_addr: int | None = None
+    exits: CfgExits = "jump"
 
     def parse(self, cfg: CFGBase) -> Graph:
         """Convert the selected function and its direct exits to render nodes."""
 
         obj = cfg.graph
         graph = Graph(cfg)
-        selected_nodes = _select_cfg_nodes(obj, self.func_addr)
+        selected_nodes = _select_cfg_nodes(obj, self.func_addr, self.exits)
         lookup = {}
 
         for n in selected_nodes:
@@ -66,10 +129,7 @@ class CFGSource(Source):
             lookup[n] = wn
             graph.add_node(wn)
 
-        for src, dst, data in obj.edges(data=True):
-            if src not in lookup or dst not in lookup:
-                continue
-
+        for src, dst, data in _selected_cfg_edges(obj, selected_nodes):
             graph.add_edge(Edge(lookup[src], lookup[dst], data))
 
         return graph

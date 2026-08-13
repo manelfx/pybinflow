@@ -191,7 +191,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8098b5e" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8098b5e)</TD><TD ><B>_dl_lookup_symbol_x+0xbbe</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x08098b5e&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">edx, dword ptr [eax + ebx*4]</TD></TR><TR><TD ALIGN="LEFT">0x08098b61&#58;&nbsp;</TD><TD ALIGN="LEFT">je</TD><TD ALIGN="LEFT">0x8098840</TD></TR></TABLE> }>];
 "0x8098b67" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8098b67)</TD><TD ><B>_dl_lookup_symbol_x+0xbc7</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x08098b67&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">ebx, 1</TD></TR><TR><TD ALIGN="LEFT">0x08098b6a&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">ecx, ebx</TD></TR><TR><TD ALIGN="LEFT">0x08098b6c&#58;&nbsp;</TD><TD ALIGN="LEFT">jne</TD><TD ALIGN="LEFT">0x8098b5e</TD></TR></TABLE> }>];
 "0x8098b6e" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8098b6e)</TD><TD ><B>_dl_lookup_symbol_x+0xbce</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x08098b6e&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">dword ptr [esp + 0x10], ebx</TD></TR><TR><TD ALIGN="LEFT">0x08098b72&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x8098429</TD></TR></TABLE> }>];
-"0x8100050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8100050)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 subgraph entry_rank {
 rank=source;
 "0x8097fa0";
@@ -420,7 +419,6 @@ rank=source;
 "0x8098851" -> "0x809885c" [color=red];
 "0x809885c" -> "0x8098741" [color=blue];
 "0x8098861" -> "0x8098881" [color=gray, style=dashed];
-"0x8098861" -> "0x8100050" [color=gray];
 "0x8098881" -> "0x80987a8" [color=blue];
 "0x8098886" -> "0x8098891" [color=red];
 "0x8098886" -> "0x809892b" [color=green];

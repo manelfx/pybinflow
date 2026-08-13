@@ -28,7 +28,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4a09e0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4a09e0)</TD><TD ><B>extent_from_logical+0x20c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004a09e0&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0x28dc</TD></TR><TR><TD ALIGN="LEFT">0x004a09e4&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r1, &#35;0x6bd</TD></TR><TR><TD ALIGN="LEFT">0x004a09e8&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4c</TD></TR><TR><TD ALIGN="LEFT">0x004a09ec&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x4a09f0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4a09f0)</TD><TD ><B>extent_from_logical+0x21c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004a09f0&#58;&nbsp;</TD><TD ALIGN="LEFT">mvn</TD><TD ALIGN="LEFT">r0, &#35;4</TD></TR><TR><TD ALIGN="LEFT">0x004a09f4&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x4a0880</TD></TR></TABLE> }>];
 "0x4a09f8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4a09f8)</TD><TD ><B>extent_from_logical+0x224</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004a09f8&#58;&nbsp;</TD><TD ALIGN="LEFT">udf</TD><TD ALIGN="LEFT">&#35;0x12</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4a07d4" -> "0x4a0854" [color=gray, style=dashed];
 "0x4a0854" -> "0x4a085c" [color=red];
 "0x4a0854" -> "0x4a0880" [color=green];
@@ -62,6 +61,5 @@ edge [fontname=monospace, fontsize=8];
 "0x4a09d0" -> "0x4a08ec" [color=blue];
 "0x4a09dc" -> "0x4a09e0" [color=blue, style=dashed];
 "0x4a09e0" -> "0x4a09f0" [color=gray, style=dashed];
-"0x4a09e0" -> "0x500048" [color=gray];
 "0x4a09f0" -> "0x4a0880" [color=blue];
 }

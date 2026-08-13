@@ -40,6 +40,7 @@ from .models import (
     JumpSuccessorAnalysis,
     JumpSuccessorExpectation,
     StaticJumpTable,
+    StaticJumpTablePlan,
 )
 
 
@@ -760,6 +761,70 @@ def _in_function_jump_table_entry_count(
             break
         count += 1
     return count if count >= 2 else None
+
+
+def plan_static_jump_table(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node: CFGNode,
+) -> tuple[StaticJumpTablePlan | None, str | None]:
+    """Return one fully proven static-table read plan for an indirect branch.
+
+    This deliberately owns only architecture-neutral VEX recognition and the
+    evidence needed to read a finite table. Callers decide how proven targets
+    are materialized: CFGFast fixup queues repairs, while independent
+    extraction adds new block leaders before its final graph materialization.
+    """
+
+    vex = _node_vex(node)
+    if vex is None:
+        return None, "no_vex"
+
+    table = _vex_relative_jump_table(vex) or _vex_direct_jump_table(vex)
+    if table is None:
+        # A table index naturally has the architecture's full register width
+        # on 64-bit targets. Recognition remains safe because table reads
+        # still require a separate finite range proof.
+        table = _vex_relative_jump_table(
+            vex, allow_full_width_index=True
+        ) or _vex_direct_jump_table(vex, allow_full_width_index=True)
+
+    pic_base_addr = None
+    if project.arch.name == "X86" and project.arch.bits == 32 and table is not None:
+        pic_base_addr = _x86_pc_thunk_base_addr(project, graph, bounds, node, table)
+    if table is None or table.base_bits != project.arch.bits:
+        return None, "no_table_shape"
+
+    entry_count = _guarded_jump_table_entry_count(graph, bounds, node, table)
+    if entry_count is None and pic_base_addr is not None:
+        entry_count = _x86_pc_thunk_guarded_entry_count(
+            project, graph, bounds, node, table
+        )
+
+    base_addr = table.static_base_addr or pic_base_addr
+    base_register_offset = table.base_register_offset
+    if base_addr is None:
+        if base_register_offset is None:
+            return None, "unknown_base"
+        base_addr = _constant_register_from_predecessors(
+            graph, bounds, node, base_register_offset
+        )
+    if base_addr is None and base_register_offset is not None:
+        # Disconnected dispatchers can lack a full predecessor path. Accept a
+        # base only if every bounded VEX definition agrees on its value.
+        base_addr = _unique_static_register_value(graph, bounds, base_register_offset)
+    if base_addr is None:
+        return None, "unknown_base"
+
+    if entry_count is None and table.entries_are_relative and pic_base_addr is not None:
+        entry_count = _in_function_jump_table_entry_count(
+            project, bounds, table, base_addr
+        )
+    if entry_count is None:
+        return None, "unbounded_index"
+
+    return StaticJumpTablePlan(table, base_addr, entry_count), None
 
 
 def _jump_table_target_addr(base_addr: int, table: StaticJumpTable, entry: int) -> int:

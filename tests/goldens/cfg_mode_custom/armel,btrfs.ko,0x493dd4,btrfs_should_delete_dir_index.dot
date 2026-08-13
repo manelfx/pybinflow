@@ -16,7 +16,6 @@ edge [fontname=monospace, fontsize=8];
 "0x493eac" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x493eac)</TD><TD ><B>btrfs_should_delete_dir_index+0xd8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00493eac&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, r3</TD></TR><TR><TD ALIGN="LEFT">0x00493eb0&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500020</TD></TR></TABLE> }>];
 "0x493eb4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x493eb4)</TD><TD ><B>btrfs_should_delete_dir_index+0xe0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00493eb4&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x493e68</TD></TR></TABLE> }>];
 "0x493eb8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x493eb8)</TD><TD ><B>btrfs_should_delete_dir_index+0xe4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00493eb8&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x00493ebc&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">&#123;r3, r4, r5, r6, r7, r8, sb, sl, fp, pc&#125;</TD></TR></TABLE> }>];
-"0x500020" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500020)</TD><TD ><B>kfree</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x493dd4" -> "0x493de8" [color=red];
 "0x493dd4" -> "0x493ea4" [color=green];
 "0x493de8" -> "0x493e00" [color=red];
@@ -36,6 +35,5 @@ edge [fontname=monospace, fontsize=8];
 "0x493e8c" -> "0x493e28" [color=green];
 "0x493e8c" -> "0x493ea4" [color=red];
 "0x493eac" -> "0x493eb4" [color=gray, style=dashed];
-"0x493eac" -> "0x500020" [color=gray];
 "0x493eb4" -> "0x493e68" [color=blue];
 }

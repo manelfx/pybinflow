@@ -30,7 +30,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8005325a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8005325a)</TD><TD ><B>_dl_fixup+0x1d2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8005325a&#58;&nbsp;</TD><TD ALIGN="LEFT">lgrl</TD><TD ALIGN="LEFT">%r2, 0x80099e98</TD></TR><TR><TD ALIGN="LEFT">0x80053260&#58;&nbsp;</TD><TD ALIGN="LEFT">basr</TD><TD ALIGN="LEFT">%r14, %r1</TD></TR></TABLE> }>];
 "0x80053262" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80053262)</TD><TD ><B>_dl_fixup+0x1da</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x80053262&#58;&nbsp;</TD><TD ALIGN="LEFT">lgr</TD><TD ALIGN="LEFT">%r1, %r2</TD></TR><TR><TD ALIGN="LEFT">0x80053266&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x800531ce</TD></TR></TABLE> }>];
 "0x8005326a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8005326a)</TD><TD ><B>_dl_fixup+0x1e2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8005326a&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r5, 0x80088ee4</TD></TR><TR><TD ALIGN="LEFT">0x80053270&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r4, 0x4f</TD></TR><TR><TD ALIGN="LEFT">0x80053274&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r3, 0x80088e90</TD></TR><TR><TD ALIGN="LEFT">0x8005327a&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x80088e9e</TD></TR><TR><TD ALIGN="LEFT">0x80053280&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x800011a8</TD></TR></TABLE> }>];
-"0x80100058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80100058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x80300000" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80300000)</TD><TD ><B>sys_0</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x80053088" -> "0x800530f4" [color=red];
 "0x80053088" -> "0x8005326a" [color=green];
@@ -69,6 +68,5 @@ edge [fontname=monospace, fontsize=8];
 "0x80053242" -> "0x8005319a" [color=blue];
 "0x80053246" -> "0x8005315c" [color=blue];
 "0x8005325a" -> "0x80053262" [color=gray, style=dashed];
-"0x8005325a" -> "0x80100058" [color=gray];
 "0x80053262" -> "0x800531ce" [color=blue];
 }

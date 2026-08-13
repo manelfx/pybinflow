@@ -34,6 +34,7 @@ edge [fontname=monospace, fontsize=8];
 "0x4004e4" -> "0x4004e8" [color=blue, style=dashed];
 "0x4004e8" -> "0x4004ec" [color=blue, style=dashed];
 "0x4004ec" -> "0x400360" [color=blue];
+"0x40051c" -> "0x400360" [color=gray];
 "0x40051c" -> "0x400534" [color=gray, style=dashed];
 "0x400534" -> "0x400544" [color=red];
 "0x400534" -> "0x400554" [color=green];

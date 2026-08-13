@@ -79,7 +79,6 @@ edge [fontname=monospace, fontsize=8];
 "0x41eeb0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41eeb0)</TD><TD ><B>realloc_hook_ini+0x3e0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041eeb0&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, ebp</TD></TR><TR><TD ALIGN="LEFT">0x0041eeb2&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0x4a1bf2</TD></TR><TR><TD ALIGN="LEFT">0x0041eeb7&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">esi, 0x4bc43c</TD></TR><TR><TD ALIGN="LEFT">0x0041eebc&#58;&nbsp;</TD><TD ALIGN="LEFT">and</TD><TD ALIGN="LEFT">edi, 2</TD></TR><TR><TD ALIGN="LEFT">0x0041eebf&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">eax, eax</TD></TR><TR><TD ALIGN="LEFT">0x0041eec1&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">ebp, ebp</TD></TR><TR><TD ALIGN="LEFT">0x0041eec3&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x411790</TD></TR></TABLE> }>];
 "0x41eec8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41eec8)</TD><TD ><B>realloc_hook_ini+0x3f8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041eec8&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x41ebaa</TD></TR></TABLE> }>];
 "0x41eecd" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41eecd)</TD><TD ><B>realloc_hook_ini+0x3fd</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041eecd&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x40dc00</TD></TR></TABLE> }>];
-"0x700058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x700058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 subgraph entry_rank {
 rank=source;
 "0x41ead0";
@@ -165,7 +164,6 @@ rank=source;
 "0x41ed35" -> "0x41ed38" [color=blue, style=dashed];
 "0x41ed38" -> "0x41ead0" [color=gray];
 "0x41ed38" -> "0x41ed45" [color=gray, style=dashed];
-"0x41ed38" -> "0x700058" [color=gray];
 "0x41ed45" -> "0x41ebaa" [color=blue];
 "0x41ed50" -> "0x41ebaa" [color=blue];
 "0x41ed68" -> "0x41ebaa" [color=green];

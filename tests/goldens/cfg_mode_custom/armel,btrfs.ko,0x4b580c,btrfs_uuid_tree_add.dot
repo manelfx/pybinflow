@@ -49,7 +49,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4b5b24" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4b5b24)</TD><TD ><B>btrfs_uuid_tree_add+0x318</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004b5b24&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x4b5a7c</TD></TR></TABLE> }>];
 "0x4b5b28" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4b5b28)</TD><TD ><B>btrfs_uuid_tree_add+0x31c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004b5b28&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0x3218</TD></TR><TR><TD ALIGN="LEFT">0x004b5b2c&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r1, &#35;0x6f</TD></TR><TR><TD ALIGN="LEFT">0x004b5b30&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4c</TD></TR><TR><TD ALIGN="LEFT">0x004b5b34&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r2, &#35;1</TD></TR><TR><TD ALIGN="LEFT">0x004b5b38&#58;&nbsp;</TD><TD ALIGN="LEFT">strb</TD><TD ALIGN="LEFT">r2, [r3, &#35;1]</TD></TR><TR><TD ALIGN="LEFT">0x004b5b3c&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x4b5b40" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4b5b40)</TD><TD ><B>btrfs_uuid_tree_add+0x334</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004b5b40&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x4b5a98</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4b580c" -> "0x4b5830" [color=red];
 "0x4b580c" -> "0x4b5a68" [color=green];
 "0x4b5830" -> "0x4b5838" [color=gray, style=dashed];
@@ -106,9 +105,7 @@ edge [fontname=monospace, fontsize=8];
 "0x4b5af4" -> "0x4b59d8" [color=blue];
 "0x4b5b00" -> "0x4b5918" [color=blue];
 "0x4b5b0c" -> "0x4b5b24" [color=gray, style=dashed];
-"0x4b5b0c" -> "0x500048" [color=gray];
 "0x4b5b24" -> "0x4b5a7c" [color=blue];
 "0x4b5b28" -> "0x4b5b40" [color=gray, style=dashed];
-"0x4b5b28" -> "0x500048" [color=gray];
 "0x4b5b40" -> "0x4b5a98" [color=blue];
 }

@@ -23,7 +23,7 @@ edge [fontname=monospace, fontsize=8];
 "0x10097c40" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x10097c40)</TD><TD ><B>execute_cfa_program+0xcb0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x10097c40&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">0x1000ed78</TD></TR></TABLE> }>];
 "0x10097c44" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x10097c44)</TD><TD ><B>execute_cfa_program+0xcb4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x10097c44&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR><TR><TD ALIGN="LEFT">0x10097c48&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR><TR><TD ALIGN="LEFT">0x10097c4c&#58;&nbsp;</TD><TD ALIGN="LEFT">ori</TD><TD ALIGN="LEFT">r2, r2, 0</TD></TR><TR><TD ALIGN="LEFT">0x10097c50&#58;&nbsp;</TD><TD ALIGN="LEFT">ld</TD><TD ALIGN="LEFT">r9, 0(r1)</TD></TR><TR><TD ALIGN="LEFT">0x10097c54&#58;&nbsp;</TD><TD ALIGN="LEFT">stdu</TD><TD ALIGN="LEFT">r9, -0x960(r1)</TD></TR><TR><TD ALIGN="LEFT">0x10097c58&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">r9, r1, 0x20</TD></TR><TR><TD ALIGN="LEFT">0x10097c5c&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x10097610</TD></TR></TABLE> }>];
 "0x10100050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x10100050)</TD><TD ><B>UnresolvableJumpTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x10096f90" -> "0x10096fa8" [color=green];
+"0x10096f90" -> "0x10096fa8" [color=red];
 "0x10096fa8" -> "0x1009701c" [color=red];
 "0x10096fa8" -> "0x1009719c" [color=green];
 "0x1009701c" -> "0x10097050" [color=blue, style=dashed];

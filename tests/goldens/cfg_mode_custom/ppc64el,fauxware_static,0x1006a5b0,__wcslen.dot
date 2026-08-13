@@ -24,8 +24,8 @@ edge [fontname=monospace, fontsize=8];
 "0x1006a5d4" -> "0x1006a5ec" [color=blue];
 "0x1006a5e0" -> "0x1006a5ec" [color=red];
 "0x1006a5e0" -> "0x1006a630" [color=green];
-"0x1006a5ec" -> "0x1006a604" [color=green];
-"0x1006a604" -> "0x1006a618" [color=green];
+"0x1006a5ec" -> "0x1006a604" [color=red];
+"0x1006a604" -> "0x1006a618" [color=red];
 "0x1006a618" -> "0x1006a5e0" [color=green];
 "0x1006a618" -> "0x1006a628" [color=red];
 }

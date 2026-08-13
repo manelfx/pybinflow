@@ -9,7 +9,7 @@ edge [fontname=monospace, fontsize=8];
 "0x4738b0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4738b0)</TD><TD ><B>btrfs_set_lock_blocking_rw+0x98</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004738b0&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r3, [r0, &#35;0x34]</TD></TR><TR><TD ALIGN="LEFT">0x004738b4&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">r3, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x004738b8&#58;&nbsp;</TD><TD ALIGN="LEFT">popne</TD><TD ALIGN="LEFT">&#123;r4, pc&#125;</TD></TR></TABLE> }>];
 "0x473818" -> "0x473828" [color=red];
 "0x473818" -> "0x473848" [color=green];
-"0x473828" -> "0x473848" [color=green];
+"0x473828" -> "0x473848" [color=red];
 "0x473848" -> "0x473854" [color=red];
 "0x473848" -> "0x4738b0" [color=green];
 }

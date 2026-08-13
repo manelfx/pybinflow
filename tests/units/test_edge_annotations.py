@@ -543,7 +543,7 @@ def test_atomic_vex_self_exit_remains_a_linear_fallthrough() -> None:
 
 
 def test_terminal_vex_return_with_boring_exit_is_conditional() -> None:
-    """Style a conditional return's explicit non-returning exit as a branch."""
+    """Style a conditional return's explicit non-returning exit as not taken."""
 
     source = _node(
         0x1000,
@@ -553,7 +553,7 @@ def test_terminal_vex_return_with_boring_exit_is_conditional() -> None:
 
     assert (
         _edge_type(_edge(source, _node(0x1004), jumpkind="Ijk_Boring"))
-        == "CONDITIONAL_TRUE"
+        == "CONDITIONAL_FALSE"
     )
 
 

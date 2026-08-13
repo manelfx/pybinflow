@@ -115,6 +115,9 @@ CONFIGS = [
     # application defaults from the real Settings model.
     GoldenConfig(name="cfg_mode_none", cfg_mode="none"),
     GoldenConfig(name="cfg_mode_custom", cfg_mode="custom"),
+    # The independent extractor is experimental. Its baseline starts as a
+    # copy of custom artifacts so checkpoint tests show extractor differences.
+    GoldenConfig(name="cfg_mode_extract", cfg_mode="extract"),
 ]
 
 # Custom repair is the production CFG path and therefore the default golden

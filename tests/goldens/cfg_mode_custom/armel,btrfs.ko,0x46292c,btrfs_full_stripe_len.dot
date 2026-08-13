@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4629a4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4629a4)</TD><TD ><B>btrfs_full_stripe_len+0x78</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004629a4&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, r4</TD></TR><TR><TD ALIGN="LEFT">0x004629a8&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">sp, sp, &#35;8</TD></TR><TR><TD ALIGN="LEFT">0x004629ac&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">&#123;r4, r6, r7, r8, sb, pc&#125;</TD></TR></TABLE> }>];
 "0x4629b0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4629b0)</TD><TD ><B>btrfs_full_stripe_len+0x84</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004629b0&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0x610</TD></TR><TR><TD ALIGN="LEFT">0x004629b4&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r1, &#35;0x1400</TD></TR><TR><TD ALIGN="LEFT">0x004629b8&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4c</TD></TR><TR><TD ALIGN="LEFT">0x004629bc&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x4629c0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4629c0)</TD><TD ><B>btrfs_full_stripe_len+0x94</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004629c0&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, r4</TD></TR><TR><TD ALIGN="LEFT">0x004629c4&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">sp, sp, &#35;8</TD></TR><TR><TD ALIGN="LEFT">0x004629c8&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">&#123;r4, r6, r7, r8, sb, pc&#125;</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x46292c" -> "0x462948" [color=gray, style=dashed];
 "0x462948" -> "0x462950" [color=red];
 "0x462948" -> "0x4629b0" [color=green];
@@ -24,5 +23,4 @@ edge [fontname=monospace, fontsize=8];
 "0x462998" -> "0x4629a0" [color=blue, style=dashed];
 "0x4629a0" -> "0x4629a4" [color=gray, style=dashed];
 "0x4629b0" -> "0x4629c0" [color=gray, style=dashed];
-"0x4629b0" -> "0x500048" [color=gray];
 }

@@ -13,7 +13,6 @@ edge [fontname=monospace, fontsize=8];
 "0x402394" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x402394)</TD><TD ><B>G_WorldDone+0x99</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00402394&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x402397</TD></TR></TABLE> }>];
 "0x402396" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x402396)</TD><TD ><B>G_WorldDone+0x9b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00402396&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
 "0x402397" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x402397)</TD><TD ><B>G_WorldDone+0x9c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00402397&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR><TR><TD ALIGN="LEFT">0x00402398&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbp</TD></TR><TR><TD ALIGN="LEFT">0x00402399&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
-"0x5000a0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5000a0)</TD><TD ><B>F_StartFinale</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4022fb" -> "0x402313" [color=red];
 "0x4022fb" -> "0x40233b" [color=green];
 "0x402313" -> "0x40233b" [color=blue, style=dashed];
@@ -28,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x402385" -> "0x40238f" [color=red];
 "0x402385" -> "0x402396" [color=green];
 "0x40238f" -> "0x402394" [color=gray, style=dashed];
-"0x40238f" -> "0x5000a0" [color=gray];
 "0x402394" -> "0x402397" [color=blue];
 "0x402396" -> "0x402397" [color=blue, style=dashed];
 }

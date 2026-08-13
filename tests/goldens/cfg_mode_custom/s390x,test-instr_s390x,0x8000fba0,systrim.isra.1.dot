@@ -16,7 +16,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8000fc50" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000fc50)</TD><TD ><B>systrim.isra.1+0xb0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000fc50&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r2, 0(%r10)</TD></TR><TR><TD ALIGN="LEFT">0x8000fc56&#58;&nbsp;</TD><TD ALIGN="LEFT">sgr</TD><TD ALIGN="LEFT">%r2, %r1</TD></TR><TR><TD ALIGN="LEFT">0x8000fc5a&#58;&nbsp;</TD><TD ALIGN="LEFT">stg</TD><TD ALIGN="LEFT">%r2, 0(%r10)</TD></TR><TR><TD ALIGN="LEFT">0x8000fc60&#58;&nbsp;</TD><TD ALIGN="LEFT">sgrk</TD><TD ALIGN="LEFT">%r1, %r12, %r1</TD></TR><TR><TD ALIGN="LEFT">0x8000fc64&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r3, 0(%r11)</TD></TR><TR><TD ALIGN="LEFT">0x8000fc6a&#58;&nbsp;</TD><TD ALIGN="LEFT">oill</TD><TD ALIGN="LEFT">%r1, 1</TD></TR><TR><TD ALIGN="LEFT">0x8000fc6e&#58;&nbsp;</TD><TD ALIGN="LEFT">lhi</TD><TD ALIGN="LEFT">%r2, 1</TD></TR><TR><TD ALIGN="LEFT">0x8000fc72&#58;&nbsp;</TD><TD ALIGN="LEFT">stg</TD><TD ALIGN="LEFT">%r1, 8(%r3)</TD></TR><TR><TD ALIGN="LEFT">0x8000fc78&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8000fbe4</TD></TR></TABLE> }>];
 "0x8000fc7c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000fc7c)</TD><TD ><B>systrim.isra.1+0xdc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000fc7c&#58;&nbsp;</TD><TD ALIGN="LEFT">basr</TD><TD ALIGN="LEFT">%r14, %r1</TD></TR></TABLE> }>];
 "0x8000fc7e" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000fc7e)</TD><TD ><B>systrim.isra.1+0xde</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000fc7e&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8000fc36</TD></TR></TABLE> }>];
-"0x80100058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80100058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8000fba0" -> "0x8000fbca" [color=red];
 "0x8000fba0" -> "0x8000fbe0" [color=green];
 "0x8000fbca" -> "0x8000fbe0" [color=red];
@@ -35,6 +34,5 @@ edge [fontname=monospace, fontsize=8];
 "0x8000fc48" -> "0x8000fc50" [color=red];
 "0x8000fc50" -> "0x8000fbe4" [color=blue];
 "0x8000fc7c" -> "0x8000fc7e" [color=gray, style=dashed];
-"0x8000fc7c" -> "0x80100058" [color=gray];
 "0x8000fc7e" -> "0x8000fc36" [color=blue];
 }

@@ -17,7 +17,7 @@ edge [fontname=monospace, fontsize=8];
 "0x100491d8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x100491d8)</TD><TD ><B>do_release_shlib+0xd8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x100491d8&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
 "0x10049100" -> "0x10049110" [color=red];
 "0x10049100" -> "0x10049118" [color=green];
-"0x10049110" -> "0x10049118" [color=green];
+"0x10049110" -> "0x10049118" [color=red];
 "0x10049118" -> "0x10049134" [color=red];
 "0x10049118" -> "0x10049190" [color=green];
 "0x10049134" -> "0x10049144" [color=red];

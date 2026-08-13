@@ -18,9 +18,11 @@ from bingraph.helpers.capstone import (
 from bingraph.helpers.symbols import list_function_symbols
 from .decode import (
     DecodedNode,
+    call_fallthrough_addr as _call_fallthrough_addr,
     decode_one,
     decode_raw_capstone_insns,
     lift_instruction_vex,
+    vex_jumpkind_is_terminal as _vex_jumpkind_is_terminal,
 )
 from .graph import (
     CFGGraph,
@@ -39,10 +41,6 @@ from .models import (
     CFGAnomaly,
     FunctionBounds,
     JumpSuccessorExpectation,
-)
-from .recovery import (
-    call_fallthrough_addr as _call_fallthrough_addr,
-    vex_jumpkind_is_terminal as _vex_jumpkind_is_terminal,
 )
 
 

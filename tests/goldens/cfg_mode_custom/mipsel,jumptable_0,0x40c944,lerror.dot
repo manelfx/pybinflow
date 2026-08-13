@@ -16,12 +16,8 @@ edge [fontname=monospace, fontsize=8];
 "0x40ca2c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40ca2c)</TD><TD ><B>lerror+0xe8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040ca2c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$gp, 0x10($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0040ca30&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
 "0x40ca34" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40ca34)</TD><TD ><B>lerror+0xf0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040ca34&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$t9, -0x7f50($gp)</TD></TR><TR><TD ALIGN="LEFT">0x0040ca38&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR><TR><TD ALIGN="LEFT">0x0040ca3c&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x0040ca40&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
 "0x40ca44" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40ca44)</TD><TD ><B>lerror+0x100</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040ca44&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$gp, 0x10($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0040ca48&#58;&nbsp;</TD><TD ALIGN="LEFT">sw</TD><TD ALIGN="LEFT">$s1, ($v0)</TD></TR><TR><TD ALIGN="LEFT">0x0040ca4c&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$ra, 0x24($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0040ca50&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s1, 0x1c($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0040ca54&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$s0, 0x18($sp)</TD></TR><TR><TD ALIGN="LEFT">0x0040ca58&#58;&nbsp;</TD><TD ALIGN="LEFT">jr</TD><TD ALIGN="LEFT">$ra</TD></TR><TR><TD ALIGN="LEFT">0x0040ca5c&#58;&nbsp;</TD><TD ALIGN="LEFT">addiu</TD><TD ALIGN="LEFT">$sp, $sp, 0x28</TD></TR></TABLE> }>];
-"0x1010003c" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1010003c)</TD><TD ><B>__errno_location</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x1010018c" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1010018c)</TD><TD ><B>strerror</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x40c944" -> "0x40c97c" [color=gray, style=dashed];
-"0x40c944" -> "0x1010003c" [color=gray];
 "0x40c97c" -> "0x40c99c" [color=gray, style=dashed];
-"0x40c97c" -> "0x1010018c" [color=gray];
 "0x40c99c" -> "0x40c9a8" [color=red];
 "0x40c99c" -> "0x40c9f8" [color=green];
 "0x40c9a8" -> "0x40c9b8" [color=red];
@@ -37,5 +33,4 @@ edge [fontname=monospace, fontsize=8];
 "0x40ca0c" -> "0x40ca2c" [color=gray, style=dashed];
 "0x40ca2c" -> "0x40ca34" [color=blue, style=dashed];
 "0x40ca34" -> "0x40ca44" [color=gray, style=dashed];
-"0x40ca34" -> "0x1010003c" [color=gray];
 }

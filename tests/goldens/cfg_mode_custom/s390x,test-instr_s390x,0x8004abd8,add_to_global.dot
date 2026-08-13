@@ -34,7 +34,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8004ae6e" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8004ae6e)</TD><TD ><B>add_to_global+0x296</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8004ae6e&#58;&nbsp;</TD><TD ALIGN="LEFT">lgrl</TD><TD ALIGN="LEFT">%r1, 0x8009a950</TD></TR><TR><TD ALIGN="LEFT">0x8004ae74&#58;&nbsp;</TD><TD ALIGN="LEFT">basr</TD><TD ALIGN="LEFT">%r14, %r1</TD></TR></TABLE> }>];
 "0x8004ae76" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8004ae76)</TD><TD ><B>add_to_global+0x29e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8004ae76&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8004ae0c</TD></TR></TABLE> }>];
 "0x8004ae7a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8004ae7a)</TD><TD ><B>add_to_global+0x2a2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8004ae7a&#58;&nbsp;</TD><TD ALIGN="LEFT">la</TD><TD ALIGN="LEFT">%r1, 0x18(%r8, %r10)</TD></TR><TR><TD ALIGN="LEFT">0x8004ae7e&#58;&nbsp;</TD><TD ALIGN="LEFT">mvghi</TD><TD ALIGN="LEFT">0(%r1), 0</TD></TR><TR><TD ALIGN="LEFT">0x8004ae84&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8004ae4e</TD></TR></TABLE> }>];
-"0x80100058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80100058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8004abd8" -> "0x8004abf8" [color=red];
 "0x8004abd8" -> "0x8004ae28" [color=green];
 "0x8004abf8" -> "0x8004ac14" [color=blue, style=dashed];
@@ -77,7 +76,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8004ae3e" -> "0x8004ae4e" [color=red];
 "0x8004ae4e" -> "0x8004ae6e" [color=gray, style=dashed];
 "0x8004ae6e" -> "0x8004ae76" [color=gray, style=dashed];
-"0x8004ae6e" -> "0x80100058" [color=gray];
 "0x8004ae76" -> "0x8004ae0c" [color=blue];
 "0x8004ae7a" -> "0x8004ae4e" [color=blue];
 }

@@ -30,7 +30,6 @@ edge [fontname=monospace, fontsize=8];
 "0x54a9b0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x54a9b0)</TD><TD ><B>_ZN3std4sync6poison4once4Once9call_once28_$u7b$$u7b$closure$u7d$$u7d$17hcd63ef6743ee84a4E+0x1b0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0054a9b0&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x54a958</TD></TR></TABLE> }>];
 "0x54a9b2" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x54a9b2)</TD><TD ><B>_ZN3std4sync6poison4once4Once9call_once28_$u7b$$u7b$closure$u7d$$u7d$17hcd63ef6743ee84a4E+0x1b2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0054a9b2&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdi, [rip + 0x36d27]</TD></TR><TR><TD ALIGN="LEFT">0x0054a9b9&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">qword ptr [rip + 0x39fe9]</TD></TR></TABLE> }>];
 "0x54a9bf" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x54a9bf)</TD><TD ><B>_ZN3std4sync6poison4once4Once9call_once28_$u7b$$u7b$closure$u7d$$u7d$17hcd63ef6743ee84a4E+0x1bf</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0054a9bf&#58;&nbsp;</TD><TD ALIGN="LEFT">ud2</TD><TD></TD></TR></TABLE> }>];
-"0x600070" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x600070)</TD><TD ><B>syscall</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x54a800" -> "0x54a81b" [color=red];
 "0x54a800" -> "0x54a970" [color=green];
 "0x54a81b" -> "0x54a82e" [color=red];
@@ -69,7 +68,6 @@ edge [fontname=monospace, fontsize=8];
 "0x54a986" -> "0x54a990" [color=red];
 "0x54a990" -> "0x54a958" [color=blue];
 "0x54a992" -> "0x54a9b0" [color=gray, style=dashed];
-"0x54a992" -> "0x600070" [color=gray];
 "0x54a9b0" -> "0x54a958" [color=blue];
 "0x54a9b2" -> "0x54a9bf" [color=gray, style=dashed];
 }

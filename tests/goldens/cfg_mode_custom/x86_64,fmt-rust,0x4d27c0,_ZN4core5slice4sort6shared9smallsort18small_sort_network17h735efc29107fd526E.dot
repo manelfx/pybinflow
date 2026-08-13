@@ -31,7 +31,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4d28cc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4d28cc)</TD><TD ><B>_ZN4core5slice4sort6shared9smallsort18small_sort_network17h735efc29107fd526E+0x10c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004d28cc&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 0x100</TD></TR><TR><TD ALIGN="LEFT">0x004d28d3&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbx</TD></TR><TR><TD ALIGN="LEFT">0x004d28d4&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r12</TD></TR><TR><TD ALIGN="LEFT">0x004d28d6&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r13</TD></TR><TR><TD ALIGN="LEFT">0x004d28d8&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r14</TD></TR><TR><TD ALIGN="LEFT">0x004d28da&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r15</TD></TR></TABLE> }>];
 "0x4d28dc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4d28dc)</TD><TD ><B>_ZN4core5slice4sort6shared9smallsort18small_sort_network17h735efc29107fd526E+0x11c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004d28dc&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
 "0x4d28dd" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4d28dd)</TD><TD ><B>_ZN4core5slice4sort6shared9smallsort18small_sort_network17h735efc29107fd526E+0x11d</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004d28dd&#58;&nbsp;</TD><TD ALIGN="LEFT">ud2</TD><TD></TD></TR></TABLE> }>];
-"0x600008" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x600008)</TD><TD ><B>memcpy</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4d27c0" -> "0x4d27ca" [color=red];
 "0x4d27c0" -> "0x4d28dc" [color=green];
 "0x4d27ca" -> "0x4d27d4" [color=red];
@@ -66,6 +65,5 @@ edge [fontname=monospace, fontsize=8];
 "0x4d289a" -> "0x4d28a5" [color=gray, style=dashed];
 "0x4d28a5" -> "0x4d28b9" [color=gray, style=dashed];
 "0x4d28b9" -> "0x4d28cc" [color=gray, style=dashed];
-"0x4d28b9" -> "0x600008" [color=gray];
 "0x4d28cc" -> "0x4d28dc" [color=blue, style=dashed];
 }

@@ -13,11 +13,14 @@ edge [fontname=monospace, fontsize=8];
 "0x8004f49" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8004f49)</TD><TD ><B>serialWrite</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x80044a1" -> "0x80044b3" [color=gray, style=dashed];
 "0x80044b3" -> "0x80044b9" [color=gray, style=dashed];
+"0x80044b3" -> "0x8004f49" [color=gray];
 "0x80044b9" -> "0x80044c1" [color=gray, style=dashed];
+"0x80044b9" -> "0x8004f49" [color=gray];
 "0x80044c1" -> "0x80044c3" [color=blue, style=dashed];
 "0x80044c3" -> "0x80044c9" [color=red];
 "0x80044c3" -> "0x80044d3" [color=green];
 "0x80044c9" -> "0x8004f49" [color=blue];
 "0x80044d3" -> "0x80044dd" [color=gray, style=dashed];
+"0x80044d3" -> "0x8004f49" [color=gray];
 "0x80044dd" -> "0x80044c3" [color=blue];
 }

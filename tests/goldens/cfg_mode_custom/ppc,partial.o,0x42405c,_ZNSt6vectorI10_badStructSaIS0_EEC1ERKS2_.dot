@@ -15,7 +15,6 @@ edge [fontname=monospace, fontsize=8];
 "0x424168" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x424168)</TD><TD ><B>_ZNSt6vectorI10_badStructSaIS0_EEC1ERKS2_+0x10c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00424168&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x4241a4</TD></TR></TABLE> }>];
 "0x4241a4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4241a4)</TD><TD ><B>_ZNSt6vectorI10_badStructSaIS0_EEC1ERKS2_+0x148</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004241a4&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">0x500038</TD></TR></TABLE> }>];
 "0x4241a8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4241a8)</TD><TD ><B>_ZNSt6vectorI10_badStructSaIS0_EEC1ERKS2_+0x14c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004241a8&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">r11, r31, 0x40</TD></TR><TR><TD ALIGN="LEFT">0x004241ac&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r0, 4(r11)</TD></TR><TR><TD ALIGN="LEFT">0x004241b0&#58;&nbsp;</TD><TD ALIGN="LEFT">mtlr</TD><TD ALIGN="LEFT">r0</TD></TR><TR><TD ALIGN="LEFT">0x004241b4&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r29, -0xc(r11)</TD></TR><TR><TD ALIGN="LEFT">0x004241b8&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r30, -8(r11)</TD></TR><TR><TD ALIGN="LEFT">0x004241bc&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r31, -4(r11)</TD></TR><TR><TD ALIGN="LEFT">0x004241c0&#58;&nbsp;</TD><TD ALIGN="LEFT">mr</TD><TD ALIGN="LEFT">r1, r11</TD></TR><TR><TD ALIGN="LEFT">0x004241c4&#58;&nbsp;</TD><TD ALIGN="LEFT">blr</TD><TD></TD></TR></TABLE> }>];
-"0x500038" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500038)</TD><TD ><B>__stack_chk_fail</B></TD><TD > SIMP  NORET</TD></TR></TABLE> }>];
 "0x42405c" -> "0x424098" [color=gray, style=dashed];
 "0x424098" -> "0x4240a8" [color=gray, style=dashed];
 "0x4240a8" -> "0x4240bc" [color=gray, style=dashed];
@@ -28,5 +27,4 @@ edge [fontname=monospace, fontsize=8];
 "0x424140" -> "0x424168" [color=red];
 "0x424140" -> "0x4241a8" [color=green];
 "0x424168" -> "0x4241a4" [color=blue];
-"0x4241a4" -> "0x500038" [color=gray];
 }

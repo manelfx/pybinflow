@@ -20,7 +20,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4102a4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4102a4)</TD><TD ><B>hash_delete+0x204</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004102a4&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$v1, -0x7fd4($gp)</TD></TR><TR><TD ALIGN="LEFT">0x004102a8&#58;&nbsp;</TD><TD ALIGN="LEFT">ldc1</TD><TD ALIGN="LEFT">$f4, 0xa40($v1)</TD></TR><TR><TD ALIGN="LEFT">0x004102ac&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x4101c0</TD></TR><TR><TD ALIGN="LEFT">0x004102b0&#58;&nbsp;</TD><TD ALIGN="LEFT">add.d</TD><TD ALIGN="LEFT">$f2, $f2, $f4</TD></TR></TABLE> }>];
 "0x4102b4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4102b4)</TD><TD ><B>hash_delete+0x214</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004102b4&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$v1, -0x7fd4($gp)</TD></TR><TR><TD ALIGN="LEFT">0x004102b8&#58;&nbsp;</TD><TD ALIGN="LEFT">ldc1</TD><TD ALIGN="LEFT">$f2, 0xa40($v1)</TD></TR><TR><TD ALIGN="LEFT">0x004102bc&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x4101ac</TD></TR><TR><TD ALIGN="LEFT">0x004102c0&#58;&nbsp;</TD><TD ALIGN="LEFT">add.d</TD><TD ALIGN="LEFT">$f0, $f0, $f2</TD></TR></TABLE> }>];
 "0x4102c4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4102c4)</TD><TD ><B>hash_delete+0x224</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004102c4&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$t9, -0x7cc8($gp)</TD></TR><TR><TD ALIGN="LEFT">0x004102c8&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x004102cc&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
-"0x500160" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500160)</TD><TD ><B>__stack_chk_fail</B></TD><TD > SIMP  NORET</TD></TR></TABLE> }>];
 "0x4100a0" -> "0x4100f0" [color=gray, style=dashed];
 "0x4100f0" -> "0x4100fc" [color=red];
 "0x4100f0" -> "0x410114" [color=green];
@@ -44,5 +43,4 @@ edge [fontname=monospace, fontsize=8];
 "0x410264" -> "0x410158" [color=blue];
 "0x4102a4" -> "0x4101c0" [color=blue];
 "0x4102b4" -> "0x4101ac" [color=blue];
-"0x4102c4" -> "0x500160" [color=gray];
 }

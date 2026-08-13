@@ -22,7 +22,6 @@ edge [fontname=monospace, fontsize=8];
 "0x5460c7" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5460c7)</TD><TD ><B>_ZN61_$LT$$RF$std..io..stdio..Stdout$u20$as$u20$std..io..Write$GT$5write17hfe76aff43e449545E+0x107</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x005460c7&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x54605e</TD></TR></TABLE> }>];
 "0x5460c9" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5460c9)</TD><TD ><B>_ZN61_$LT$$RF$std..io..stdio..Stdout$u20$as$u20$std..io..Write$GT$5write17hfe76aff43e449545E+0x109</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x005460c9&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rbx, 8</TD></TR><TR><TD ALIGN="LEFT">0x005460cd&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 0xca</TD></TR><TR><TD ALIGN="LEFT">0x005460d2&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rsi, rbx</TD></TR><TR><TD ALIGN="LEFT">0x005460d5&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rbx, rdx</TD></TR><TR><TD ALIGN="LEFT">0x005460d8&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0x81</TD></TR><TR><TD ALIGN="LEFT">0x005460dd&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">ecx, 1</TD></TR><TR><TD ALIGN="LEFT">0x005460e2&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r14, rax</TD></TR><TR><TD ALIGN="LEFT">0x005460e5&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">eax, eax</TD></TR><TR><TD ALIGN="LEFT">0x005460e7&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">qword ptr [rip + 0x3e8b3]</TD></TR></TABLE> }>];
 "0x5460ed" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5460ed)</TD><TD ><B>_ZN61_$LT$$RF$std..io..stdio..Stdout$u20$as$u20$std..io..Write$GT$5write17hfe76aff43e449545E+0x12d</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x005460ed&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rdx, rbx</TD></TR><TR><TD ALIGN="LEFT">0x005460f0&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rax, r14</TD></TR><TR><TD ALIGN="LEFT">0x005460f3&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x546092</TD></TR></TABLE> }>];
-"0x600070" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x600070)</TD><TD ><B>syscall</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x545fc0" -> "0x545ff3" [color=red];
 "0x545fc0" -> "0x54600e" [color=green];
 "0x545ff3" -> "0x545ffb" [color=red];
@@ -50,6 +49,5 @@ edge [fontname=monospace, fontsize=8];
 "0x5460bd" -> "0x5460c7" [color=gray, style=dashed];
 "0x5460c7" -> "0x54605e" [color=blue];
 "0x5460c9" -> "0x5460ed" [color=gray, style=dashed];
-"0x5460c9" -> "0x600070" [color=gray];
 "0x5460ed" -> "0x546092" [color=blue];
 }

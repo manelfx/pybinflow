@@ -17,7 +17,6 @@ edge [fontname=monospace, fontsize=8];
 "0x408e0c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x408e0c)</TD><TD ><B>_IO_new_file_finish+0xcc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00408e0c&#58;&nbsp;</TD><TD ALIGN="LEFT">bal</TD><TD ALIGN="LEFT">0x407a50</TD></TR><TR><TD ALIGN="LEFT">0x00408e10&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
 "0x408e14" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x408e14)</TD><TD ><B>_IO_new_file_finish+0xd4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00408e14&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x408dc4</TD></TR><TR><TD ALIGN="LEFT">0x00408e18&#58;&nbsp;</TD><TD ALIGN="LEFT">lw</TD><TD ALIGN="LEFT">$t9, 0x44($s1)</TD></TR></TABLE> }>];
 "0x40c5f0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40c5f0)</TD><TD ><B>_IO_default_finish</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x500050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500050)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 subgraph entry_rank {
 rank=source;
 "0x408d40";
@@ -34,7 +33,6 @@ rank=source;
 "0x408da8" -> "0x408e0c" [color=green];
 "0x408dc0" -> "0x408dc4" [color=blue, style=dashed];
 "0x408dc4" -> "0x408d40" [color=gray];
-"0x408dc4" -> "0x500050" [color=gray];
 "0x408dd0" -> "0x408dd4" [color=blue, style=dashed];
 "0x408dd4" -> "0x40c5f0" [color=blue];
 "0x408df0" -> "0x408e04" [color=gray, style=dashed];

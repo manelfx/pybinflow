@@ -35,7 +35,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80a2157" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a2157)</TD><TD ><B>add_to_global+0x267</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a2157&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">eax, 0x80dbf2c</TD></TR><TR><TD ALIGN="LEFT">0x080a215d&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">dword ptr [eax]</TD></TR></TABLE> }>];
 "0x80a215f" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a215f)</TD><TD ><B>add_to_global+0x26f</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a215f&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x80a20b7</TD></TR></TABLE> }>];
 "0x80a2164" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a2164)</TD><TD ><B>add_to_global+0x274</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a2164&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">dword ptr [edi + 0xc], 0</TD></TR><TR><TD ALIGN="LEFT">0x080a216b&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x80a2136</TD></TR></TABLE> }>];
-"0x8100050" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8100050)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x80a1ef0" -> "0x80a1efb" [color=gray, style=dashed];
 "0x80a1efb" -> "0x80a1f16" [color=red];
 "0x80a1efb" -> "0x80a2150" [color=green];
@@ -79,7 +78,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80a214b" -> "0x80a2150" [color=blue, style=dashed];
 "0x80a2150" -> "0x80a1f41" [color=blue];
 "0x80a2157" -> "0x80a215f" [color=gray, style=dashed];
-"0x80a2157" -> "0x8100050" [color=gray];
 "0x80a215f" -> "0x80a20b7" [color=blue];
 "0x80a2164" -> "0x80a2136" [color=blue];
 }

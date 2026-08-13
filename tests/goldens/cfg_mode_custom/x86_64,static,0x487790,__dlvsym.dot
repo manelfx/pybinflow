@@ -11,11 +11,9 @@ edge [fontname=monospace, fontsize=8];
 "0x4877fc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4877fc)</TD><TD ><B>__dlvsym+0x6c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004877fc&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 0x6ca140</TD></TR><TR><TD ALIGN="LEFT">0x00487801&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">rax</TD></TR></TABLE> }>];
 "0x487803" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x487803)</TD><TD ><B>__dlvsym+0x73</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00487803&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 0x50</TD></TR><TR><TD ALIGN="LEFT">0x00487807&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rax, rbx</TD></TR><TR><TD ALIGN="LEFT">0x0048780a&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbx</TD></TR><TR><TD ALIGN="LEFT">0x0048780b&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
 "0x487810" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x487810)</TD><TD ><B>__dlvsym+0x80</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00487810&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">ebx, ebx</TD></TR><TR><TD ALIGN="LEFT">0x00487812&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x4877f2</TD></TR></TABLE> }>];
-"0x700058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x700058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x487790" -> "0x4877d3" [color=red];
 "0x487790" -> "0x4877da" [color=green];
 "0x4877d3" -> "0x4877da" [color=gray, style=dashed];
-"0x4877d3" -> "0x700058" [color=gray];
 "0x4877da" -> "0x4877e9" [color=gray, style=dashed];
 "0x4877e9" -> "0x4877ed" [color=red];
 "0x4877e9" -> "0x487810" [color=green];
@@ -23,6 +21,5 @@ edge [fontname=monospace, fontsize=8];
 "0x4877f2" -> "0x4877fc" [color=red];
 "0x4877f2" -> "0x487803" [color=green];
 "0x4877fc" -> "0x487803" [color=gray, style=dashed];
-"0x4877fc" -> "0x700058" [color=gray];
 "0x487810" -> "0x4877f2" [color=blue];
 }

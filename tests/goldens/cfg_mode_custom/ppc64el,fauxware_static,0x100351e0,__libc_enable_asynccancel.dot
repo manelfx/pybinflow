@@ -25,7 +25,7 @@ edge [fontname=monospace, fontsize=8];
 "0x1003520c" -> "0x10035214" [color=red];
 "0x10035214" -> "0x10035224" [color=red];
 "0x10035214" -> "0x10035290" [color=green];
-"0x10035224" -> "0x10035234" [color=green];
+"0x10035224" -> "0x10035234" [color=red];
 "0x10035234" -> "0x10035250" [color=blue, style=dashed];
 "0x10035250" -> "0x1003525c" [color=blue, style=dashed];
 "0x1003525c" -> "0x10035268" [color=red];

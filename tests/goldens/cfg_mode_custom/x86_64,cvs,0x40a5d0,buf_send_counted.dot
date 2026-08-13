@@ -13,7 +13,6 @@ edge [fontname=monospace, fontsize=8];
 "0x40a640" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40a640)</TD><TD ><B>buf_send_counted+0x70</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040a640&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">qword ptr [rbp + 8], rax</TD></TR><TR><TD ALIGN="LEFT">0x0040a644&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x40a617</TD></TR></TABLE> }>];
 "0x40a650" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40a650)</TD><TD ><B>buf_send_counted+0x80</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040a650&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rdi, rbp</TD></TR><TR><TD ALIGN="LEFT">0x0040a653&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">qword ptr [rbp + 0x50]</TD></TR></TABLE> }>];
 "0x40a656" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40a656)</TD><TD ><B>buf_send_counted+0x86</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040a656&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 8</TD></TR><TR><TD ALIGN="LEFT">0x0040a65a&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">eax, 0xc</TD></TR><TR><TD ALIGN="LEFT">0x0040a65f&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbx</TD></TR><TR><TD ALIGN="LEFT">0x0040a660&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbp</TD></TR><TR><TD ALIGN="LEFT">0x0040a661&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
-"0x601058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x601058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x40a5d0" -> "0x40a5e7" [color=red];
 "0x40a5d0" -> "0x40a5fb" [color=green];
 "0x40a5e7" -> "0x40a5f0" [color=blue, style=dashed];
@@ -27,5 +26,4 @@ edge [fontname=monospace, fontsize=8];
 "0x40a617" -> "0x409ec0" [color=blue];
 "0x40a640" -> "0x40a617" [color=blue];
 "0x40a650" -> "0x40a656" [color=gray, style=dashed];
-"0x40a650" -> "0x601058" [color=gray];
 }

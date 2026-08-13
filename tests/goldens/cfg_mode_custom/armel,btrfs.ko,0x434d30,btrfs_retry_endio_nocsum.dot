@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x434df8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x434df8)</TD><TD ><B>btrfs_retry_endio_nocsum+0xc8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00434df8&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r4, [r8, &#35;0x1c]</TD></TR><TR><TD ALIGN="LEFT">0x00434dfc&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r5, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x00434e00&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x434d9c</TD></TR></TABLE> }>];
 "0x434e04" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x434e04)</TD><TD ><B>btrfs_retry_endio_nocsum+0xd4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00434e04&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r0, [sp, &#35;0x20]</TD></TR><TR><TD ALIGN="LEFT">0x00434e08&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x5002d8</TD></TR></TABLE> }>];
 "0x434e0c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x434e0c)</TD><TD ><B>btrfs_retry_endio_nocsum+0xdc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00434e0c&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r0, [sp, &#35;0x24]</TD></TR><TR><TD ALIGN="LEFT">0x00434e10&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">sp, sp, &#35;0x34</TD></TR><TR><TD ALIGN="LEFT">0x00434e14&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, r7, r8, sb, sl, fp, lr&#125;</TD></TR><TR><TD ALIGN="LEFT">0x00434e18&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x500508</TD></TR></TABLE> }>];
-"0x5002d8" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5002d8)</TD><TD ><B>complete</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x500508" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500508)</TD><TD ><B>bio_put</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x434d30" -> "0x434d54" [color=red];
 "0x434d30" -> "0x434e04" [color=green];
@@ -28,6 +27,5 @@ edge [fontname=monospace, fontsize=8];
 "0x434dc4" -> "0x434df8" [color=red];
 "0x434df8" -> "0x434d9c" [color=blue];
 "0x434e04" -> "0x434e0c" [color=gray, style=dashed];
-"0x434e04" -> "0x5002d8" [color=gray];
 "0x434e0c" -> "0x500508" [color=blue];
 }

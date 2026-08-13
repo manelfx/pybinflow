@@ -16,10 +16,9 @@ edge [fontname=monospace, fontsize=8];
 "0x473a6c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x473a6c)</TD><TD ><B>btrfs_clear_lock_blocking_rw+0x12c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00473a6c&#58;&nbsp;</TD><TD ALIGN="LEFT">udf</TD><TD ALIGN="LEFT">&#35;0x12</TD></TR><TR><TD ALIGN="LEFT">0x00473a70&#58;&nbsp;</TD><TD ALIGN="LEFT">udf</TD><TD ALIGN="LEFT">&#35;0x12</TD></TR></TABLE> }>];
 "0x473a74" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x473a74)</TD><TD ><B>btrfs_clear_lock_blocking_rw+0x134</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00473a74&#58;&nbsp;</TD><TD ALIGN="LEFT">movw</TD><TD ALIGN="LEFT">r0, &#35;0x1824</TD></TR><TR><TD ALIGN="LEFT">0x00473a78&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r1, &#35;0x4f</TD></TR><TR><TD ALIGN="LEFT">0x00473a7c&#58;&nbsp;</TD><TD ALIGN="LEFT">movt</TD><TD ALIGN="LEFT">r0, &#35;0x4c</TD></TR><TR><TD ALIGN="LEFT">0x00473a80&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500048</TD></TR></TABLE> }>];
 "0x473a84" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x473a84)</TD><TD ><B>btrfs_clear_lock_blocking_rw+0x144</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00473a84&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x473a08</TD></TR></TABLE> }>];
-"0x500048" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500048)</TD><TD ><B>warn_slowpath_null</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x473940" -> "0x473950" [color=red];
 "0x473940" -> "0x473970" [color=green];
-"0x473950" -> "0x473970" [color=green];
+"0x473950" -> "0x473970" [color=red];
 "0x473970" -> "0x473978" [color=red];
 "0x473970" -> "0x4739ec" [color=green];
 "0x4739ec" -> "0x4739f8" [color=red];
@@ -34,6 +33,5 @@ edge [fontname=monospace, fontsize=8];
 "0x473a2c" -> "0x473a40" [color=red];
 "0x473a6c" -> "0x473a74" [color=blue, style=dashed];
 "0x473a74" -> "0x473a84" [color=gray, style=dashed];
-"0x473a74" -> "0x500048" [color=gray];
 "0x473a84" -> "0x473a08" [color=blue];
 }

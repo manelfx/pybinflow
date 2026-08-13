@@ -46,7 +46,6 @@ edge [fontname=monospace, fontsize=8];
 "0x400d12" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400d12)</TD><TD ><B>get_field_list+0x23e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00400d12&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rcx, [rip + 0x465f]</TD></TR><TR><TD ALIGN="LEFT">0x00400d19&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0x235</TD></TR><TR><TD ALIGN="LEFT">0x00400d1e&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rsi, [rip + 0x3afc]</TD></TR><TR><TD ALIGN="LEFT">0x00400d25&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdi, [rip + 0x3bb9]</TD></TR><TR><TD ALIGN="LEFT">0x00400d2c&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x5000c8</TD></TR></TABLE> }>];
 "0x400d31" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400d31)</TD><TD ><B>get_field_list+0x25d</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00400d31&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR></TABLE> }>];
 "0x400d32" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400d32)</TD><TD ><B>get_field_list+0x25e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00400d32&#58;&nbsp;</TD><TD ALIGN="LEFT">nop</TD><TD></TD></TR><TR><TD ALIGN="LEFT">0x00400d33&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbp</TD></TR><TR><TD ALIGN="LEFT">0x00400d34&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
-"0x5000c8" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x5000c8)</TD><TD ><B>__assert_fail</B></TD><TD > SIMP  NORET</TD></TR></TABLE> }>];
 "0x400ad4" -> "0x400aeb" [color=red];
 "0x400ad4" -> "0x400d12" [color=green];
 "0x400aeb" -> "0x400b0e" [color=orange];
@@ -98,6 +97,5 @@ edge [fontname=monospace, fontsize=8];
 "0x400cf5" -> "0x400d31" [color=green];
 "0x400d01" -> "0x400d10" [color=gray, style=dashed];
 "0x400d10" -> "0x400d31" [color=blue];
-"0x400d12" -> "0x5000c8" [color=gray];
 "0x400d31" -> "0x400d32" [color=blue, style=dashed];
 }

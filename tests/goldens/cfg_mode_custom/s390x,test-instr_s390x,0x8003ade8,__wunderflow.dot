@@ -27,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8003af18" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8003af18)</TD><TD ><B>__wunderflow+0x130</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8003af18&#58;&nbsp;</TD><TD ALIGN="LEFT">lgr</TD><TD ALIGN="LEFT">%r2, %r13</TD></TR><TR><TD ALIGN="LEFT">0x8003af1c&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x8003abe8</TD></TR></TABLE> }>];
 "0x8003af22" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8003af22)</TD><TD ><B>__wunderflow+0x13a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8003af22&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r1, 0xd8(%r13)</TD></TR><TR><TD ALIGN="LEFT">0x8003af28&#58;&nbsp;</TD><TD ALIGN="LEFT">lgr</TD><TD ALIGN="LEFT">%r2, %r13</TD></TR><TR><TD ALIGN="LEFT">0x8003af2c&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r1, 0x20(%r1)</TD></TR><TR><TD ALIGN="LEFT">0x8003af32&#58;&nbsp;</TD><TD ALIGN="LEFT">basr</TD><TD ALIGN="LEFT">%r14, %r1</TD></TR></TABLE> }>];
 "0x8003af34" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8003af34)</TD><TD ><B>__wunderflow+0x14c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8003af34&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8003ae5a</TD></TR></TABLE> }>];
-"0x80100058" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80100058)</TD><TD ><B>UnresolvableCallTarget</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8003ade8" -> "0x8003adf2" [color=red];
 "0x8003ade8" -> "0x8003ae6c" [color=green];
 "0x8003adf2" -> "0x8003ae06" [color=red];
@@ -62,6 +61,5 @@ edge [fontname=monospace, fontsize=8];
 "0x8003af0e" -> "0x8003af22" [color=green];
 "0x8003af18" -> "0x8003af22" [color=gray, style=dashed];
 "0x8003af22" -> "0x8003af34" [color=gray, style=dashed];
-"0x8003af22" -> "0x80100058" [color=gray];
 "0x8003af34" -> "0x8003ae5a" [color=blue];
 }

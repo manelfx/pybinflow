@@ -14,7 +14,6 @@ edge [fontname=monospace, fontsize=8];
 "0x408cbf" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x408cbf)</TD><TD ><B>_ZN4core3fmt5Write10write_char17h595be11a36612d6eE+0xdf</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00408cbf&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">r15, rbx</TD></TR><TR><TD ALIGN="LEFT">0x00408cc2&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">qword ptr [r14 + 0x10], r15</TD></TR><TR><TD ALIGN="LEFT">0x00408cc6&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">eax, eax</TD></TR><TR><TD ALIGN="LEFT">0x00408cc8&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 0x10</TD></TR><TR><TD ALIGN="LEFT">0x00408ccc&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbx</TD></TR><TR><TD ALIGN="LEFT">0x00408ccd&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r14</TD></TR><TR><TD ALIGN="LEFT">0x00408ccf&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r15</TD></TR><TR><TD ALIGN="LEFT">0x00408cd1&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
 "0x408cd2" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x408cd2)</TD><TD ><B>_ZN4core3fmt5Write10write_char17h595be11a36612d6eE+0xf2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00408cd2&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rdi, r14</TD></TR><TR><TD ALIGN="LEFT">0x00408cd5&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rsi, r15</TD></TR><TR><TD ALIGN="LEFT">0x00408cd8&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rdx, rbx</TD></TR><TR><TD ALIGN="LEFT">0x00408cdb&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x406ae0</TD></TR></TABLE> }>];
 "0x408ce0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x408ce0)</TD><TD ><B>_ZN4core3fmt5Write10write_char17h595be11a36612d6eE+0x100</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00408ce0&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r15, qword ptr [r14 + 0x10]</TD></TR><TR><TD ALIGN="LEFT">0x00408ce4&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x408cab</TD></TR></TABLE> }>];
-"0x500108" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500108)</TD><TD ><B>memcpy</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x408be0" -> "0x408bf9" [color=red];
 "0x408be0" -> "0x408c08" [color=green];
 "0x408bf9" -> "0x408c98" [color=blue];
@@ -28,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x408c98" -> "0x408cab" [color=red];
 "0x408c98" -> "0x408cd2" [color=green];
 "0x408cab" -> "0x408cbf" [color=gray, style=dashed];
-"0x408cab" -> "0x500108" [color=gray];
 "0x408cd2" -> "0x408ce0" [color=gray, style=dashed];
 "0x408ce0" -> "0x408cab" [color=blue];
 }

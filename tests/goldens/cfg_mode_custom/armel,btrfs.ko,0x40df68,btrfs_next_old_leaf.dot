@@ -69,7 +69,6 @@ edge [fontname=monospace, fontsize=8];
 "0x40e390" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40e390)</TD><TD ><B>btrfs_next_old_leaf+0x428</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040e390&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x500228</TD></TR></TABLE> }>];
 "0x40e394" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40e394)</TD><TD ><B>btrfs_next_old_leaf+0x42c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040e394&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x40e024</TD></TR></TABLE> }>];
 "0x40e398" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40e398)</TD><TD ><B>btrfs_next_old_leaf+0x430</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040e398&#58;&nbsp;</TD><TD ALIGN="LEFT">udf</TD><TD ALIGN="LEFT">&#35;0x12</TD></TR></TABLE> }>];
-"0x500228" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x500228)</TD><TD ><B>_cond_resched</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x40df68" -> "0x40dfc4" [color=red];
 "0x40df68" -> "0x40dfcc" [color=green];
 "0x40dfcc" -> "0x40dff4" [color=gray, style=dashed];
@@ -160,6 +159,5 @@ edge [fontname=monospace, fontsize=8];
 "0x40e380" -> "0x40e388" [color=gray, style=dashed];
 "0x40e388" -> "0x40e390" [color=gray, style=dashed];
 "0x40e390" -> "0x40e394" [color=gray, style=dashed];
-"0x40e390" -> "0x500228" [color=gray];
 "0x40e394" -> "0x40e024" [color=blue];
 }

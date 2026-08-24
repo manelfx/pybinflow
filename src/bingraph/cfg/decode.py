@@ -100,6 +100,78 @@ def is_post_prefix_instruction_entry(insn: CsInsn, addr: int) -> bool:
     )
 
 
+def _block_insns(project: Project, block: BlockSpec) -> tuple[CsInsn, ...]:
+    """Decode a recovered block with Capstone without constructing an angr Block."""
+
+    return decode_raw_capstone_insns(project, block.addr, block.size)
+
+
+def _containing_block_insn(
+    project: Project,
+    block: BlockSpec,
+    addr: int,
+) -> CsInsn | None:
+    """Return the recovered instruction that strictly contains ``addr``."""
+
+    return next(
+        (
+            insn
+            for insn in _block_insns(project, block)
+            if insn.address < addr < insn.address + insn.size
+        ),
+        None,
+    )
+
+
+def _max_instruction_bytes(project: Project) -> int:
+    """Return the architecture's maximum instruction width with a safe default."""
+
+    try:
+        return project.arch.max_inst_bytes
+    except AttributeError:
+        return 16
+
+
+def alternate_block_entry_rejoin_addr(
+    project: Project,
+    block: BlockSpec,
+    addr: int,
+) -> int | None:
+    """Return the shared tail of a bounded alternate instruction stream.
+
+    An entry inside an instruction is only accepted when decoding one
+    instruction at that address reaches the original instruction's end. This
+    covers x86 post-prefix streams and valid Thumb halfword alternate streams,
+    while rejecting arbitrary mid-instruction targets.
+    """
+
+    insn = _containing_block_insn(project, block, addr)
+    if insn is None:
+        return None
+
+    alternate = decode_raw_capstone_insns(
+        project,
+        addr,
+        _max_instruction_bytes(project),
+        count=1,
+    )
+    if len(alternate) != 1:
+        return None
+
+    rejoin_addr = insn.address + insn.size
+    return (
+        rejoin_addr if alternate[0].address + alternate[0].size == rejoin_addr else None
+    )
+
+
+def is_valid_block_entry(project: Project, block: BlockSpec, addr: int) -> bool:
+    """Return whether ``addr`` is a normal or supported alternate leader."""
+
+    return addr in block.instruction_addrs or (
+        alternate_block_entry_rejoin_addr(project, block, addr) is not None
+    )
+
+
 def lift_instruction_vex(project: Project, insn: CsInsn):
     """Lift one instruction without inheriting CFG-node block boundaries."""
 

@@ -28,7 +28,11 @@ from bingraph.cfg.jumps import (
     static_jump_target_rejection_reason,
 )
 from bingraph.cfg.models import BlockSpec, FunctionBounds
-from bingraph.cfg.decode import decode_bounded_block
+from bingraph.cfg.decode import (
+    alternate_block_entry_rejoin_addr,
+    decode_bounded_block,
+    is_valid_block_entry,
+)
 
 from .anomalies import find_extracted_cfg_anomalies
 from .models import ExtractedCFG, ExtractedCFGStats
@@ -114,6 +118,7 @@ class _ExtractionSession:
         self.graph = cast(CFGGraph, self.model.graph)
         self.stats = ExtractedCFGStats()
         self.leaders = {func_addr}
+        self.rejected_leaders: set[int] = set()
         self.pending = deque([func_addr])
         self.pending_addrs = {func_addr}
         self.blocks: dict[int, BlockSpec] = {}
@@ -132,23 +137,57 @@ class _ExtractionSession:
         self.pending.append(addr)
         self.pending_addrs.add(addr)
 
-    def _add_leader(self, addr: int) -> None:
-        """Record a discovered in-bounds target and re-split covering blocks."""
+    def _reject_leader(self, addr: int) -> None:
+        """Forget an unsafe target that lands inside a decoded instruction."""
+
+        self.rejected_leaders.add(addr)
+        self.leaders.discard(addr)
+        self.blocks.pop(addr, None)
+        self.static_targets.pop(addr, None)
+
+    def _add_leader(self, addr: int) -> bool:
+        """Record one safe target and re-split only real instruction boundaries.
+
+        Targets inside an instruction are never normal block leaders. The only
+        supported exception is an alternate stream whose first instruction
+        rejoins at the original instruction's end, avoiding duplicated tails.
+        """
 
         if not self.bounds.addr <= addr < self.bounds.end_addr:
-            return
+            return False
+        if addr in self.rejected_leaders:
+            return False
+
+        covering_blocks = [
+            block
+            for start, block in self.blocks.items()
+            if start < addr < start + block.size
+        ]
+        if covering_blocks and not all(
+            is_valid_block_entry(self.project, block, addr) for block in covering_blocks
+        ):
+            self._reject_leader(addr)
+            return False
+
         is_new_leader = addr not in self.leaders
         self.leaders.add(addr)
         if is_new_leader:
             self.stats.leaders_discovered += 1
             for start, block in tuple(self.blocks.items()):
                 if start < addr < start + block.size:
+                    rejoin_addr = alternate_block_entry_rejoin_addr(
+                        self.project, block, addr
+                    )
+                    if rejoin_addr is not None:
+                        self._add_leader(rejoin_addr)
+                        continue
                     del self.blocks[start]
                     self.stats.block_redecodes += 1
                     self.stats.leaders_split_existing_block += 1
                     self._queue(start)
         if is_new_leader or addr not in self.blocks:
             self._queue(addr)
+        return True
 
     def _decode_all_blocks(self) -> None:
         """Drain discovered leaders until their block boundaries stabilize."""
@@ -156,6 +195,8 @@ class _ExtractionSession:
         while self.pending:
             addr = self.pending.popleft()
             self.pending_addrs.remove(addr)
+            if addr in self.rejected_leaders:
+                continue
             block = decode_bounded_block(
                 self.project,
                 self.bounds,
@@ -170,8 +211,47 @@ class _ExtractionSession:
                     f"function {self.func_addr:#x}"
                 )
                 continue
+
+            alternate_rejoins: set[int] = set()
+            for leader in tuple(self.leaders):
+                if not block.addr < leader < block.addr + block.size:
+                    continue
+                if leader in block.instruction_addrs:
+                    continue
+                rejoin_addr = alternate_block_entry_rejoin_addr(
+                    self.project, block, leader
+                )
+                if rejoin_addr is None:
+                    self._reject_leader(leader)
+                else:
+                    alternate_rejoins.add(rejoin_addr)
+
+            covering_blocks = [
+                (start, known_block)
+                for start, known_block in self.blocks.items()
+                if start < addr < start + known_block.size
+            ]
+            if any(
+                not is_valid_block_entry(self.project, known_block, addr)
+                for _, known_block in covering_blocks
+            ):
+                self._reject_leader(addr)
+                continue
+            for start, known_block in covering_blocks:
+                if (
+                    alternate_block_entry_rejoin_addr(self.project, known_block, addr)
+                    is not None
+                ):
+                    continue
+                del self.blocks[start]
+                self.stats.block_redecodes += 1
+                self.stats.leaders_split_existing_block += 1
+                self._queue(start)
+
             self.blocks[addr] = block
             self.stats.blocks_decoded += 1
+            for rejoin_addr in alternate_rejoins:
+                self._add_leader(rejoin_addr)
             for target in (*block.direct_targets, block.fallthrough_addr):
                 if target is not None:
                     self._add_leader(target)
@@ -242,14 +322,18 @@ class _ExtractionSession:
                 if any(rejected):
                     self.stats.static_jump_table_rejected_targets += 1
                     continue
-                plans[addr] = targets
+                accepted_targets: list[int] = []
+                for target in targets:
+                    if not self.bounds.addr <= target < self.bounds.end_addr:
+                        accepted_targets.append(target)
+                        continue
+                    before = target in self.blocks or target in self.pending_addrs
+                    if self._add_leader(target):
+                        accepted_targets.append(target)
+                        discovered |= not before
+                plans[addr] = tuple(accepted_targets)
                 self.stats.static_jump_tables_resolved += 1
                 self.stats.static_jump_targets_read += len(targets)
-                for target in targets:
-                    if self.bounds.addr <= target < self.bounds.end_addr:
-                        before = target in self.blocks or target in self.pending_addrs
-                        self._add_leader(target)
-                        discovered |= not before
 
             if discovered:
                 # Block splits invalidate plans built from this graph snapshot.
@@ -363,8 +447,10 @@ class _ExtractionSession:
         if len(dispatchers) != 1:
             return
 
-        recovered_addrs = set(self.blocks)
-        sweep = recover_executable_components(self.project, self.bounds, self.blocks)
+        recovered_blocks = dict(self.blocks)
+        sweep = recover_executable_components(
+            self.project, self.bounds, recovered_blocks
+        )
         audit = sweep.audit
         self.stats.sweep_runs += 1
         self.stats.sweep_candidate_blocks += audit.candidate_blocks
@@ -372,13 +458,19 @@ class _ExtractionSession:
         self.stats.sweep_candidate_components += audit.candidate_components
         self.stats.sweep_decode_failures += audit.decode_failures
         self.stats.sweep_non_executable_bytes += audit.non_executable_bytes
-        selected = select_reconnecting_components(sweep, recovered_addrs)
+        selected = select_reconnecting_components(sweep, recovered_blocks)
+        dispatcher_addr = dispatchers[0]
+        if dispatcher_addr not in selected.blocks:
+            # The sweep changed the source whose unknown targets would be
+            # attached. Keep the original graph rather than mix a stale
+            # dispatcher with speculative sweep components.
+            return
         if not selected.blocks:
             return
 
         self.blocks = dict(selected.blocks)
         self.leaders = set(self.blocks)
-        self.sweep_dispatcher_addr = dispatchers[0]
+        self.sweep_dispatcher_addr = dispatcher_addr
         self.sweep_component_roots = selected.roots
         self.stats.sweep_reconnecting_components += selected.component_count
         reconnecting_block_count = len(selected.blocks) - len(sweep.reachable_addrs)
@@ -421,7 +513,11 @@ class _ExtractionSession:
         self._recover_reconnecting_components()
         self._materialize_edges()
         self._attach_reconnecting_components()
-        self.kb.functions.function(self.func_addr, name=self.bounds.name, create=True)
+        function = self.kb.functions.function(self.func_addr, create=True)
+        if function is not None:
+            # angr treats names such as ``sub_119320`` as address selectors.
+            # Create by the rebased address first, then set the display name.
+            function.name = self.bounds.name
         for block in self.blocks.values():
             if block.jumpkind == "Ijk_Call":
                 self.stats.calls += 1
@@ -434,7 +530,11 @@ class _ExtractionSession:
                 self.stats.conditional_branches += block.fallthrough_addr is not None
 
         anomalies = find_extracted_cfg_anomalies(
-            self.graph, self.bounds, self.func_addr, self.blocks
+            self.graph,
+            self.bounds,
+            self.func_addr,
+            self.blocks,
+            project=self.project,
         )
         self.stats.output_anomalies = len(anomalies)
         if anomalies:

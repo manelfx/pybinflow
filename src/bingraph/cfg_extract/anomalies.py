@@ -6,8 +6,10 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Mapping
 
+from angr import Project
 from angr.knowledge_plugins.cfg import CFGNode
 
+from bingraph.cfg.decode import alternate_block_entry_rejoin_addr
 from bingraph.cfg.graph import CFGGraph, node_range_end, ranges_overlap
 from bingraph.cfg.models import BlockSpec, FunctionBounds
 
@@ -50,11 +52,30 @@ def _reachable_nodes(graph: CFGGraph, entry: CFGNode) -> set[CFGNode]:
     return reachable
 
 
+def _overlap_is_supported(
+    project: Project | None,
+    blocks: Mapping[int, BlockSpec],
+    first: CFGNode,
+    second: CFGNode,
+) -> bool:
+    """Return whether an overlap is a supported rejoining alternate stream."""
+
+    if project is None:
+        return False
+    lower, upper = sorted((first, second), key=lambda node: node.addr)
+    block = blocks.get(lower.addr)
+    return block is not None and (
+        alternate_block_entry_rejoin_addr(project, block, upper.addr) is not None
+    )
+
+
 def find_extracted_cfg_anomalies(
     graph: CFGGraph,
     bounds: FunctionBounds,
     func_addr: int,
     blocks: Mapping[int, BlockSpec],
+    *,
+    project: Project | None = None,
 ) -> tuple[ExtractedCFGAnomaly, ...]:
     """Validate invariants that the extractor itself promises to establish.
 
@@ -66,7 +87,7 @@ def find_extracted_cfg_anomalies(
     anomalies: list[ExtractedCFGAnomaly] = []
     nodes = _normal_nodes(graph, func_addr)
     node_by_addr = {node.addr: node for node in nodes}
-    instruction_owners: dict[int, int] = {}
+    instruction_owners: dict[int, CFGNode] = {}
 
     for index, node in enumerate(nodes):
         for other in nodes[index + 1 :]:
@@ -74,7 +95,7 @@ def find_extracted_cfg_anomalies(
                 break
             if ranges_overlap(
                 node.addr, node_range_end(node), other.addr, node_range_end(other)
-            ):
+            ) and not _overlap_is_supported(project, blocks, node, other):
                 anomalies.append(
                     ExtractedCFGAnomaly(
                         "overlapping_blocks",
@@ -84,14 +105,16 @@ def find_extracted_cfg_anomalies(
                 )
 
         for insn_addr in node.instruction_addrs:
-            previous = instruction_owners.setdefault(insn_addr, node.addr)
-            if previous != node.addr:
+            previous = instruction_owners.setdefault(insn_addr, node)
+            if previous is not node and not _overlap_is_supported(
+                project, blocks, previous, node
+            ):
                 anomalies.append(
                     ExtractedCFGAnomaly(
                         "duplicate_instruction",
                         insn_addr,
                         f"Instruction {insn_addr:#x} appears in extracted blocks "
-                        f"{previous:#x} and {node.addr:#x}",
+                        f"{previous.addr:#x} and {node.addr:#x}",
                     )
                 )
 
@@ -125,7 +148,12 @@ def find_extracted_cfg_anomalies(
                 ),
                 None,
             )
-            if covering is not None:
+            if covering is not None and (
+                target not in node_by_addr
+                or not _overlap_is_supported(
+                    project, blocks, covering, node_by_addr[target]
+                )
+            ):
                 anomalies.append(
                     ExtractedCFGAnomaly(
                         "target_inside_block",

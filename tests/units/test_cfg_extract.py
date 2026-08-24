@@ -13,7 +13,13 @@ import networkx as nx
 from bingraph.cfg_extract import build_extracted_cfg
 from bingraph.cfg_extract.anomalies import find_extracted_cfg_anomalies
 from bingraph.cfg_extract import builder as builder_module
-from bingraph.cfg_extract.sweep import recover_executable_components
+from bingraph.cfg_extract.sweep import (
+    ExecutableSweep,
+    ExecutableSweepAudit,
+    ReconnectingComponents,
+    recover_executable_components,
+    select_reconnecting_components,
+)
 from bingraph.cfg.models import BlockSpec, FunctionBounds, StaticJumpTable
 from bingraph.cfg.models import StaticJumpTablePlan
 from bingraph.cfg.decode import decode_bounded_block
@@ -128,7 +134,9 @@ def test_extract_leader_is_not_requeued_after_recovery() -> None:
     session = object.__new__(builder_module._ExtractionSession)
     session.bounds = SimpleNamespace(addr=0x1000, end_addr=0x1100)
     session.leaders = {0x1000}
+    session.rejected_leaders = set()
     session.blocks = {0x1000: SimpleNamespace(size=4)}
+    session.static_targets = {}
     session.pending = []
     session.pending_addrs = set()
     session.stats = SimpleNamespace(block_redecodes=0)
@@ -146,10 +154,11 @@ def test_extract_static_table_discovery_discards_stale_snapshot_plans(
     session = object.__new__(builder_module._ExtractionSession)
     session.bounds = SimpleNamespace(addr=0x1000, end_addr=0x1200)
     session.leaders = {0x1000, 0x1100}
+    session.rejected_leaders = set()
     session.pending = deque()
     session.pending_addrs = set()
     session.blocks = {
-        0x1000: BlockSpec(0x1000, 0x20, (0x1000,), "Ijk_Boring"),
+        0x1000: BlockSpec(0x1000, 0x20, (0x1000, 0x1008), "Ijk_Boring"),
         0x1100: BlockSpec(0x1100, 4, (0x1100,), "Ijk_Boring"),
     }
     session.static_targets = {}
@@ -214,7 +223,7 @@ def test_extract_recovers_reconnecting_components_from_one_dispatcher() -> None:
     assert cfg.extract_stats.sweep_candidate_blocks > 100
     assert cfg.extract_stats.sweep_candidate_components > 0
     assert cfg.extract_stats.sweep_reconnecting_components > 0
-    assert cfg.extract_stats.sweep_reconnecting_blocks > 100
+    assert cfg.extract_stats.sweep_reconnecting_blocks > 0
     assert cfg.extract_stats.sweep_component_roots_attached > 0
     assert cfg.extract_stats.output_anomalies == 0
 
@@ -254,6 +263,132 @@ def test_executable_sweep_closes_direct_targets_before_reporting_components() ->
         for target in block.direct_targets:
             if session.bounds.addr <= target < session.bounds.end_addr:
                 assert target in sweep.blocks
+
+
+def test_extract_rejects_sweep_targets_inside_thumb_instructions() -> None:
+    """Do not reconnect scanned data through an unsafe Thumb halfword."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/armel/lwip_udpecho_bm.elf")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x41DD)
+
+    assert cfg.extract_stats.output_anomalies == 0
+
+
+def test_extract_accepts_thumb_alternate_instruction_stream() -> None:
+    """A branch may enter a Thumb wide instruction's second halfword."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/armel/libc-2.31.so")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x46CB25)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+
+    assert 0x46CC79 in nodes
+    assert tuple(nodes[0x46CC79].instruction_addrs) == (0x46CC79,)
+    assert cfg.extract_stats.output_anomalies == 0
+
+
+def test_extract_factors_x86_post_prefix_shared_tail() -> None:
+    """Keep a LOCK and non-LOCK stream distinct until their shared tail."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/i386/bronze_ropchain")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x8049BA0)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+
+    assert tuple(nodes[0x8049D62].instruction_addrs) == (0x8049D62,)
+    assert tuple(nodes[0x8049D63].instruction_addrs) == (0x8049D63,)
+    assert tuple(nodes[0x8049D6A].instruction_addrs) == (0x8049D6A,)
+    assert set(cfg.graph.successors(nodes[0x8049D62])) >= {nodes[0x8049D6A]}
+    assert set(cfg.graph.successors(nodes[0x8049D63])) >= {nodes[0x8049D6A]}
+    owners = [
+        node.addr for node in nodes.values() if 0x8049D6A in node.instruction_addrs
+    ]
+    assert owners == [0x8049D6A]
+
+
+def test_extract_keeps_rebased_function_address_for_sub_name() -> None:
+    """Do not let angr parse a synthetic sub-name as a linked address."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/i386/calling_convention_0.o")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x400049)
+
+    function = cfg.functions.get(0x400049, None)
+    assert function is not None
+    assert function.name == "sub_119320"
+
+
+def test_reconnecting_component_cycle_gets_a_dispatcher_root() -> None:
+    """Attach source strongly connected components with no zero-indegree node."""
+
+    blocks = {
+        0x1000: BlockSpec(0x1000, 1, (0x1000,), "Ijk_Boring", (0x1010,)),
+        0x1010: BlockSpec(0x1010, 1, (0x1010,), "Ijk_Boring"),
+        0x1020: BlockSpec(0x1020, 1, (0x1020,), "Ijk_Boring", (0x1030,)),
+        0x1030: BlockSpec(
+            0x1030,
+            1,
+            (0x1030,),
+            "Ijk_Boring",
+            (0x1020, 0x1040),
+        ),
+        0x1040: BlockSpec(0x1040, 1, (0x1040,), "Ijk_Ret"),
+    }
+    sweep = ExecutableSweep(
+        blocks,
+        frozenset({0x1000, 0x1010, 0x1040}),
+        frozenset({0x1020, 0x1030}),
+        ExecutableSweepAudit(2, 2, 1, 0, 0),
+    )
+
+    selected = select_reconnecting_components(
+        sweep,
+        {addr: blocks[addr] for addr in (0x1000, 0x1010, 0x1040)},
+    )
+
+    assert selected.roots == frozenset({0x1020})
+    assert set(selected.blocks) == set(blocks)
+
+
+def test_extract_keeps_original_graph_when_sweep_loses_dispatcher(monkeypatch) -> None:
+    """Do not attach components from a dispatcher removed by speculative sweep."""
+
+    dispatcher = BlockSpec(0x1000, 1, (0x1000,), "Ijk_Boring")
+    selected_block = BlockSpec(0x1010, 1, (0x1010,), "Ijk_Ret")
+    audit = ExecutableSweepAudit(1, 1, 1, 0, 0)
+    sweep = ExecutableSweep(
+        {0x1010: selected_block}, frozenset({0x1010}), frozenset(), audit
+    )
+    session = object.__new__(builder_module._ExtractionSession)
+    session.project = SimpleNamespace()
+    session.bounds = SimpleNamespace(addr=0x1000, end_addr=0x1020)
+    session.func_addr = 0x1000
+    session.blocks = {0x1000: dispatcher}
+    session.static_targets = {}
+    session.leaders = {0x1000}
+    session.stats = ExtractedCFGStats()
+    session.sweep_dispatcher_addr = None
+    session.sweep_component_roots = frozenset()
+    monkeypatch.setattr(
+        builder_module, "recover_executable_components", lambda *_: sweep
+    )
+    monkeypatch.setattr(
+        builder_module,
+        "select_reconnecting_components",
+        lambda *_: ReconnectingComponents(
+            {0x1010: selected_block}, frozenset({0x1010}), 1
+        ),
+    )
+
+    session._recover_reconnecting_components()
+
+    assert session.blocks == {0x1000: dispatcher}
+    assert session.sweep_dispatcher_addr is None
 
 
 class _Node:

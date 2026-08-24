@@ -17,8 +17,8 @@ class _Node:
     simprocedure_name: str | None = None
 
 
-def test_select_cfg_nodes_shows_non_call_exits_by_default() -> None:
-    """Keep direct external branches while omitting optional call leaves."""
+def test_select_cfg_nodes_shows_non_call_like_exits_by_default() -> None:
+    """Keep direct branches while omitting call and syscall leaves."""
 
     graph = nx.DiGraph()
     function_node = _Node(0x1000, 0x1000)
@@ -42,7 +42,6 @@ def test_select_cfg_nodes_shows_non_call_exits_by_default() -> None:
         function_node,
         fake_return,
         direct_branch,
-        syscall,
     }
 
 
@@ -55,8 +54,10 @@ def test_select_cfg_nodes_respects_the_exit_display_policy() -> None:
     # must classify them by their incoming edge instead of their ownership.
     callee = _Node(0x4000, 0x1000, is_simprocedure=True)
     direct_branch = _Node(0x5000, 0x1000, is_simprocedure=True)
+    syscall = _Node(0x6000, 0x1000, is_simprocedure=True)
     graph.add_edge(function_node, callee, jumpkind="Ijk_Call")
     graph.add_edge(function_node, direct_branch, jumpkind="Ijk_Boring")
+    graph.add_edge(function_node, syscall, jumpkind="Ijk_Sys_syscall")
 
     assert _select_cfg_nodes(graph, 0x1000, "never") == {function_node}
     assert _select_cfg_nodes(graph, 0x1000) == {function_node, direct_branch}
@@ -64,6 +65,7 @@ def test_select_cfg_nodes_respects_the_exit_display_policy() -> None:
         function_node,
         callee,
         direct_branch,
+        syscall,
     }
 
 

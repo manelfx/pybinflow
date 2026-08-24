@@ -11,6 +11,14 @@ from .vis import Edge, Graph, Node, Source, VisError
 _EXTERNAL_FRONTIER_JUMPKINDS = frozenset({"Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"})
 
 
+def _is_call_like_exit(jumpkind: object) -> bool:
+    """Return whether an exit is optional under the call-leaf policy."""
+
+    return jumpkind == "Ijk_Call" or (
+        isinstance(jumpkind, str) and jumpkind.startswith("Ijk_Sys_")
+    )
+
+
 def _is_path_terminator(node: Any) -> bool:
     """Return whether ``node`` is angr's artificial path-end marker."""
 
@@ -101,7 +109,8 @@ def _select_cfg_nodes(
             if _is_structural_simprocedure(cfg_graph, destination, selected):
                 selected.add(destination)
             elif is_semantic_exit and (
-                exits == "always" or (exits == "jump" and jumpkind != "Ijk_Call")
+                exits == "always"
+                or (exits == "jump" and not _is_call_like_exit(jumpkind))
             ):
                 selected.add(destination)
 

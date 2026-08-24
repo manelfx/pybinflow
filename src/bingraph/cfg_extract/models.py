@@ -20,6 +20,7 @@ class ExtractedCFGStats:
     block_redecodes: int = 0
     decode_failures: int = 0
     calls: int = 0
+    syscalls: int = 0
     direct_branches: int = 0
     conditional_branches: int = 0
     returns: int = 0

@@ -11,7 +11,6 @@ edge [fontname=monospace, fontsize=8];
 "0x400902" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400902)</TD><TD ><B>function_a+0x72</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00400902&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x4008d0</TD></TR></TABLE> }>];
 "0x400906" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400906)</TD><TD ><B>function_a+0x76</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00400906&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r2, 1</TD></TR><TR><TD ALIGN="LEFT">0x0040090a&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x400700</TD></TR></TABLE> }>];
 "0x400910" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400910)</TD><TD ><B>function_a+0x80</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00400910&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x4006c0</TD></TR></TABLE> }>];
-"0x800000" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x800000)</TD><TD ><B>sys_0</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x400890" -> "0x4008c0" [color=gray, style=dashed];
 "0x4008c0" -> "0x4008ca" [color=red];
 "0x4008c0" -> "0x400906" [color=green];
@@ -20,7 +19,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4008d0" -> "0x4008e8" [color=red];
 "0x4008d0" -> "0x400910" [color=green];
 "0x4008f6" -> "0x400902" [color=gray, style=dashed];
-"0x4008f6" -> "0x800000" [color=gray];
 "0x400902" -> "0x4008d0" [color=blue];
 "0x400906" -> "0x400910" [color=gray, style=dashed];
 }

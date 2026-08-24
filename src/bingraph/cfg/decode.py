@@ -192,6 +192,12 @@ def vex_jumpkind_is_terminal(jumpkind: str) -> bool:
     return jumpkind == "Ijk_Ret" or jumpkind.startswith("Ijk_Sig")
 
 
+def vex_jumpkind_is_syscall(jumpkind: str) -> bool:
+    """Return whether VEX marks a transfer into an operating-system service."""
+
+    return jumpkind.startswith("Ijk_Sys_")
+
+
 def call_fallthrough_addr(
     project: Project, bounds: FunctionBounds, next_addr: int
 ) -> int | None:
@@ -207,14 +213,12 @@ def call_fallthrough_addr(
     return None
 
 
-def _instruction_has_nonfallthrough_vex_semantics(
-    project: Project, insn: CsInsn
-) -> bool:
-    """Return whether VEX models one exceptional instruction as terminal."""
+def _exceptional_instruction_vex_jumpkind(project: Project, insn: CsInsn) -> str | None:
+    """Return a terminal or syscall jumpkind for one exceptional instruction."""
 
     semantic = InsnSemantics(insn)
     if not semantic.may_have_nonfallthrough_vex_semantics():
-        return False
+        return None
 
     try:
         vex = project.factory.block(
@@ -228,9 +232,11 @@ def _instruction_has_nonfallthrough_vex_semantics(
             f"CFG decoder could not lift exceptional instruction at "
             f"{insn.address:#x}: {exc}"
         )
-        return False
+        return None
 
-    return vex_jumpkind_is_terminal(vex.jumpkind)
+    if vex_jumpkind_is_terminal(vex.jumpkind) or vex_jumpkind_is_syscall(vex.jumpkind):
+        return vex.jumpkind
+    return None
 
 
 def _instruction_has_unclassified_vex_transfer(project: Project, insn: CsInsn) -> bool:
@@ -284,6 +290,8 @@ def _native_vex_transfer_end(
     project: Project,
     bounds: FunctionBounds,
     start_addr: int,
+    *,
+    split_syscall_blocks: bool = False,
 ) -> int | None:
     """Return a native VEX call or terminal boundary absent from Capstone groups."""
 
@@ -300,7 +308,11 @@ def _native_vex_transfer_end(
     end_addr = start_addr + size
     if not start_addr < end_addr <= bounds.end_addr:
         return None
-    if jumpkind == "Ijk_Call" or vex_jumpkind_is_terminal(jumpkind):
+    if (
+        jumpkind == "Ijk_Call"
+        or vex_jumpkind_is_terminal(jumpkind)
+        or (split_syscall_blocks and vex_jumpkind_is_syscall(jumpkind))
+    ):
         return end_addr
     return None
 
@@ -312,6 +324,7 @@ def lift_block_terminator(
     has_nonfallthrough_vex_terminator: bool = False,
     unclassified_vex_terminator_addr: int | None = None,
     preserve_conditional_return_fallthrough: bool = False,
+    split_syscall_blocks: bool = False,
 ) -> TerminatorInfo:
     """Lift decoded block bytes and derive their control-flow shape."""
 
@@ -404,6 +417,14 @@ def lift_block_terminator(
     if semantic.is_ret() or vex.jumpkind == "Ijk_Ret":
         return TerminatorInfo(jumpkind="Ijk_Ret")
 
+    if split_syscall_blocks and vex_jumpkind_is_syscall(vex.jumpkind):
+        fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
+        return TerminatorInfo(
+            jumpkind="Ijk_Syscall",
+            fallthrough_addr=fallthrough_addr,
+            syscall_jumpkind=vex.jumpkind,
+        )
+
     if vex_jumpkind_is_terminal(vex.jumpkind):
         return TerminatorInfo(jumpkind="Ijk_Terminal")
 
@@ -481,6 +502,7 @@ def decode_bounded_block(
     stop_addrs: set[int],
     *,
     preserve_conditional_return_fallthrough: bool = False,
+    split_syscall_blocks: bool = False,
 ) -> BlockSpec | None:
     """Decode one bounded block until control flow or a known leader stops it."""
 
@@ -492,7 +514,12 @@ def decode_bounded_block(
     unclassified_vex_terminator_addr: int | None = None
     native_vex_transfer_end = None
     if not has_delay_slot:
-        native_vex_transfer_end = _native_vex_transfer_end(project, bounds, start_addr)
+        native_vex_transfer_end = _native_vex_transfer_end(
+            project,
+            bounds,
+            start_addr,
+            split_syscall_blocks=split_syscall_blocks,
+        )
 
     while bounds.addr <= cur < bounds.end_addr:
         if insns and cur in stop_addrs:
@@ -514,9 +541,14 @@ def decode_bounded_block(
                     insns.append(delay_insn)
             break
 
-        if _instruction_has_nonfallthrough_vex_semantics(project, insn):
-            has_nonfallthrough_vex_terminator = True
-            break
+        exceptional_jumpkind = _exceptional_instruction_vex_jumpkind(project, insn)
+        if exceptional_jumpkind is not None:
+            if split_syscall_blocks and vex_jumpkind_is_syscall(exceptional_jumpkind):
+                unclassified_vex_terminator_addr = insn.address
+                break
+            if not vex_jumpkind_is_syscall(exceptional_jumpkind):
+                has_nonfallthrough_vex_terminator = True
+                break
 
         if _instruction_has_unclassified_vex_transfer(project, insn):
             unclassified_vex_terminator_addr = insn.address
@@ -542,6 +574,7 @@ def decode_bounded_block(
         has_nonfallthrough_vex_terminator=has_nonfallthrough_vex_terminator,
         unclassified_vex_terminator_addr=unclassified_vex_terminator_addr,
         preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
+        split_syscall_blocks=split_syscall_blocks,
     )
     block = BlockSpec(
         addr=insns[0].address,
@@ -550,6 +583,7 @@ def decode_bounded_block(
         jumpkind=terminator.jumpkind,
         direct_targets=terminator.direct_targets,
         fallthrough_addr=terminator.fallthrough_addr,
+        syscall_jumpkind=terminator.syscall_jumpkind,
     )
 
     block_end = block.addr + block.size
@@ -565,6 +599,7 @@ def decode_bounded_block(
             start_addr,
             stop_addrs | {internal_targets[0]},
             preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
+            split_syscall_blocks=split_syscall_blocks,
         )
 
     return block

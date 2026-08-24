@@ -20,7 +20,6 @@ edge [fontname=monospace, fontsize=8];
 "0x469fc8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x469fc8)</TD><TD ><B>__alloc_dir+0xe8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00469fc8&#58;&nbsp;</TD><TD ALIGN="LEFT">test</TD><TD ALIGN="LEFT">r12b, r12b</TD></TR><TR><TD ALIGN="LEFT">0x00469fcb&#58;&nbsp;</TD><TD ALIGN="LEFT">je</TD><TD ALIGN="LEFT">0x469fa3</TD></TR></TABLE> }>];
 "0x469fcd" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x469fcd)</TD><TD ><B>__alloc_dir+0xed</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00469fcd&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rdx, 0xffffffffffffffd0</TD></TR><TR><TD ALIGN="LEFT">0x00469fd4&#58;&nbsp;</TD><TD ALIGN="LEFT">movsxd</TD><TD ALIGN="LEFT">rdi, ebp</TD></TR><TR><TD ALIGN="LEFT">0x00469fd7&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">eax, 3</TD></TR><TR><TD ALIGN="LEFT">0x00469fdc&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">esi, dword ptr fs&#58;[rdx]</TD></TR><TR><TD ALIGN="LEFT">0x00469fdf&#58;&nbsp;</TD><TD ALIGN="LEFT">syscall</TD><TD></TD></TR></TABLE> }>];
 "0x469fe1" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x469fe1)</TD><TD ><B>__alloc_dir+0x101</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00469fe1&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">eax, eax</TD></TR><TR><TD ALIGN="LEFT">0x00469fe3&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">dword ptr fs&#58;[rdx], esi</TD></TR><TR><TD ALIGN="LEFT">0x00469fe6&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x469f62</TD></TR></TABLE> }>];
-"0x900184" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x900184)</TD><TD ><B>close</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x469ee0" -> "0x469ef2" [color=red];
 "0x469ee0" -> "0x469efe" [color=green];
 "0x469ef2" -> "0x469efe" [color=red];
@@ -45,6 +44,5 @@ edge [fontname=monospace, fontsize=8];
 "0x469fc8" -> "0x469fa3" [color=green];
 "0x469fc8" -> "0x469fcd" [color=red];
 "0x469fcd" -> "0x469fe1" [color=gray, style=dashed];
-"0x469fcd" -> "0x900184" [color=gray];
 "0x469fe1" -> "0x469f62" [color=blue];
 }

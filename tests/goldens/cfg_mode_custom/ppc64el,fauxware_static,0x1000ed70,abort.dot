@@ -46,7 +46,6 @@ edge [fontname=monospace, fontsize=8];
 "0x1000f094" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1000f094)</TD><TD ><B>abort+0x324</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x1000f094&#58;&nbsp;</TD><TD ALIGN="LEFT">li</TD><TD ALIGN="LEFT">r9, 0x31</TD></TR><TR><TD ALIGN="LEFT">0x1000f098&#58;&nbsp;</TD><TD ALIGN="LEFT">tabort.</TD><TD ALIGN="LEFT">r9</TD></TR></TABLE> }>];
 "0x1000f09c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1000f09c)</TD><TD ><B>abort+0x32c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x1000f09c&#58;&nbsp;</TD><TD ALIGN="LEFT">sc</TD><TD></TD></TR></TABLE> }>];
 "0x1000f0a0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1000f0a0)</TD><TD ><B>abort+0x330</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x1000f0a0&#58;&nbsp;</TD><TD ALIGN="LEFT">mfcr</TD><TD ALIGN="LEFT">r0</TD></TR><TR><TD ALIGN="LEFT">0x1000f0a4&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x1000efe0</TD></TR></TABLE> }>];
-"0x10300494" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x10300494)</TD><TD ><B>sys_293</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x1000ed70" -> "0x1000edac" [color=red];
 "0x1000ed70" -> "0x1000ede0" [color=green];
 "0x1000edac" -> "0x1000edb8" [color=blue, style=dashed];
@@ -106,6 +105,5 @@ edge [fontname=monospace, fontsize=8];
 "0x1000f074" -> "0x1000f09c" [color=green];
 "0x1000f094" -> "0x1000f09c" [color=blue, style=dashed];
 "0x1000f09c" -> "0x1000f0a0" [color=gray, style=dashed];
-"0x1000f09c" -> "0x10300494" [color=gray];
 "0x1000f0a0" -> "0x1000efe0" [color=blue];
 }

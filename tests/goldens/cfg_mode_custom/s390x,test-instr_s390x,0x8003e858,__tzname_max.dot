@@ -11,7 +11,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8003e8ba" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8003e8ba)</TD><TD ><B>__tzname_max+0x62</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8003e8ba&#58;&nbsp;</TD><TD ALIGN="LEFT">lgrl</TD><TD ALIGN="LEFT">%r2, 0x8009aab8</TD></TR><TR><TD ALIGN="LEFT">0x8003e8c0&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r4, 0x110(%r15)</TD></TR><TR><TD ALIGN="LEFT">0x8003e8c6&#58;&nbsp;</TD><TD ALIGN="LEFT">lmg</TD><TD ALIGN="LEFT">%r14, %r15, 0x110(%r15)</TD></TR><TR><TD ALIGN="LEFT">0x8003e8cc&#58;&nbsp;</TD><TD ALIGN="LEFT">br</TD><TD ALIGN="LEFT">%r4</TD></TR></TABLE> }>];
 "0x8003e8ce" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8003e8ce)</TD><TD ><B>__tzname_max+0x76</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8003e8ce&#58;&nbsp;</TD><TD ALIGN="LEFT">lgr</TD><TD ALIGN="LEFT">%r2, %r3</TD></TR><TR><TD ALIGN="LEFT">0x8003e8d2&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x8001b080</TD></TR></TABLE> }>];
 "0x8003e8d8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8003e8d8)</TD><TD ><B>__tzname_max+0x80</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8003e8d8&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8003e87c</TD></TR></TABLE> }>];
-"0x80300000" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80300000)</TD><TD ><B>sys_0</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x8003e858" -> "0x8003e87c" [color=red];
 "0x8003e858" -> "0x8003e8ce" [color=green];
 "0x8003e87c" -> "0x8003e88a" [color=gray, style=dashed];
@@ -21,7 +20,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8003e8a2" -> "0x8003e8a8" [color=red];
 "0x8003e8a2" -> "0x8003e8ba" [color=green];
 "0x8003e8a8" -> "0x8003e8ba" [color=gray, style=dashed];
-"0x8003e8a8" -> "0x80300000" [color=gray];
 "0x8003e8ce" -> "0x8003e8d8" [color=gray, style=dashed];
 "0x8003e8d8" -> "0x8003e87c" [color=blue];
 }

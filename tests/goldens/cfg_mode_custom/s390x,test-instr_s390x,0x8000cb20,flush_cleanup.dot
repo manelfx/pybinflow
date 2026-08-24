@@ -17,7 +17,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8000cbae" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000cbae)</TD><TD ><B>flush_cleanup+0x8e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000cbae&#58;&nbsp;</TD><TD ALIGN="LEFT">br</TD><TD ALIGN="LEFT">%r14</TD></TR></TABLE> }>];
 "0x8000cbb0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000cbb0)</TD><TD ><B>flush_cleanup+0x90</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000cbb0&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r3, 0x81</TD></TR><TR><TD ALIGN="LEFT">0x8000cbb4&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r4, 1</TD></TR><TR><TD ALIGN="LEFT">0x8000cbb8&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r5, 0</TD></TR><TR><TD ALIGN="LEFT">0x8000cbbc&#58;&nbsp;</TD><TD ALIGN="LEFT">svc</TD><TD ALIGN="LEFT">0xee</TD></TR></TABLE> }>];
 "0x8000cbbe" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8000cbbe)</TD><TD ><B>flush_cleanup+0x9e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8000cbbe&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8000cb68</TD></TR></TABLE> }>];
-"0x80300000" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80300000)</TD><TD ><B>sys_0</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x8000cb20" -> "0x8000cb30" [color=red];
 "0x8000cb20" -> "0x8000cb68" [color=green];
 "0x8000cb30" -> "0x8000cb38" [color=red];
@@ -37,8 +36,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8000cb94" -> "0x8000cb9a" [color=red];
 "0x8000cb94" -> "0x8000cb9c" [color=green];
 "0x8000cb9c" -> "0x8000cbae" [color=gray, style=dashed];
-"0x8000cb9c" -> "0x80300000" [color=gray];
 "0x8000cbb0" -> "0x8000cbbe" [color=gray, style=dashed];
-"0x8000cbb0" -> "0x80300000" [color=gray];
 "0x8000cbbe" -> "0x8000cb68" [color=blue];
 }

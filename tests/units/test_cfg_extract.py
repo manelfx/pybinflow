@@ -128,6 +128,31 @@ def test_extract_retains_unnamed_external_call_target() -> None:
     assert block.direct_targets == (0x10026988,)
 
 
+def test_extract_models_syscalls_as_call_like_block_terminators() -> None:
+    """End at a syscall and retain both its service and returning paths."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/ppc64el/fauxware_static")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x1000ED70)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    syscall_block = nodes[0x1000F09C]
+
+    assert tuple(syscall_block.instruction_addrs) == (0x1000F09C,)
+    successors = tuple(cfg.graph.successors(syscall_block))
+    syscall = next(node for node in successors if node.is_syscall)
+    assert syscall.addr == 0x10300494
+    assert syscall.name == "sys_293"
+    continuation = next(node for node in successors if node.addr == 0x1000F0A0)
+    assert (
+        cfg.graph.get_edge_data(syscall_block, syscall)["jumpkind"] == "Ijk_Sys_syscall"
+    )
+    assert (
+        cfg.graph.get_edge_data(syscall_block, continuation)["jumpkind"]
+        == "Ijk_FakeRet"
+    )
+
+
 def test_extract_leader_is_not_requeued_after_recovery() -> None:
     """Keep a cycle from repeatedly scheduling an unchanged completed block."""
 

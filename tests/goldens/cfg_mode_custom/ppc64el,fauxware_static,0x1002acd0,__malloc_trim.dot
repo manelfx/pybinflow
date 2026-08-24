@@ -64,7 +64,6 @@ edge [fontname=monospace, fontsize=8];
 "0x1002b0f0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1002b0f0)</TD><TD ><B>malloc_trim+0x420</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x1002b0f0&#58;&nbsp;</TD><TD ALIGN="LEFT">tabort.</TD><TD ALIGN="LEFT">r20</TD></TR></TABLE> }>];
 "0x1002b0f4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1002b0f4)</TD><TD ><B>malloc_trim+0x424</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x1002b0f4&#58;&nbsp;</TD><TD ALIGN="LEFT">sc</TD><TD></TD></TR></TABLE> }>];
 "0x1002b0f8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x1002b0f8)</TD><TD ><B>malloc_trim+0x428</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x1002b0f8&#58;&nbsp;</TD><TD ALIGN="LEFT">mfcr</TD><TD ALIGN="LEFT">r0</TD></TR><TR><TD ALIGN="LEFT">0x1002b0fc&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x1002b058</TD></TR></TABLE> }>];
-"0x10300494" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x10300494)</TD><TD ><B>sys_293</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x1002acd0" -> "0x1002ad3c" [color=red];
 "0x1002acd0" -> "0x1002afb0" [color=green];
 "0x1002ad3c" -> "0x1002ad60" [color=blue, style=dashed];
@@ -153,6 +152,5 @@ edge [fontname=monospace, fontsize=8];
 "0x1002b0d0" -> "0x1002b0f4" [color=green];
 "0x1002b0f0" -> "0x1002b0f4" [color=blue, style=dashed];
 "0x1002b0f4" -> "0x1002b0f8" [color=gray, style=dashed];
-"0x1002b0f4" -> "0x10300494" [color=gray];
 "0x1002b0f8" -> "0x1002b058" [color=blue];
 }

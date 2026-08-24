@@ -17,6 +17,7 @@ from typing import cast
 
 from angr import KnowledgeBase, Project
 from angr.knowledge_plugins.cfg import CFGModel, CFGNode
+from angr.simos.userland import SimUserland
 from loguru import logger
 import networkx as nx
 
@@ -27,7 +28,7 @@ from bingraph.cfg.jumps import (
     plan_static_jump_table,
     static_jump_target_rejection_reason,
 )
-from bingraph.cfg.models import BlockSpec, FunctionBounds
+from bingraph.cfg.models import BlockSpec, EdgeJumpKind, FunctionBounds
 from bingraph.cfg.decode import (
     alternate_block_entry_rejoin_addr,
     decode_bounded_block,
@@ -37,6 +38,36 @@ from bingraph.cfg.decode import (
 from .anomalies import find_extracted_cfg_anomalies
 from .models import ExtractedCFG, ExtractedCFGStats
 from .sweep import recover_executable_components, select_reconnecting_components
+
+
+_UNRESOLVABLE_SYSCALL_ADDR = 0xFFFFFFFFFFFFFFE0
+
+
+def _unknown_syscall_target(project: Project) -> tuple[int, str]:
+    """Return angr's stable synthetic identity for an unresolved syscall.
+
+    CFGFast obtains this leaf through the active SimOS. Reusing the same
+    fallback keeps extractor output comparable without claiming that the
+    synthetic syscall number is statically known by the extractor.
+    """
+
+    try:
+        simos = project.simos
+        if not isinstance(simos, SimUserland):
+            return _UNRESOLVABLE_SYSCALL_ADDR, "UnresolvableSyscallTarget"
+        number = simos.unknown_syscall_number
+        if not isinstance(number, int):
+            raise TypeError("missing unknown syscall number")
+        procedure = simos.syscall_from_number(number)
+        if procedure is None:
+            return _UNRESOLVABLE_SYSCALL_ADDR, "UnresolvableSyscallTarget"
+        addr = procedure.addr
+        name = procedure.display_name
+        if isinstance(addr, int) and isinstance(name, str) and name:
+            return addr, name
+    except (AttributeError, TypeError, ValueError):
+        pass
+    return _UNRESOLVABLE_SYSCALL_ADDR, "UnresolvableSyscallTarget"
 
 
 def _thumb_mode(project: Project, addr: int) -> bool:
@@ -90,6 +121,8 @@ def _make_leaf_node(
     func_addr: int,
     addr: int,
     name: str,
+    *,
+    is_syscall: bool = False,
 ) -> CFGNode:
     """Materialize a synthetic CFG leaf without making it a function block."""
 
@@ -101,6 +134,7 @@ def _make_leaf_node(
         block_id=addr,
         instruction_addrs=(),
         simprocedure_name=name,
+        is_syscall=is_syscall,
         name=name,
     )
 
@@ -203,6 +237,7 @@ class _ExtractionSession:
                 addr,
                 self.leaders - {addr},
                 preserve_conditional_return_fallthrough=True,
+                split_syscall_blocks=True,
             )
             if block is None:
                 self.stats.decode_failures += 1
@@ -343,13 +378,19 @@ class _ExtractionSession:
             self.static_targets.update(plans)
             return
 
-    def _leaf(self, addr: int, name: str) -> CFGNode:
+    def _leaf(self, addr: int, name: str, *, is_syscall: bool = False) -> CFGNode:
         """Return a unique synthetic leaf for one address/name pair."""
 
         key = (addr, name)
         node = self.leaf_nodes.get(key)
         if node is None:
-            node = _make_leaf_node(self.model, self.func_addr, addr, name)
+            node = _make_leaf_node(
+                self.model,
+                self.func_addr,
+                addr,
+                name,
+                is_syscall=is_syscall,
+            )
             self.graph.add_node(node)
             self.leaf_nodes[key] = node
             self.stats.synthetic_leaves_created += 1
@@ -395,6 +436,19 @@ class _ExtractionSession:
 
         for addr, block in sorted(self.blocks.items()):
             source = self.nodes[addr]
+            if block.jumpkind == "Ijk_Syscall":
+                syscall_addr, syscall_name = _unknown_syscall_target(self.project)
+                syscall = self._leaf(
+                    syscall_addr,
+                    syscall_name,
+                    is_syscall=True,
+                )
+                syscall_jumpkind = cast(
+                    EdgeJumpKind, block.syscall_jumpkind or "Ijk_Sys_syscall"
+                )
+                if add_successor_edge(self.graph, source, syscall, syscall_jumpkind):
+                    self.stats.direct_edges += 1
+
             for target in block.direct_targets:
                 destination = self._target_node(target)
                 jumpkind = "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
@@ -410,7 +464,9 @@ class _ExtractionSession:
                 destination = self._fallthrough_target_node(block.fallthrough_addr)
                 if destination is not None:
                     jumpkind = (
-                        "Ijk_FakeRet" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
+                        "Ijk_FakeRet"
+                        if block.jumpkind in {"Ijk_Call", "Ijk_Syscall"}
+                        else "Ijk_Boring"
                     )
                     if add_successor_edge(self.graph, source, destination, jumpkind):
                         self.stats.fallthrough_edges += 1
@@ -521,6 +577,8 @@ class _ExtractionSession:
         for block in self.blocks.values():
             if block.jumpkind == "Ijk_Call":
                 self.stats.calls += 1
+            elif block.jumpkind == "Ijk_Syscall":
+                self.stats.syscalls += 1
             elif block.jumpkind == "Ijk_Ret":
                 self.stats.returns += 1
             elif block.jumpkind == "Ijk_Terminal":

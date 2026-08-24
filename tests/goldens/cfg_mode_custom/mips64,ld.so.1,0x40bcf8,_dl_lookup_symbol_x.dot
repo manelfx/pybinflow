@@ -294,7 +294,6 @@ edge [fontname=monospace, fontsize=8];
 "0x40ce2c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40ce2c)</TD><TD ><B>_dl_lookup_symbol_x+0x1134</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040ce2c&#58;&nbsp;</TD><TD ALIGN="LEFT">ld</TD><TD ALIGN="LEFT">$t9, 0x10a0($a1)</TD></TR><TR><TD ALIGN="LEFT">0x0040ce30&#58;&nbsp;</TD><TD ALIGN="LEFT">jalr</TD><TD ALIGN="LEFT">$t9</TD></TR><TR><TD ALIGN="LEFT">0x0040ce34&#58;&nbsp;</TD><TD ALIGN="LEFT">daddiu</TD><TD ALIGN="LEFT">$a0, $a1, 0x908</TD></TR></TABLE> }>];
 "0x40ce38" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40ce38)</TD><TD ><B>_dl_lookup_symbol_x+0x1140</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040ce38&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x40c588</TD></TR><TR><TD ALIGN="LEFT">0x0040ce3c&#58;&nbsp;</TD><TD ALIGN="LEFT">ld</TD><TD ALIGN="LEFT">$a3, 0xa8($fp)</TD></TR></TABLE> }>];
 "0x40ce40" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40ce40)</TD><TD ><B>_dl_lookup_symbol_x+0x1148</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040ce40&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x40ce00</TD></TR><TR><TD ALIGN="LEFT">0x0040ce44&#58;&nbsp;</TD><TD ALIGN="LEFT">sd</TD><TD ALIGN="LEFT">$v1, 0x90($fp)</TD></TR></TABLE> }>];
-"0x7007c4" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x7007c4)</TD><TD ><B>futex</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 subgraph entry_rank {
 rank=source;
 "0x40bcf8";
@@ -699,7 +698,6 @@ rank=source;
 "0x40cd08" -> "0x40cd14" [color=red];
 "0x40cd08" -> "0x40cd34" [color=green];
 "0x40cd14" -> "0x40cd30" [color=gray, style=dashed];
-"0x40cd14" -> "0x7007c4" [color=gray];
 "0x40cd30" -> "0x40cd34" [color=blue, style=dashed];
 "0x40cd34" -> "0x40cd48" [color=gray, style=dashed];
 "0x40cd48" -> "0x40cd58" [color=red];

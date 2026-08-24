@@ -19,6 +19,7 @@ TerminatorKind = Literal[
     "Ijk_Call",
     "Ijk_Fallthrough",
     "Ijk_Ret",
+    "Ijk_Syscall",
     "Ijk_Terminal",
 ]
 EdgeJumpKind = Literal["Ijk_Boring", "Ijk_Call", "Ijk_FakeRet"]
@@ -35,6 +36,7 @@ class BlockSpec:
     jumpkind: TerminatorKind
     direct_targets: tuple[int, ...] = ()
     fallthrough_addr: int | None = None
+    syscall_jumpkind: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,7 @@ class TerminatorInfo:
     jumpkind: TerminatorKind
     direct_targets: tuple[int, ...] = ()
     fallthrough_addr: int | None = None
+    syscall_jumpkind: str | None = None
 
 
 @dataclass(frozen=True)

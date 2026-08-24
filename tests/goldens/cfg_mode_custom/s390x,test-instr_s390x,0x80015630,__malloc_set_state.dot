@@ -80,7 +80,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80015af8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80015af8)</TD><TD ><B>__malloc_set_state+0x4c8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x80015af8&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x800158d8</TD></TR></TABLE> }>];
 "0x80015afc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80015afc)</TD><TD ><B>__malloc_set_state+0x4cc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x80015afc&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r5, 0x8006f51a</TD></TR><TR><TD ALIGN="LEFT">0x80015b02&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r4, 0x245</TD></TR><TR><TD ALIGN="LEFT">0x80015b06&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r3, 0x8006f10a</TD></TR><TR><TD ALIGN="LEFT">0x80015b0c&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x8006f112</TD></TR><TR><TD ALIGN="LEFT">0x80015b12&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x8000f700</TD></TR></TABLE> }>];
 "0x80015b18" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80015b18)</TD><TD ><B>__valloc</B></TD><TD > SIMP</TD></TR></TABLE> }>];
-"0x80300000" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80300000)</TD><TD ><B>sys_0</B></TD><TD > SIMP  SYSC</TD></TR></TABLE> }>];
 "0x80015630" -> "0x80015662" [color=red];
 "0x80015630" -> "0x80015aa8" [color=green];
 "0x80015662" -> "0x8001566c" [color=red];
@@ -192,7 +191,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80015ad6" -> "0x80015ae0" [color=gray, style=dashed];
 "0x80015ae0" -> "0x80015698" [color=blue];
 "0x80015ae4" -> "0x80015af8" [color=gray, style=dashed];
-"0x80015ae4" -> "0x80300000" [color=gray];
 "0x80015af8" -> "0x800158d8" [color=blue];
 "0x80015afc" -> "0x80015b18" [color=gray, style=dashed];
 }

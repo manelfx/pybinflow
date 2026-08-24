@@ -176,6 +176,7 @@ def _recover_direct_closure(
             addr,
             leaders - {addr},
             preserve_conditional_return_fallthrough=True,
+            split_syscall_blocks=True,
         )
         if block is None or block.size <= 0:
             decode_failures += 1
@@ -246,6 +247,7 @@ def recover_executable_components(
             cursor,
             leaders,
             preserve_conditional_return_fallthrough=True,
+            split_syscall_blocks=True,
         )
         if block is None or block.size <= 0:
             decode_failures += 1

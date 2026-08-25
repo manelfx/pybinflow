@@ -42,18 +42,19 @@ def test_decoding_coverage_accepts_exact_capstone_span(
 
 
 def test_truncated_leaf_accepts_fully_decoded_ud2_trap(monkeypatch) -> None:
-    """Accept a complete x86 ud2 trap even though VEX reports Ijk_NoDecode."""
+    """Accept a complete x86 ud2 trap even after ordinary instructions."""
 
     node = SimpleNamespace(
         addr=0x1000,
-        size=2,
+        size=3,
         block=SimpleNamespace(vex=SimpleNamespace(jumpkind="Ijk_NoDecode")),
     )
-    ud2 = SimpleNamespace(address=0x1000, size=2, id=X86_INS_UD2)
+    move = SimpleNamespace(address=0x1000, size=1, id=None, groups=())
+    ud2 = SimpleNamespace(address=0x1001, size=2, id=X86_INS_UD2)
     monkeypatch.setattr(
         anomalies.DecodedNode,
         "from_node",
-        lambda _node: DecodedNode((ud2,)),
+        lambda _node: DecodedNode((move, ud2)),
     )
 
     assert not anomalies.node_has_truncated_leaf(
@@ -62,6 +63,33 @@ def test_truncated_leaf_accepts_fully_decoded_ud2_trap(monkeypatch) -> None:
         FunctionBounds(0x1000, 0x1010, 0x10, SimpleNamespace(name="f")),
         0x1000,
         node,
+    )
+
+
+def test_ud2_terminal_node_with_successor_needs_repair(monkeypatch) -> None:
+    """Remove any stale CFGFast successor following a fully decoded ud2."""
+
+    node = SimpleNamespace(
+        addr=0x1000,
+        size=3,
+        block=SimpleNamespace(vex=SimpleNamespace(jumpkind="Ijk_NoDecode")),
+    )
+    successor = SimpleNamespace(addr=0x1003)
+    move = SimpleNamespace(address=0x1000, size=1, id=None, groups=())
+    ud2 = SimpleNamespace(address=0x1001, size=2, id=X86_INS_UD2)
+    graph = SimpleNamespace(
+        successors=lambda candidate: (successor,) if candidate is node else ()
+    )
+    monkeypatch.setattr(
+        anomalies.DecodedNode,
+        "from_node",
+        lambda _node: DecodedNode((move, ud2)),
+    )
+
+    assert anomalies._terminal_successor_anomaly(graph, node) == CFGAnomaly(
+        "terminal_successor",
+        0x1000,
+        "Node 0x1000 has terminal instruction ud2 but retains successor(s): 0x1003",
     )
 
 

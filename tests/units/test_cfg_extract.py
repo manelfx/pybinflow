@@ -153,6 +153,39 @@ def test_extract_models_syscalls_as_call_like_block_terminators() -> None:
     )
 
 
+def test_extract_models_vex_traps_without_a_linear_successor() -> None:
+    """Keep MIPS ``break`` as VEX's synchronous trap instead of falling through."""
+
+    project = project_module.load_project(Path("angr-binaries/tests/mipsel/busybox"))
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x409C38
+    )
+
+    block = decode_bounded_block(project, session.bounds, 0x409C64, set())
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Terminal"
+    assert block.fallthrough_addr is None
+
+
+def test_extract_models_ud2_as_a_terminal_trap() -> None:
+    """Keep x86 ``ud2`` as a trap despite VEX's ``Ijk_NoDecode`` result."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/x86_64/rust_hello_world")
+    )
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x427680
+    )
+
+    block = decode_bounded_block(project, session.bounds, 0x427771, set())
+
+    assert block is not None
+    assert block.instruction_addrs == (0x427771,)
+    assert block.jumpkind == "Ijk_Terminal"
+    assert block.fallthrough_addr is None
+
+
 def test_extract_leader_is_not_requeued_after_recovery() -> None:
     """Keep a cycle from repeatedly scheduling an unchanged completed block."""
 

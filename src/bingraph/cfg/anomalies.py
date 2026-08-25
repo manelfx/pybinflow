@@ -610,6 +610,18 @@ def node_has_decode_gap(node) -> bool:
         return False
 
 
+def _node_ends_in_undefined_instruction_trap(node) -> bool:
+    """Return whether exact Capstone coverage ends in x86's ``ud2`` trap."""
+
+    decoded = DecodedNode.from_node(node)
+    last_insn = decoded.last
+    return (
+        last_insn is not None
+        and decoded.has_exact_coverage(node)
+        and InsnSemantics(last_insn).is_undefined_instruction_trap()
+    )
+
+
 def node_has_truncated_leaf(
     project: Project,
     graph: CFGGraph,
@@ -628,12 +640,7 @@ def node_has_truncated_leaf(
     # as a valid leaf, while retaining ordinary Ijk_NoDecode blocks as repair
     # candidates.
     last_insn = decoded.last
-    if (
-        len(decoded.insns) == 1
-        and last_insn is not None
-        and decoded.has_exact_coverage(node)
-        and InsnSemantics(last_insn).is_undefined_instruction_trap()
-    ):
+    if _node_ends_in_undefined_instruction_trap(node):
         return False
 
     try:
@@ -686,16 +693,23 @@ def _terminal_successor_anomaly(graph: CFGGraph, node) -> CFGAnomaly | None:
     except Exception:
         return None
 
-    if not _vex_jumpkind_is_terminal(jumpkind):
+    undefined_instruction_trap = _node_ends_in_undefined_instruction_trap(node)
+    if not _vex_jumpkind_is_terminal(jumpkind) and not undefined_instruction_trap:
         return None
 
-    allowed_successor_addrs = {
-        target
-        for _, _, stmt in getattr(vex, "exit_statements", ())
-        if getattr(stmt, "jumpkind", None) == "Ijk_Boring"
-        if isinstance(target := getattr(getattr(stmt, "dst", None), "value", None), int)
-        if target == _node_range_end(node)
-    }
+    allowed_successor_addrs = (
+        set()
+        if undefined_instruction_trap
+        else {
+            target
+            for _, _, stmt in getattr(vex, "exit_statements", ())
+            if getattr(stmt, "jumpkind", None) == "Ijk_Boring"
+            if isinstance(
+                target := getattr(getattr(stmt, "dst", None), "value", None), int
+            )
+            if target == _node_range_end(node)
+        }
+    )
     successors = tuple(
         successor
         for successor in graph.successors(node)
@@ -705,11 +719,14 @@ def _terminal_successor_anomaly(graph: CFGGraph, node) -> CFGAnomaly | None:
         return None
 
     targets = ", ".join(f"{successor.addr:#x}" for successor in successors)
+    terminal_kind = (
+        "instruction ud2" if undefined_instruction_trap else f"VEX jumpkind {jumpkind}"
+    )
     return CFGAnomaly(
         "terminal_successor",
         node.addr,
-        f"Node {node.addr:#x} has terminal VEX jumpkind {jumpkind} "
-        f"but retains successor(s): {targets}",
+        f"Node {node.addr:#x} has terminal {terminal_kind} but retains "
+        f"successor(s): {targets}",
     )
 
 

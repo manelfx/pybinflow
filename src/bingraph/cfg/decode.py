@@ -512,14 +512,15 @@ def decode_bounded_block(
     has_delay_slot = arch_has_delay_slot(project.arch.name)
     has_nonfallthrough_vex_terminator = False
     unclassified_vex_terminator_addr: int | None = None
-    native_vex_transfer_end = None
-    if not has_delay_slot:
-        native_vex_transfer_end = _native_vex_transfer_end(
-            project,
-            bounds,
-            start_addr,
-            split_syscall_blocks=split_syscall_blocks,
-        )
+    # Capstone does not consistently group trap instructions as control flow.
+    # Let VEX provide a native boundary on every architecture. Recognized
+    # delay-slot branches still take the explicit delay-slot path below.
+    native_vex_transfer_end = _native_vex_transfer_end(
+        project,
+        bounds,
+        start_addr,
+        split_syscall_blocks=split_syscall_blocks,
+    )
 
     while bounds.addr <= cur < bounds.end_addr:
         if insns and cur in stop_addrs:
@@ -539,6 +540,12 @@ def decode_bounded_block(
                 delay_insn = decode_one(project, next_addr, max_inst_bytes)
                 if delay_insn is not None:
                     insns.append(delay_insn)
+            break
+
+        if semantic.is_undefined_instruction_trap():
+            # VEX reports x86 UD2 as Ijk_NoDecode. It is nevertheless an
+            # intentional synchronous trap, never a linear fallthrough.
+            has_nonfallthrough_vex_terminator = True
             break
 
         exceptional_jumpkind = _exceptional_instruction_vex_jumpkind(project, insn)

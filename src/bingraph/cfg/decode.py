@@ -213,6 +213,67 @@ def call_fallthrough_addr(
     return None
 
 
+def target_is_known_nonreturning(project: Project, addr: int) -> bool:
+    """Return whether ``addr`` is an angr hook explicitly marked ``NO_RET``."""
+
+    return bool(
+        project.is_hooked(addr) and getattr(project.hooked_by(addr), "NO_RET", False)
+    )
+
+
+def _static_memory_nonreturning_call_target(
+    project: Project,
+    vex,
+) -> int | None:
+    """Resolve a call through one constant-address pointer to a ``NO_RET`` hook.
+
+    This intentionally covers only the simple GOT-like VEX shape where the
+    call's ``next`` value comes directly from ``LDle/LDbe(Const(slot))``. It
+    avoids treating arbitrary memory-derived indirect calls as resolved.
+    """
+
+    if not isinstance(vex.next, pyvex.expr.RdTmp):
+        return None
+
+    load = next(
+        (
+            statement.data
+            for statement in vex.statements
+            if isinstance(statement, pyvex.stmt.WrTmp)
+            and statement.tmp == vex.next.tmp
+            and isinstance(statement.data, pyvex.expr.Load)
+            and isinstance(statement.data.addr, pyvex.expr.Const)
+        ),
+        None,
+    )
+    if load is None:
+        return None
+
+    slot_addr = load.addr.con.value
+    if not isinstance(slot_addr, int):
+        return None
+
+    try:
+        raw_target = project.loader.memory.load(slot_addr, project.arch.bytes)
+    except Exception:
+        return None
+
+    byteorder = "little" if load.end == "Iend_LE" else "big"
+    target = int.from_bytes(raw_target, byteorder=byteorder)
+    return target if target_is_known_nonreturning(project, target) else None
+
+
+def known_nonreturning_call_target(project: Project, vex) -> int | None:
+    """Return a conservatively resolved ``NO_RET`` call target, if any."""
+
+    if isinstance(vex.next, pyvex.expr.Const):
+        target = vex.next.con.value
+        if isinstance(target, int) and target_is_known_nonreturning(project, target):
+            return target
+
+    return _static_memory_nonreturning_call_target(project, vex)
+
+
 def _exceptional_instruction_vex_jumpkind(project: Project, insn: CsInsn) -> str | None:
     """Return a terminal or syscall jumpkind for one exceptional instruction."""
 
@@ -436,7 +497,16 @@ def lift_block_terminator(
             # such unnamed callees, allowing later render policy to decide
             # whether it should be visible.
             direct_targets = (default_target,)
-        fallthrough_addr = call_fallthrough_addr(project, bounds, next_addr)
+        nonreturning_target = known_nonreturning_call_target(project, vex)
+        if nonreturning_target is not None and not direct_targets:
+            # This static GOT-like call target is precise enough to retain as
+            # a normal call edge, while suppressing its impossible FakeRet.
+            direct_targets = (nonreturning_target,)
+        fallthrough_addr = (
+            None
+            if nonreturning_target is not None
+            else call_fallthrough_addr(project, bounds, next_addr)
+        )
         return TerminatorInfo(
             jumpkind="Ijk_Call",
             direct_targets=direct_targets,

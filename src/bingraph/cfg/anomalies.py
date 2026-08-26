@@ -22,6 +22,7 @@ from .decode import (
     decode_one,
     decode_raw_capstone_insns,
     lift_instruction_vex,
+    target_is_known_nonreturning,
     vex_jumpkind_is_terminal as _vex_jumpkind_is_terminal,
 )
 from .graph import (
@@ -100,14 +101,6 @@ def iter_function_nodes(cfg: CFGBase, func_addr: int):
     yield from _iter_seed_function_nodes(cfg, func_addr)
 
 
-def _target_is_known_nonreturning(project: Project, addr: int) -> bool:
-    """Return whether a concrete target is an explicitly non-returning hook."""
-
-    return bool(
-        project.is_hooked(addr) and getattr(project.hooked_by(addr), "NO_RET", False)
-    )
-
-
 def _call_has_known_nonreturning_target(
     project: Project, graph: CFGGraph, node
 ) -> bool:
@@ -122,7 +115,7 @@ def _call_has_known_nonreturning_target(
     last_insn = decoded.last
     if last_insn is not None:
         target = InsnSemantics(last_insn).direct_target()
-        if target is not None and _target_is_known_nonreturning(project, target):
+        if target is not None and target_is_known_nonreturning(project, target):
             return True
 
     for successor in graph.successors(node):
@@ -131,7 +124,7 @@ def _call_has_known_nonreturning_target(
             continue
 
         addr = getattr(successor, "addr", None)
-        if isinstance(addr, int) and _target_is_known_nonreturning(project, addr):
+        if isinstance(addr, int) and target_is_known_nonreturning(project, addr):
             return True
 
     return False

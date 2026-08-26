@@ -186,6 +186,24 @@ def test_extract_models_ud2_as_a_terminal_trap() -> None:
     assert block.fallthrough_addr is None
 
 
+def test_extract_suppresses_fakeret_for_a_static_nonreturning_call() -> None:
+    """Resolve a GOT-loaded ``abort`` target without constructing CFGFast."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/x86_64/rust_hello_world")
+    )
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x41FB60
+    )
+
+    block = decode_bounded_block(project, session.bounds, 0x41FFB5, set())
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Call"
+    assert block.direct_targets == (0x500020,)
+    assert block.fallthrough_addr is None
+
+
 def test_extract_leader_is_not_requeued_after_recovery() -> None:
     """Keep a cycle from repeatedly scheduling an unchanged completed block."""
 

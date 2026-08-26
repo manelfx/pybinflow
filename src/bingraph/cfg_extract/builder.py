@@ -12,6 +12,7 @@ never reads CFGFast's discovered regions.
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import cast
 
@@ -20,6 +21,7 @@ from angr.knowledge_plugins.cfg import CFGModel, CFGNode
 from angr.simos.userland import SimUserland
 from loguru import logger
 import networkx as nx
+import pyvex
 
 from bingraph.cfg.anomalies import _lookup_function_bounds
 from bingraph.cfg.graph import CFGGraph, add_successor_edge
@@ -41,6 +43,34 @@ from .sweep import recover_executable_components, select_reconnecting_components
 
 
 _UNRESOLVABLE_SYSCALL_ADDR = 0xFFFFFFFFFFFFFFE0
+
+
+def _static_data_load_addrs(project: Project, block: BlockSpec) -> frozenset[int]:
+    """Return exact memory addresses VEX proves this block reads directly.
+
+    These are not control-flow targets by themselves. They let extraction
+    reject a prospective leader only when it is both a direct data reference
+    and an undecodable VEX block, which is strong evidence of a literal pool.
+    """
+
+    try:
+        vex = project.factory.block(
+            block.addr,
+            size=block.size,
+            strict_block_end=True,
+            cross_insn_opt=False,
+        ).vex
+    except Exception:
+        return frozenset()
+
+    return frozenset(
+        addr
+        for stmt in vex.statements
+        if isinstance(stmt, pyvex.stmt.WrTmp)
+        and isinstance(stmt.data, pyvex.expr.Load)
+        and isinstance(stmt.data.addr, pyvex.expr.Const)
+        and isinstance((addr := stmt.data.addr.con.value), int)
+    )
 
 
 def _unknown_syscall_target(project: Project) -> tuple[int, str]:
@@ -161,6 +191,30 @@ class _ExtractionSession:
         self.sweep_dispatcher_addr: int | None = None
         self.sweep_component_roots: frozenset[int] = frozenset()
 
+    def _is_verified_data_leader(self, addr: int) -> bool:
+        """Return whether ``addr`` is a referenced literal pool, not code."""
+
+        if not any(
+            addr in _static_data_load_addrs(self.project, block)
+            for block in self.blocks.values()
+        ):
+            return False
+        try:
+            return self.project.factory.block(addr).vex.jumpkind == "Ijk_NoDecode"
+        except Exception:
+            return False
+
+    def _reject_data_leader(self, addr: int) -> None:
+        """Reject a literal-pool leader and remove impossible call returns."""
+
+        self._reject_leader(addr)
+        self.stats.data_leaders_rejected += 1
+        for start, block in tuple(self.blocks.items()):
+            if block.jumpkind != "Ijk_Call" or block.fallthrough_addr != addr:
+                continue
+            self.blocks[start] = replace(block, fallthrough_addr=None)
+            self.stats.call_fallthroughs_suppressed += 1
+
     def _queue(self, addr: int) -> None:
         """Schedule one in-bounds block leader only once per pending round."""
 
@@ -231,6 +285,13 @@ class _ExtractionSession:
             self.pending_addrs.remove(addr)
             if addr in self.rejected_leaders:
                 continue
+            if self._is_verified_data_leader(addr):
+                logger.info(
+                    f"Extract CFG rejected literal-pool leader {addr:#x} for "
+                    f"function {self.func_addr:#x}"
+                )
+                self._reject_data_leader(addr)
+                continue
             block = decode_bounded_block(
                 self.project,
                 self.bounds,
@@ -238,6 +299,7 @@ class _ExtractionSession:
                 self.leaders - {addr},
                 preserve_conditional_return_fallthrough=True,
                 split_syscall_blocks=True,
+                resolve_declared_nonreturning=True,
             )
             if block is None:
                 self.stats.decode_failures += 1

@@ -204,6 +204,64 @@ def test_extract_suppresses_fakeret_for_a_static_nonreturning_call() -> None:
     assert block.fallthrough_addr is None
 
 
+def test_extract_suppresses_fakeret_for_a_mips_pic_nonreturning_call() -> None:
+    """Resolve MIPS ``$gp``-relative ``$t9`` calls to known no-return targets."""
+
+    project = project_module.load_project(Path("angr-binaries/tests/mips/dir"))
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x40DB70
+    )
+
+    block = decode_bounded_block(project, session.bounds, 0x40DC74, set())
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Call"
+    assert block.direct_targets == (0x5001AC,)
+    assert block.fallthrough_addr is None
+
+
+def test_extract_suppresses_fakeret_for_a_declared_nonreturning_symbol() -> None:
+    """Use angr's libc declaration for an in-image ``__stack_chk_fail`` call."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/armel/libc-2.31.so")
+    )
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x47A4E9
+    )
+
+    block = decode_bounded_block(
+        project,
+        session.bounds,
+        0x47A551,
+        set(),
+        resolve_declared_nonreturning=True,
+    )
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Call"
+    assert block.direct_targets == (0x4AA5FD,)
+    assert block.fallthrough_addr is None
+
+
+def test_extract_does_not_fall_through_to_a_verified_literal_pool() -> None:
+    """Reject a no-decode call continuation proven to be static data."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/armel/ld-linux.so.3")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x4165E8)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+
+    assert 0x416674 not in nodes
+    assert all(
+        successor.addr != 0x416674
+        for successor in cfg.graph.successors(nodes[0x416654])
+    )
+    assert cfg.extract_stats.data_leaders_rejected == 1
+    assert cfg.extract_stats.call_fallthroughs_suppressed == 1
+
+
 def test_extract_leader_is_not_requeued_after_recovery() -> None:
     """Keep a cycle from repeatedly scheduling an unchanged completed block."""
 
@@ -353,17 +411,18 @@ def test_extract_rejects_sweep_targets_inside_thumb_instructions() -> None:
 
 
 def test_extract_accepts_thumb_alternate_instruction_stream() -> None:
-    """A branch may enter a Thumb wide instruction's second halfword."""
+    """Decode a branch whose target enters a Thumb wide instruction's tail."""
 
     project = project_module.load_project(
         Path("angr-binaries/tests/armel/libc-2.31.so")
     )
-    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x46CB25)
-    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x46CB25
+    )
+    block = decode_bounded_block(project, session.bounds, 0x46CCDF, set())
 
-    assert 0x46CC79 in nodes
-    assert tuple(nodes[0x46CC79].instruction_addrs) == (0x46CC79,)
-    assert cfg.extract_stats.output_anomalies == 0
+    assert block is not None
+    assert block.direct_targets == (0x46CC79,)
 
 
 def test_extract_factors_x86_post_prefix_shared_tail() -> None:

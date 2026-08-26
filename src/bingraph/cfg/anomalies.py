@@ -22,7 +22,7 @@ from .decode import (
     decode_one,
     decode_raw_capstone_insns,
     lift_instruction_vex,
-    target_is_known_nonreturning,
+    target_is_hooked_nonreturning,
     vex_jumpkind_is_terminal as _vex_jumpkind_is_terminal,
 )
 from .graph import (
@@ -115,7 +115,7 @@ def _call_has_known_nonreturning_target(
     last_insn = decoded.last
     if last_insn is not None:
         target = InsnSemantics(last_insn).direct_target()
-        if target is not None and target_is_known_nonreturning(project, target):
+        if target is not None and target_is_hooked_nonreturning(project, target):
             return True
 
     for successor in graph.successors(node):
@@ -124,7 +124,7 @@ def _call_has_known_nonreturning_target(
             continue
 
         addr = getattr(successor, "addr", None)
-        if isinstance(addr, int) and target_is_known_nonreturning(project, addr):
+        if isinstance(addr, int) and target_is_hooked_nonreturning(project, addr):
             return True
 
     return False

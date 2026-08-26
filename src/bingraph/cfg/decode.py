@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from angr import Project
+from angr.procedures.definitions import SIM_LIBRARIES, SimSyscallLibrary
 from capstone import CsInsn
 from loguru import logger
 import pyvex
@@ -213,65 +215,274 @@ def call_fallthrough_addr(
     return None
 
 
-def target_is_known_nonreturning(project: Project, addr: int) -> bool:
-    """Return whether ``addr`` is an angr hook explicitly marked ``NO_RET``."""
+def _library_family(name: str) -> str:
+    """Return a stable family name for a versioned shared-library filename."""
+
+    basename = name.rsplit("/", 1)[-1]
+    match = re.match(
+        r"(?P<family>.+?)(?:-[0-9][0-9A-Za-z._-]*)?\\.so(?:\\..*)?$", basename
+    )
+    return match.group("family") if match is not None else basename
+
+
+def _symbol_is_declared_nonreturning(project: Project, addr: int) -> bool:
+    """Return whether a compatible SimLibrary declares an exact symbol as no-return."""
+
+    symbol = project.loader.find_symbol(addr)
+    if symbol is None or symbol.rebased_addr != addr or not symbol.is_function:
+        return False
+
+    binary = project.loader.find_object_containing(addr)
+    if binary is None:
+        return False
+
+    binary_names = (binary.provides, binary.binary)
+    families = {_library_family(name) for name in binary_names if name}
+    for library_name, libraries in SIM_LIBRARIES.items():
+        if _library_family(library_name) not in families:
+            continue
+        for library in libraries:
+            if isinstance(library, SimSyscallLibrary):
+                continue
+            if library.has_prototype(symbol.name) and not library.is_returning(
+                symbol.name
+            ):
+                return True
+    return False
+
+
+def target_is_hooked_nonreturning(project: Project, addr: int) -> bool:
+    """Return whether angr exposes a concrete target as a no-return hook."""
 
     return bool(
         project.is_hooked(addr) and getattr(project.hooked_by(addr), "NO_RET", False)
     )
 
 
+def target_is_known_nonreturning(project: Project, addr: int) -> bool:
+    """Return whether static information declares a target non-returning."""
+
+    return target_is_hooked_nonreturning(
+        project, addr
+    ) or _symbol_is_declared_nonreturning(project, addr)
+
+
+def _temporary_definitions(vex) -> dict[int, object]:
+    """Return the VEX expressions defining temporary values in ``vex``."""
+
+    return {
+        statement.tmp: statement.data
+        for statement in vex.statements
+        if isinstance(statement, pyvex.stmt.WrTmp)
+    }
+
+
+def _mips_entry_global_pointer(project: Project, bounds: FunctionBounds) -> int | None:
+    """Resolve a MIPS PIC global pointer initialized from the entry ``$t9``.
+
+    MIPS PIC functions commonly establish ``$gp`` as ``$t9 + constant`` at
+    entry, where ABI rules guarantee that the incoming ``$t9`` is the function
+    address. Restrict this to the exact VEX shape so calls reached through
+    arbitrary register state remain unresolved.
+    """
+
+    if not project.arch.name.startswith("MIPS"):
+        return None
+
+    try:
+        gp_offset = project.arch.registers["gp"][0]
+        t9_offset = project.arch.registers["t9"][0]
+        entry_vex = project.factory.block(bounds.addr).vex
+    except (AttributeError, KeyError):
+        return None
+    except Exception:
+        return None
+
+    definitions = _temporary_definitions(entry_vex)
+    for statement in entry_vex.statements:
+        if not isinstance(statement, pyvex.stmt.Put) or statement.offset != gp_offset:
+            continue
+        if not isinstance(statement.data, pyvex.expr.RdTmp):
+            continue
+
+        expression = definitions.get(statement.data.tmp)
+        if not isinstance(expression, pyvex.expr.Binop) or not expression.op.startswith(
+            "Iop_Add"
+        ):
+            continue
+
+        left, right = expression.args
+        constant, register = (
+            (left, right) if isinstance(left, pyvex.expr.Const) else (right, left)
+        )
+        if not isinstance(constant, pyvex.expr.Const):
+            continue
+        if not isinstance(register, pyvex.expr.RdTmp):
+            continue
+
+        source = definitions.get(register.tmp)
+        if not isinstance(source, pyvex.expr.Get) or source.offset != t9_offset:
+            continue
+
+        mask = (1 << project.arch.bits) - 1
+        return (bounds.addr + constant.con.value) & mask
+
+    return None
+
+
+def _mips_gp_relative_call_slot(
+    project: Project, bounds: FunctionBounds, vex
+) -> tuple[int, str] | None:
+    """Resolve a MIPS PIC call through an exact ``Load($gp + offset)`` shape."""
+
+    global_pointer = _mips_entry_global_pointer(project, bounds)
+    if global_pointer is None:
+        return None
+
+    try:
+        gp_offset = project.arch.registers["gp"][0]
+    except KeyError:
+        return None
+
+    definitions = _temporary_definitions(vex)
+    target_expr = _call_target_load(project, vex)
+    if target_expr is None:
+        return None
+    if not isinstance(target_expr.addr, pyvex.expr.RdTmp):
+        return None
+
+    slot_expr = definitions.get(target_expr.addr.tmp)
+    if not isinstance(slot_expr, pyvex.expr.Binop) or not slot_expr.op.startswith(
+        "Iop_Add"
+    ):
+        return None
+
+    left, right = slot_expr.args
+    constant, register = (
+        (left, right) if isinstance(left, pyvex.expr.Const) else (right, left)
+    )
+    if not isinstance(constant, pyvex.expr.Const):
+        return None
+    if not isinstance(register, pyvex.expr.RdTmp):
+        return None
+
+    source = definitions.get(register.tmp)
+    if not isinstance(source, pyvex.expr.Get) or source.offset != gp_offset:
+        return None
+
+    mask = (1 << project.arch.bits) - 1
+    return ((global_pointer + constant.con.value) & mask, target_expr.end)
+
+
+def _call_target_load(project: Project, vex) -> pyvex.expr.Load | None:
+    """Return a direct VEX load supplying an indirect call target, if exact."""
+
+    if not isinstance(vex.next, pyvex.expr.RdTmp):
+        return None
+
+    definitions = _temporary_definitions(vex)
+    target_expr = definitions.get(vex.next.tmp)
+    if isinstance(target_expr, pyvex.expr.Load):
+        return target_expr
+
+    # Strict MIPS lifts retain the call target as GET($t9), while the preceding
+    # instruction writes that register from the PIC GOT. Follow just this one
+    # register assignment; arbitrary register-derived calls stay unresolved.
+    if not project.arch.name.startswith("MIPS"):
+        return None
+    try:
+        t9_offset = project.arch.registers["t9"][0]
+    except KeyError:
+        return None
+    if not isinstance(target_expr, pyvex.expr.Get) or target_expr.offset != t9_offset:
+        return None
+
+    assigned = next(
+        (
+            statement.data
+            for statement in reversed(vex.statements)
+            if isinstance(statement, pyvex.stmt.Put)
+            and statement.offset == t9_offset
+            and isinstance(statement.data, pyvex.expr.RdTmp)
+        ),
+        None,
+    )
+    if assigned is None:
+        return None
+    load = definitions.get(assigned.tmp)
+    return load if isinstance(load, pyvex.expr.Load) else None
+
+
 def _static_memory_nonreturning_call_target(
     project: Project,
+    bounds: FunctionBounds,
     vex,
+    *,
+    resolve_declared_nonreturning: bool,
 ) -> int | None:
-    """Resolve a call through one constant-address pointer to a ``NO_RET`` hook.
+    """Resolve a call through one constant-address pointer to a no-return target.
 
     This intentionally covers only the simple GOT-like VEX shape where the
     call's ``next`` value comes directly from ``LDle/LDbe(Const(slot))``. It
     avoids treating arbitrary memory-derived indirect calls as resolved.
     """
 
-    if not isinstance(vex.next, pyvex.expr.RdTmp):
-        return None
-
-    load = next(
-        (
-            statement.data
-            for statement in vex.statements
-            if isinstance(statement, pyvex.stmt.WrTmp)
-            and statement.tmp == vex.next.tmp
-            and isinstance(statement.data, pyvex.expr.Load)
-            and isinstance(statement.data.addr, pyvex.expr.Const)
-        ),
-        None,
-    )
+    load = _call_target_load(project, vex)
     if load is None:
         return None
 
-    slot_addr = load.addr.con.value
-    if not isinstance(slot_addr, int):
+    slot: tuple[int, str] | None = None
+    if isinstance(load.addr, pyvex.expr.Const):
+        slot_addr = load.addr.con.value
+        if isinstance(slot_addr, int):
+            slot = (slot_addr, load.end)
+    if slot is None:
+        slot = _mips_gp_relative_call_slot(project, bounds, vex)
+    if slot is None:
         return None
+
+    slot_addr, endness = slot
 
     try:
         raw_target = project.loader.memory.load(slot_addr, project.arch.bytes)
     except Exception:
         return None
 
-    byteorder = "little" if load.end == "Iend_LE" else "big"
+    byteorder = "little" if endness == "Iend_LE" else "big"
     target = int.from_bytes(raw_target, byteorder=byteorder)
-    return target if target_is_known_nonreturning(project, target) else None
+    predicate = (
+        target_is_known_nonreturning
+        if resolve_declared_nonreturning
+        else target_is_hooked_nonreturning
+    )
+    return target if predicate(project, target) else None
 
 
-def known_nonreturning_call_target(project: Project, vex) -> int | None:
-    """Return a conservatively resolved ``NO_RET`` call target, if any."""
+def known_nonreturning_call_target(
+    project: Project,
+    bounds: FunctionBounds,
+    vex,
+    *,
+    resolve_declared_nonreturning: bool = False,
+) -> int | None:
+    """Return a conservatively resolved non-returning call target, if any."""
 
+    predicate = (
+        target_is_known_nonreturning
+        if resolve_declared_nonreturning
+        else target_is_hooked_nonreturning
+    )
     if isinstance(vex.next, pyvex.expr.Const):
         target = vex.next.con.value
-        if isinstance(target, int) and target_is_known_nonreturning(project, target):
+        if isinstance(target, int) and predicate(project, target):
             return target
 
-    return _static_memory_nonreturning_call_target(project, vex)
+    return _static_memory_nonreturning_call_target(
+        project,
+        bounds,
+        vex,
+        resolve_declared_nonreturning=resolve_declared_nonreturning,
+    )
 
 
 def _exceptional_instruction_vex_jumpkind(project: Project, insn: CsInsn) -> str | None:
@@ -386,6 +597,7 @@ def lift_block_terminator(
     unclassified_vex_terminator_addr: int | None = None,
     preserve_conditional_return_fallthrough: bool = False,
     split_syscall_blocks: bool = False,
+    resolve_declared_nonreturning: bool = False,
 ) -> TerminatorInfo:
     """Lift decoded block bytes and derive their control-flow shape."""
 
@@ -497,7 +709,20 @@ def lift_block_terminator(
             # such unnamed callees, allowing later render policy to decide
             # whether it should be visible.
             direct_targets = (default_target,)
-        nonreturning_target = known_nonreturning_call_target(project, vex)
+        nonreturning_vex = vex
+        if project.arch.name.startswith("MIPS") and tail_addr != block_addr:
+            # The tail lift intentionally excludes preceding instructions, but
+            # MIPS PIC calls load $t9 through $gp before the call itself.
+            try:
+                nonreturning_vex = _lift(block_addr, block_size)
+            except Exception:
+                pass
+        nonreturning_target = known_nonreturning_call_target(
+            project,
+            bounds,
+            nonreturning_vex,
+            resolve_declared_nonreturning=resolve_declared_nonreturning,
+        )
         if nonreturning_target is not None and not direct_targets:
             # This static GOT-like call target is precise enough to retain as
             # a normal call edge, while suppressing its impossible FakeRet.
@@ -573,6 +798,7 @@ def decode_bounded_block(
     *,
     preserve_conditional_return_fallthrough: bool = False,
     split_syscall_blocks: bool = False,
+    resolve_declared_nonreturning: bool = False,
 ) -> BlockSpec | None:
     """Decode one bounded block until control flow or a known leader stops it."""
 
@@ -652,6 +878,7 @@ def decode_bounded_block(
         unclassified_vex_terminator_addr=unclassified_vex_terminator_addr,
         preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
         split_syscall_blocks=split_syscall_blocks,
+        resolve_declared_nonreturning=resolve_declared_nonreturning,
     )
     block = BlockSpec(
         addr=insns[0].address,
@@ -677,6 +904,7 @@ def decode_bounded_block(
             stop_addrs | {internal_targets[0]},
             preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
             split_syscall_blocks=split_syscall_blocks,
+            resolve_declared_nonreturning=resolve_declared_nonreturning,
         )
 
     return block

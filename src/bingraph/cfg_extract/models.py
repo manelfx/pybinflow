@@ -19,6 +19,8 @@ class ExtractedCFGStats:
     blocks_decoded: int = 0
     block_redecodes: int = 0
     decode_failures: int = 0
+    data_leaders_rejected: int = 0
+    call_fallthroughs_suppressed: int = 0
     calls: int = 0
     syscalls: int = 0
     direct_branches: int = 0

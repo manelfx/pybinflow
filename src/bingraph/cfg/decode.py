@@ -15,6 +15,7 @@ from bingraph.helpers.capstone import (
     InsnSemantics,
     arch_has_delay_slot,
     control_transfer_index,
+    instruction_is_conditionally_executed,
     proven_unconditional_direct_target,
 )
 
@@ -276,6 +277,56 @@ def _temporary_definitions(vex) -> dict[int, object]:
         for statement in vex.statements
         if isinstance(statement, pyvex.stmt.WrTmp)
     }
+
+
+def _vex_exit_guard_reads_register(vex, exit_statement, register_offset: int) -> bool:
+    """Return whether a VEX exit guard transitively reads one register."""
+
+    definitions = _temporary_definitions(vex)
+    visited_temps: set[int] = set()
+
+    def _reads_register(expression) -> bool:
+        if isinstance(expression, pyvex.expr.Get):
+            return expression.offset == register_offset
+        if isinstance(expression, pyvex.expr.RdTmp):
+            if expression.tmp in visited_temps:
+                return False
+            visited_temps.add(expression.tmp)
+            definition = definitions.get(expression.tmp)
+            return definition is not None and _reads_register(definition)
+        return any(_reads_register(child) for child in expression.child_expressions)
+
+    return _reads_register(exit_statement.guard)
+
+
+def _is_unproven_itstate_fallthrough(
+    project: Project,
+    vex,
+    exit_statements: list[pyvex.stmt.Exit],
+    insns: list[CsInsn],
+    terminator_index: int,
+) -> bool:
+    """Return whether VEX's next exit is only its generic inactive-IT path.
+
+    libVEX models Thumb execution through the architectural ``itstate``
+    register even when no preceding IT instruction predicates the current
+    instruction. Its generic guard must not invent a return fall-through;
+    Capstone independently proves whether the source instruction is actually
+    predicated. Other architectures have no ``itstate`` register and retain
+    their genuine conditional-return exits.
+    """
+
+    try:
+        itstate_offset = project.arch.registers["itstate"][0]
+    except KeyError:
+        return False
+
+    return not instruction_is_conditionally_executed(
+        project.arch.name, insns, terminator_index
+    ) and any(
+        _vex_exit_guard_reads_register(vex, statement, itstate_offset)
+        for statement in exit_statements
+    )
 
 
 def _mips_entry_global_pointer(project: Project, bounds: FunctionBounds) -> int | None:
@@ -664,12 +715,15 @@ def lift_block_terminator(
         terminator_addrs.add(tail_insns[1].address)
 
     exit_targets: list[int] = []
+    next_exit_statements: list[pyvex.stmt.Exit] = []
     for ins_addr, _, stmt in vex.exit_statements:
         if ins_addr not in terminator_addrs:
             continue
         target = getattr(stmt.dst, "value", None)
         if isinstance(target, int):
             exit_targets.append(target)
+            if target == next_addr:
+                next_exit_statements.append(stmt)
 
     default_target: int | None = None
     if isinstance(vex.next, pyvex.expr.Const):
@@ -684,6 +738,13 @@ def lift_block_terminator(
         preserve_conditional_return_fallthrough
         and vex.jumpkind == "Ijk_Ret"
         and next_addr in exit_targets
+        and not _is_unproven_itstate_fallthrough(
+            project,
+            vex,
+            next_exit_statements,
+            block_insns,
+            term_idx,
+        )
     ):
         fallthrough_addr = next_addr if next_addr < bounds.end_addr else None
         return TerminatorInfo(jumpkind="Ijk_Boring", fallthrough_addr=fallthrough_addr)

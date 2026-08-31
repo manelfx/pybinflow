@@ -175,6 +175,27 @@ def proven_unconditional_direct_target(
     return terminator.direct_target_for_arch(arch_name)
 
 
+def instruction_is_conditionally_executed(
+    arch_name: str, insns: list[CsInsn], index: int
+) -> bool:
+    """Return whether an instruction is statically proven to be predicated.
+
+    This currently recognizes ARM condition codes and Thumb IT blocks. Returning
+    ``False`` for other architectures is intentional: callers use this proof
+    only to retain an additional fall-through edge, so uncertainty must not
+    invent one.
+    """
+
+    if not arch_name.startswith("ARM"):
+        return False
+
+    insn = insns[index]
+    arm_cc = getattr(insn, "cc", ARM_CC_INVALID)
+    if arm_cc not in {ARM_CC_INVALID, ARM_CC_AL}:
+        return True
+    return _thumb_it_predicates_instruction(insns, index)
+
+
 def _thumb_it_predicates_instruction(insns: list[CsInsn], index: int) -> bool:
     """Return whether a preceding Thumb IT encoding predicates ``insns[index]``.
 

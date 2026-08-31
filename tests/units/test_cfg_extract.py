@@ -95,6 +95,52 @@ def test_extract_preserves_conditional_return_fallthrough() -> None:
     assert popeq.fallthrough_addr == 0x473848
 
 
+def test_extract_does_not_fall_through_from_an_unconditional_thumb_return() -> None:
+    """Ignore VEX's generic inactive-IT exit after an ordinary Thumb return."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/armel/Nucleo_read_hyperterminal.elf")
+    )
+    bounds = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x80023A5
+    ).bounds
+
+    block = decode_bounded_block(
+        project,
+        bounds,
+        0x80023AD,
+        set(),
+        preserve_conditional_return_fallthrough=True,
+    )
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Ret"
+    assert block.fallthrough_addr is None
+
+
+def test_extract_preserves_powerpc_conditional_return_fallthrough() -> None:
+    """Keep a non-ARM VEX conditional-return continuation."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/ppc64el/fauxware_static")
+    )
+    bounds = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x10019100
+    ).bounds
+
+    block = decode_bounded_block(
+        project,
+        bounds,
+        0x10019124,
+        set(),
+        preserve_conditional_return_fallthrough=True,
+    )
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Boring"
+    assert block.fallthrough_addr == 0x10019140
+
+
 def test_extract_retains_external_call_target() -> None:
     """Keep a resolved direct callee even when it lies outside function bounds."""
 

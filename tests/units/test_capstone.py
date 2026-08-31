@@ -10,6 +10,7 @@ from capstone.systemz import SYSZ_INS_BC
 from bingraph.helpers.capstone import (
     InsnSemantics,
     control_transfer_index,
+    instruction_is_conditionally_executed,
     proven_unconditional_direct_target,
 )
 
@@ -91,6 +92,30 @@ def test_thumb_expired_it_context_allows_an_unconditional_branch_proof() -> None
         )
         == 0x2000
     )
+
+
+def test_thumb_it_context_is_required_for_an_al_condition_instruction() -> None:
+    """Do not mistake VEX's generic IT-state guard for a real predicate."""
+
+    it = SimpleNamespace(
+        address=0x1000,
+        size=2,
+        groups=(),
+        id=ARM_INS_IT,
+        bytes=b"\x08\xbf",
+        operands=(),
+    )
+    pop = SimpleNamespace(
+        address=0x1002,
+        size=2,
+        groups=(),
+        id=0,
+        cc=ARM_CC_AL,
+        operands=(),
+    )
+
+    assert not instruction_is_conditionally_executed("ARMCortexM", [pop], 0)
+    assert instruction_is_conditionally_executed("ARMCortexM", [it, pop], 1)
 
 
 def test_xbegin_to_next_instruction_remains_a_cfg_terminator() -> None:

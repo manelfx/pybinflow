@@ -425,6 +425,18 @@ def test_extract_accepts_thumb_alternate_instruction_stream() -> None:
     assert block.direct_targets == (0x46CC79,)
 
 
+def test_extract_discards_thumb_tail_lift_fallthrough() -> None:
+    """Keep a Capstone-proven Thumb branch independent of VEX IT state."""
+
+    project = project_module.load_project(Path("angr-binaries/tests/armel/efm32gg.elf"))
+    session = builder_module._ExtractionSession(project, KnowledgeBase(project), 0x641)
+    block = decode_bounded_block(project, session.bounds, 0x701, set())
+
+    assert block is not None
+    assert block.direct_targets == (0x6E5,)
+    assert block.fallthrough_addr is None
+
+
 def test_extract_factors_x86_post_prefix_shared_tail() -> None:
     """Keep a LOCK and non-LOCK stream distinct until their shared tail."""
 

@@ -3,7 +3,11 @@ from typing import Any
 from loguru import logger
 
 from bingraph.helpers import get_style
-from bingraph.helpers.capstone import InsnSemantics, control_transfer_index
+from bingraph.helpers.capstone import (
+    InsnSemantics,
+    control_transfer_index,
+    proven_unconditional_direct_target,
+)
 from bingraph.cfg.decode import vex_jumpkind_is_terminal
 from .vis import NodeAnnotator, ContentAnnotator, EdgeAnnotator, Node
 
@@ -199,8 +203,8 @@ def _is_unresolvable_jump_target(node: Node) -> bool:
     )
 
 
-def _control_transfer_tail(edge):
-    """Return a block's control-transfer instruction and any delay-slot tail."""
+def _control_transfer_context(edge):
+    """Return a block's instructions and the edge-producing transfer index."""
 
     source_node = edge.src.obj
     try:
@@ -214,14 +218,24 @@ def _control_transfer_tail(edge):
                     # CFGFast associates an edge with the instruction that
                     # created it. Prefer that precise provenance over a
                     # full-block VEX lift, which can stop at an older split.
-                    return insns[index:]
+                    return insns, index
                 break
         terminator_index = control_transfer_index(edge.src.project.arch.name, insns)
         if terminator_index is None:
             return None
-        return insns[terminator_index:]
+        return insns, terminator_index
     except (AttributeError, KeyError, RuntimeError):
         return None
+
+
+def _control_transfer_tail(edge):
+    """Return a block's control-transfer instruction and any delay-slot tail."""
+
+    context = _control_transfer_context(edge)
+    if context is None:
+        return None
+    insns, terminator_index = context
+    return insns[terminator_index:]
 
 
 def _lift_control_transfer_tail(edge, tail):
@@ -264,13 +278,27 @@ def _capstone_direct_branch_edge_type(edge, exit_targets: set[int]) -> str | Non
     the CFG edge being styled.
     """
 
-    tail = _control_transfer_tail(edge)
-    if tail is None:
+    context = _control_transfer_context(edge)
+    if context is None:
         return None
+    insns, terminator_index = context
+    tail = insns[terminator_index:]
     semantics = InsnSemantics(tail[0])
     target_addr = semantics.direct_target_for_arch(edge.src.project.arch.name)
     if not semantics.is_jump() or target_addr is None:
         return None
+
+    if (
+        proven_unconditional_direct_target(
+            edge.src.project.arch.name, insns, terminator_index
+        )
+        == target_addr
+    ):
+        fallthrough_addr = tail[-1].address + tail[-1].size
+        if target_addr == fallthrough_addr:
+            return None
+        return "UNCONDITIONAL" if edge.dst.obj.addr == target_addr else None
+
     is_conditional = semantics.is_conditional_jump()
     if is_conditional:
         try:

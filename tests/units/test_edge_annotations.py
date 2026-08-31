@@ -421,8 +421,8 @@ def test_capstone_direct_jump_overrides_non_branch_vex_jumpkind(jumpkind: str) -
     assert _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "UNCONDITIONAL"
 
 
-def test_capstone_direct_jump_keeps_vex_conditional_semantics() -> None:
-    """Do not override a direct branch when VEX still exposes a condition."""
+def test_capstone_direct_jump_overrides_spurious_vex_conditional_state() -> None:
+    """Style a proven direct branch even when VEX retains a false exit."""
 
     target = _node(0x2000)
     source = _node(
@@ -440,9 +440,7 @@ def test_capstone_direct_jump_keeps_vex_conditional_semantics() -> None:
         ),
     )
 
-    assert (
-        _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "CONDITIONAL_TRUE"
-    )
+    assert _edge_type(_edge(source, target, jumpkind="Ijk_Boring")) == "UNCONDITIONAL"
 
 
 def test_tail_lift_disambiguates_one_operand_direct_jump(

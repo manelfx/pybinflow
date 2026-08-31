@@ -10,7 +10,7 @@ from capstone import (
     CS_OP_IMM,
     CsInsn,
 )
-from capstone.arm import ARM_CC_AL, ARM_CC_INVALID
+from capstone.arm import ARM_CC_AL, ARM_CC_INVALID, ARM_INS_IT
 from capstone.systemz import SYSZ_INS_BC
 from capstone.x86 import X86_INS_JMP, X86_INS_LJMP, X86_INS_UD2
 from capstone.x86_const import X86_GRP_AVX512
@@ -144,6 +144,61 @@ class InsnSemantics:
         if arch_name in {"RISCV32", "RISCV64"} and self.is_jump():
             return self.address + target
         return target
+
+
+def proven_unconditional_direct_target(
+    arch_name: str, insns: list[CsInsn], terminator_index: int
+) -> int | None:
+    """Return a direct target only when Capstone proves it is unconditional.
+
+    Thumb's ``IT`` instruction predicates a bounded sequence of later
+    instructions without changing their individual Capstone condition codes.
+    Leave a branch inside that sequence to VEX, but do not let an expired
+    ``IT`` predicate hide a later unconditional branch.
+    """
+
+    try:
+        terminator = InsnSemantics(insns[terminator_index])
+        is_unconditional_jump = (
+            terminator.is_jump()
+            and not terminator.is_call()
+            and not terminator.is_conditional_jump()
+        )
+    except AttributeError:
+        return None
+    if not is_unconditional_jump:
+        return None
+    if arch_name.startswith("ARM") and _thumb_it_predicates_instruction(
+        insns, terminator_index
+    ):
+        return None
+    return terminator.direct_target_for_arch(arch_name)
+
+
+def _thumb_it_predicates_instruction(insns: list[CsInsn], index: int) -> bool:
+    """Return whether a preceding Thumb IT encoding predicates ``insns[index]``.
+
+    Capstone exposes the IT opcode and raw encoding, but not the number of
+    instructions selected by its mask. The least-significant set mask bit
+    encodes that count, so inspect the instruction bytes instead of parsing
+    presentation mnemonics such as ``itt`` or ``ittt``.
+    """
+
+    for it_index, insn in enumerate(insns[:index]):
+        if insn.id != ARM_INS_IT:
+            continue
+        try:
+            mask = insn.bytes[0] & 0xF
+        except (AttributeError, IndexError):
+            # Without the encoding, keep the conservative behavior: this may
+            # be an IT-predicated branch and VEX remains the safer authority.
+            return True
+        if mask == 0:
+            return True
+        predicate_count = 5 - (mask & -mask).bit_length()
+        if index <= it_index + predicate_count:
+            return True
+    return False
 
 
 def arch_has_delay_slot(arch_name: str) -> bool:

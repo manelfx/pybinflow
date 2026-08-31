@@ -15,6 +15,7 @@ from bingraph.helpers.capstone import (
     InsnSemantics,
     arch_has_delay_slot,
     control_transfer_index,
+    proven_unconditional_direct_target,
 )
 
 from .models import BlockSpec, FunctionBounds, TerminatorInfo
@@ -736,6 +737,21 @@ def lift_block_terminator(
             jumpkind="Ijk_Call",
             direct_targets=direct_targets,
             fallthrough_addr=fallthrough_addr,
+        )
+
+    unconditional_target = proven_unconditional_direct_target(
+        project.arch.name, block_insns, term_idx
+    )
+    if unconditional_target is not None:
+        if unconditional_target == next_addr:
+            # An adjacent direct jump still terminates the block, but its only
+            # architectural successor is the ordinary linear continuation.
+            return TerminatorInfo(
+                jumpkind="Ijk_Fallthrough",
+                fallthrough_addr=(next_addr if next_addr < bounds.end_addr else None),
+            )
+        return TerminatorInfo(
+            jumpkind="Ijk_Boring", direct_targets=(unconditional_target,)
         )
 
     if exit_targets or semantic.is_conditional_jump():

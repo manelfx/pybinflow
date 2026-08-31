@@ -24,6 +24,7 @@ from bingraph.helpers.capstone import (
     InsnSemantics,
     arch_has_delay_slot,
     control_transfer_index,
+    proven_unconditional_direct_target,
 )
 from .decode import DecodedNode, lift_instruction_vex
 from .graph import (
@@ -1287,6 +1288,10 @@ def _analyze_jump_successors(
     if transfer.is_call() or (vex is not None and vex.jumpkind == "Ijk_Call"):
         return None
 
+    proven_direct_target = proven_unconditional_direct_target(
+        arch_name, list(insns), transfer_index
+    )
+
     # Some instruction encodings, including RISC-V ``c.jr ra``, are exposed
     # by Capstone as generic jumps rather than returns. Re-lift just the
     # terminator to avoid treating an old CFG node's stale fallthrough as a
@@ -1319,8 +1324,9 @@ def _analyze_jump_successors(
     # A one-instruction VEX lift on a delay-slot ISA can omit the branch Exit
     # entirely. Preserve only an explicit Capstone condition operand here: a
     # one-target branch can be unconditional and must not gain a fallthrough.
-    is_conditional = bool(exit_targets) or (
-        arch_has_delay_slot(arch_name) and transfer.has_explicit_branch_condition()
+    is_conditional = proven_direct_target is None and (
+        bool(exit_targets)
+        or (arch_has_delay_slot(arch_name) and transfer.has_explicit_branch_condition())
     )
     if not is_conditional and transfer.is_conditional_jump():
         # A malformed CFG node can retain stale VEX without the final branch
@@ -1346,7 +1352,8 @@ def _analyze_jump_successors(
 
     vex_branch_targets = list(exit_targets)
     if (
-        not is_conditional
+        proven_direct_target is None
+        and not is_conditional
         and vex_has_control_flow
         and target_vex is not None
         and isinstance(getattr(target_vex, "next", None), pyvex.expr.Const)
@@ -1360,7 +1367,9 @@ def _analyze_jump_successors(
     direct_target = _resolve_direct_branch_target(
         project,
         bounds,
-        transfer.direct_target(),
+        proven_direct_target
+        if proven_direct_target is not None
+        else transfer.direct_target(),
         vex_branch_targets,
     )
     if direct_target is None:

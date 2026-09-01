@@ -21,7 +21,6 @@ from angr.knowledge_plugins.cfg import CFGModel, CFGNode
 from angr.simos.userland import SimUserland
 from loguru import logger
 import networkx as nx
-import pyvex
 
 from bingraph.cfg.anomalies import _lookup_function_bounds
 from bingraph.cfg.graph import CFGGraph, add_successor_edge
@@ -38,39 +37,12 @@ from bingraph.cfg.decode import (
 )
 
 from .anomalies import find_extracted_cfg_anomalies
+from .data import StaticDataRegions
 from .models import ExtractedCFG, ExtractedCFGStats
 from .sweep import recover_executable_components, select_reconnecting_components
 
 
 _UNRESOLVABLE_SYSCALL_ADDR = 0xFFFFFFFFFFFFFFE0
-
-
-def _static_data_load_addrs(project: Project, block: BlockSpec) -> frozenset[int]:
-    """Return exact memory addresses VEX proves this block reads directly.
-
-    These are not control-flow targets by themselves. They let extraction
-    reject a prospective leader only when it is both a direct data reference
-    and an undecodable VEX block, which is strong evidence of a literal pool.
-    """
-
-    try:
-        vex = project.factory.block(
-            block.addr,
-            size=block.size,
-            strict_block_end=True,
-            cross_insn_opt=False,
-        ).vex
-    except Exception:
-        return frozenset()
-
-    return frozenset(
-        addr
-        for stmt in vex.statements
-        if isinstance(stmt, pyvex.stmt.WrTmp)
-        and isinstance(stmt.data, pyvex.expr.Load)
-        and isinstance(stmt.data.addr, pyvex.expr.Const)
-        and isinstance((addr := stmt.data.addr.con.value), int)
-    )
 
 
 def _unknown_syscall_target(project: Project) -> tuple[int, str]:
@@ -186,23 +158,23 @@ class _ExtractionSession:
         self.pending = deque([func_addr])
         self.pending_addrs = {func_addr}
         self.blocks: dict[int, BlockSpec] = {}
+        self.data_regions = StaticDataRegions()
+        self.data_regions.claim_code(project, func_addr)
         self.leaf_nodes: dict[tuple[int, str], CFGNode] = {}
         self.static_targets: dict[int, tuple[int, ...]] = {}
         self.sweep_dispatcher_addr: int | None = None
         self.sweep_component_roots: frozenset[int] = frozenset()
 
-    def _is_verified_data_leader(self, addr: int) -> bool:
-        """Return whether ``addr`` is a referenced literal pool, not code."""
+    def _is_data_leader(self, addr: int) -> bool:
+        """Return whether this prospective leader is VEX-proven data."""
 
-        if not any(
-            addr in _static_data_load_addrs(self.project, block)
-            for block in self.blocks.values()
-        ):
-            return False
-        try:
-            return self.project.factory.block(addr).vex.jumpkind == "Ijk_NoDecode"
-        except Exception:
-            return False
+        return self.data_regions.contains(self.project, addr)
+
+    def _claim_code_target(self, addr: int) -> None:
+        """Give direct control flow precedence over a data classification."""
+
+        self.data_regions.claim_code(self.project, addr)
+        self.rejected_leaders.discard(addr)
 
     def _reject_data_leader(self, addr: int) -> None:
         """Reject a literal-pool leader and remove impossible call returns."""
@@ -233,6 +205,19 @@ class _ExtractionSession:
         self.blocks.pop(addr, None)
         self.static_targets.pop(addr, None)
 
+    def _truncate_blocks_at_data(self) -> None:
+        """Re-decode blocks that reached a newly proven data range."""
+
+        for start, block in tuple(self.blocks.items()):
+            if not any(
+                self.data_regions.contains(self.project, insn_addr)
+                for insn_addr in block.instruction_addrs[1:]
+            ):
+                continue
+            del self.blocks[start]
+            self.stats.block_redecodes += 1
+            self._queue(start)
+
     def _add_leader(self, addr: int) -> bool:
         """Record one safe target and re-split only real instruction boundaries.
 
@@ -243,8 +228,10 @@ class _ExtractionSession:
 
         if not self.bounds.addr <= addr < self.bounds.end_addr:
             return False
-        if addr in self.rejected_leaders:
+        if self._is_data_leader(addr):
+            self._reject_data_leader(addr)
             return False
+        self.rejected_leaders.discard(addr)
 
         covering_blocks = [
             block
@@ -285,7 +272,7 @@ class _ExtractionSession:
             self.pending_addrs.remove(addr)
             if addr in self.rejected_leaders:
                 continue
-            if self._is_verified_data_leader(addr):
+            if self._is_data_leader(addr):
                 logger.info(
                     f"Extract CFG rejected literal-pool leader {addr:#x} for "
                     f"function {self.func_addr:#x}"
@@ -300,6 +287,9 @@ class _ExtractionSession:
                 preserve_conditional_return_fallthrough=True,
                 split_syscall_blocks=True,
                 resolve_declared_nonreturning=True,
+                stop_at_data=lambda target: self.data_regions.contains(
+                    self.project, target
+                ),
             )
             if block is None:
                 self.stats.decode_failures += 1
@@ -345,13 +335,18 @@ class _ExtractionSession:
                 self.stats.leaders_split_existing_block += 1
                 self._queue(start)
 
+            for target in block.direct_targets:
+                self._claim_code_target(target)
             self.blocks[addr] = block
+            if self.data_regions.record_block(self.project, block):
+                self._truncate_blocks_at_data()
             self.stats.blocks_decoded += 1
             for rejoin_addr in alternate_rejoins:
                 self._add_leader(rejoin_addr)
-            for target in (*block.direct_targets, block.fallthrough_addr):
-                if target is not None:
-                    self._add_leader(target)
+            for target in block.direct_targets:
+                self._add_leader(target)
+            if block.fallthrough_addr is not None:
+                self._add_leader(block.fallthrough_addr)
 
     def _analysis_graph(self) -> tuple[CFGGraph, dict[int, CFGNode]]:
         """Build a temporary direct-edge graph for shared table planning."""
@@ -424,6 +419,7 @@ class _ExtractionSession:
                     if not self.bounds.addr <= target < self.bounds.end_addr:
                         accepted_targets.append(target)
                         continue
+                    self._claim_code_target(target)
                     before = target in self.blocks or target in self.pending_addrs
                     if self._add_leader(target):
                         accepted_targets.append(target)
@@ -567,7 +563,12 @@ class _ExtractionSession:
 
         recovered_blocks = dict(self.blocks)
         sweep = recover_executable_components(
-            self.project, self.bounds, recovered_blocks
+            self.project,
+            self.bounds,
+            recovered_blocks,
+            stop_at_data=lambda target: self.data_regions.contains(
+                self.project, target
+            ),
         )
         audit = sweep.audit
         self.stats.sweep_runs += 1
@@ -588,6 +589,11 @@ class _ExtractionSession:
 
         self.blocks = dict(selected.blocks)
         self.leaders = set(self.blocks)
+        for block in tuple(self.blocks.values()):
+            for target in block.direct_targets:
+                self._claim_code_target(target)
+                self._add_leader(target)
+        self._decode_all_blocks()
         self.sweep_dispatcher_addr = dispatcher_addr
         self.sweep_component_roots = selected.roots
         self.stats.sweep_reconnecting_components += selected.component_count

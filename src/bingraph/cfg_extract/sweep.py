@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from collections import deque
 from dataclasses import dataclass
 from typing import Mapping
@@ -98,6 +99,7 @@ def _recover_direct_closure(
     bounds: FunctionBounds,
     blocks: dict[int, BlockSpec],
     leaders: set[int],
+    stop_at_data: Callable[[int], bool] | None,
 ) -> int:
     """Close sweep targets using the extractor's safe leader invariant."""
 
@@ -120,6 +122,9 @@ def _recover_direct_closure(
         if not bounds.addr <= addr < bounds.end_addr:
             return
         if addr in rejected_leaders:
+            return
+        if stop_at_data is not None and stop_at_data(addr):
+            reject(addr)
             return
 
         covering_blocks = [
@@ -178,6 +183,7 @@ def _recover_direct_closure(
             preserve_conditional_return_fallthrough=True,
             split_syscall_blocks=True,
             resolve_declared_nonreturning=True,
+            stop_at_data=stop_at_data,
         )
         if block is None or block.size <= 0:
             decode_failures += 1
@@ -216,6 +222,8 @@ def recover_executable_components(
     project: Project,
     bounds: FunctionBounds,
     recovered_blocks: Mapping[int, BlockSpec],
+    *,
+    stop_at_data: Callable[[int], bool] | None = None,
 ) -> ExecutableSweep:
     """Recover and validate disconnected executable components without a CFG.
 
@@ -232,6 +240,9 @@ def recover_executable_components(
     non_executable_bytes = 0
 
     while cursor < bounds.end_addr:
+        if stop_at_data is not None and stop_at_data(cursor):
+            cursor += 1
+            continue
         covered_end = _covering_end(blocks, cursor)
         if covered_end is not None:
             cursor = covered_end
@@ -250,6 +261,7 @@ def recover_executable_components(
             preserve_conditional_return_fallthrough=True,
             split_syscall_blocks=True,
             resolve_declared_nonreturning=True,
+            stop_at_data=stop_at_data,
         )
         if block is None or block.size <= 0:
             decode_failures += 1
@@ -260,7 +272,9 @@ def recover_executable_components(
         leaders.add(block.addr)
         cursor = block.addr + block.size
 
-    decode_failures += _recover_direct_closure(project, bounds, blocks, leaders)
+    decode_failures += _recover_direct_closure(
+        project, bounds, blocks, leaders, stop_at_data
+    )
     reachable_addrs = _reachable_addrs(blocks, bounds)
     disconnected_addrs = set(blocks) - reachable_addrs
 
@@ -347,7 +361,11 @@ def audit_executable_range(
     project: Project,
     bounds: FunctionBounds,
     recovered_blocks: Mapping[int, BlockSpec],
+    *,
+    stop_at_data: Callable[[int], bool] | None = None,
 ) -> ExecutableSweepAudit:
     """Return read-only statistics for disconnected executable components."""
 
-    return recover_executable_components(project, bounds, recovered_blocks).audit
+    return recover_executable_components(
+        project, bounds, recovered_blocks, stop_at_data=stop_at_data
+    ).audit

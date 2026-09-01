@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import re
 
@@ -876,6 +877,7 @@ def decode_bounded_block(
     preserve_conditional_return_fallthrough: bool = False,
     split_syscall_blocks: bool = False,
     resolve_declared_nonreturning: bool = False,
+    stop_at_data: Callable[[int], bool] | None = None,
 ) -> BlockSpec | None:
     """Decode one bounded block until control flow or a known leader stops it."""
 
@@ -897,6 +899,8 @@ def decode_bounded_block(
 
     while bounds.addr <= cur < bounds.end_addr:
         if insns and cur in stop_addrs:
+            break
+        if insns and stop_at_data is not None and stop_at_data(cur):
             break
 
         insn = decode_one(project, cur, max_inst_bytes)
@@ -982,6 +986,7 @@ def decode_bounded_block(
             preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
             split_syscall_blocks=split_syscall_blocks,
             resolve_declared_nonreturning=resolve_declared_nonreturning,
+            stop_at_data=stop_at_data,
         )
 
     return block

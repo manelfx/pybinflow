@@ -308,6 +308,67 @@ def test_extract_does_not_fall_through_to_a_verified_literal_pool() -> None:
     assert cfg.extract_stats.call_fallthroughs_suppressed == 1
 
 
+def test_extract_stops_before_a_decodable_thumb_literal_pool() -> None:
+    """Do not execute literal bytes merely because Capstone can decode them."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/armhf/ld-linux-armhf.so.3")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x40DD51)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    continuation = nodes[0x40DDCB]
+
+    assert continuation.size == 2
+    assert [insn.mnemonic for insn in continuation.block.capstone.insns] == ["nop"]
+    assert 0x40DDCD not in nodes
+
+
+def test_extract_stops_at_an_unknown_thumb_literal_pool() -> None:
+    """Treat a conditional VEX ``unknown`` load as literal-pool evidence."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/armel/lwip_udpecho_bm.elf")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x451)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    literal_predecessor = nodes[0x4A3]
+
+    assert [insn.mnemonic for insn in literal_predecessor.block.capstone.insns] == [
+        "nop"
+    ]
+    assert 0x4A5 not in nodes
+
+
+def test_extract_reclaims_direct_targets_previously_seen_as_data() -> None:
+    """Keep a direct branch target executable after a data-reference conflict."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/armel/Nucleo_read_hyperterminal.elf")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x80064B5)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    target = nodes[0x80066F5]
+
+    assert [insn.mnemonic for insn in target.block.capstone.insns] == ["cmp.w", "beq"]
+
+
+def test_extract_keeps_s390_execute_relative_instruction_templates() -> None:
+    """Keep inline instructions fetched by S/390's execute-relative opcode."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/s390x/test-instr_s390x")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x80014A30)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+
+    template = nodes[0x80014E08]
+    assert [insn.mnemonic for insn in template.block.capstone.insns] == [
+        "xc",
+        "xc",
+        "xc",
+    ]
+
+
 def test_extract_leader_is_not_requeued_after_recovery() -> None:
     """Keep a cycle from repeatedly scheduling an unchanged completed block."""
 
@@ -320,6 +381,8 @@ def test_extract_leader_is_not_requeued_after_recovery() -> None:
     session.pending = []
     session.pending_addrs = set()
     session.stats = SimpleNamespace(block_redecodes=0)
+    session.project = SimpleNamespace()
+    session.data_regions = SimpleNamespace(contains=lambda *_args: False)
 
     session._add_leader(0x1000)
 
@@ -344,6 +407,10 @@ def test_extract_static_table_discovery_discards_stale_snapshot_plans(
     session.static_targets = {}
     session.stats = ExtractedCFGStats()
     session.project = SimpleNamespace()
+    session.data_regions = SimpleNamespace(
+        contains=lambda *_args: False,
+        claim_code=lambda *_args: None,
+    )
 
     dispatcher = object()
     stale_node = object()
@@ -565,10 +632,11 @@ def test_extract_keeps_original_graph_when_sweep_loses_dispatcher(monkeypatch) -
     session.static_targets = {}
     session.leaders = {0x1000}
     session.stats = ExtractedCFGStats()
+    session.data_regions = SimpleNamespace(contains=lambda *_args: False)
     session.sweep_dispatcher_addr = None
     session.sweep_component_roots = frozenset()
     monkeypatch.setattr(
-        builder_module, "recover_executable_components", lambda *_: sweep
+        builder_module, "recover_executable_components", lambda *_args, **_kwargs: sweep
     )
     monkeypatch.setattr(
         builder_module,

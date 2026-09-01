@@ -9,7 +9,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4333a6" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4333a6)</TD><TD ><B>gmformat_time_t+0x86</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004333a6&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rdx, qword ptr [rsp + 0x48]</TD></TR><TR><TD ALIGN="LEFT">0x004333ab&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">rdx, qword ptr fs&#58;[0x28]</TD></TR><TR><TD ALIGN="LEFT">0x004333b4&#58;&nbsp;</TD><TD ALIGN="LEFT">jne</TD><TD ALIGN="LEFT">0x4333bb</TD></TR></TABLE> }>];
 "0x4333b6" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4333b6)</TD><TD ><B>gmformat_time_t+0x96</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004333b6&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 0x58</TD></TR><TR><TD ALIGN="LEFT">0x004333ba&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
 "0x4333bb" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4333bb)</TD><TD ><B>gmformat_time_t+0x9b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004333bb&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x4333c0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4333c0)</TD><TD ><B>format_date_alloc</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x433320" -> "0x433347" [color=gray, style=dashed];
 "0x433347" -> "0x433390" [color=gray, style=dashed];
 "0x433390" -> "0x43339a" [color=red];
@@ -17,5 +16,4 @@ edge [fontname=monospace, fontsize=8];
 "0x43339a" -> "0x4333a6" [color=gray, style=dashed];
 "0x4333a6" -> "0x4333b6" [color=red];
 "0x4333a6" -> "0x4333bb" [color=green];
-"0x4333bb" -> "0x4333c0" [color=gray, style=dashed];
 }

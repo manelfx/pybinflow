@@ -50,7 +50,6 @@ edge [fontname=monospace, fontsize=8];
 "0x42c4a3" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x42c4a3)</TD><TD ><B>rlog_proc+0x2f3</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0042c4a3&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rsi, rbp</TD></TR><TR><TD ALIGN="LEFT">0x0042c4a6&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">byte ptr [r13 + rax], 0x2f</TD></TR><TR><TD ALIGN="LEFT">0x0042c4ac&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdi, [r13 + rax + 1]</TD></TR><TR><TD ALIGN="LEFT">0x0042c4b1&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404160</TD></TR></TABLE> }>];
 "0x42c4b6" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x42c4b6)</TD><TD ><B>rlog_proc+0x306</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0042c4b6&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x42c308</TD></TR></TABLE> }>];
 "0x42c4bb" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x42c4bb)</TD><TD ><B>rlog_proc+0x30b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0042c4bb&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x42c4c0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x42c4c0)</TD><TD ><B>log_dirproc</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x42c1b0" -> "0x42c1e6" [color=red];
 "0x42c1b0" -> "0x42c440" [color=green];
 "0x42c1e6" -> "0x42c1f9" [color=gray, style=dashed];
@@ -104,5 +103,4 @@ edge [fontname=monospace, fontsize=8];
 "0x42c49b" -> "0x42c4a3" [color=gray, style=dashed];
 "0x42c4a3" -> "0x42c4b6" [color=gray, style=dashed];
 "0x42c4b6" -> "0x42c308" [color=blue];
-"0x42c4bb" -> "0x42c4c0" [color=gray, style=dashed];
 }

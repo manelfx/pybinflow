@@ -13,7 +13,6 @@ edge [fontname=monospace, fontsize=8];
 "0xe800" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e800)</TD><TD ><B>crypto_generichash_blake2b__init_key+0xa2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e800&#58;&nbsp;</TD><TD ALIGN="LEFT">c.mv</TD><TD ALIGN="LEFT">a0, s0</TD></TR><TR><TD ALIGN="LEFT">0x0000e802&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a1, zero, 0x80</TD></TR><TR><TD ALIGN="LEFT">0x0000e806&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0xb852</TD></TR></TABLE> }>];
 "0xe80a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e80a)</TD><TD ><B>crypto_generichash_blake2b__init_key+0xac</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e80a&#58;&nbsp;</TD><TD ALIGN="LEFT">c.ldsp</TD><TD ALIGN="LEFT">ra, 0xe8(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e80c&#58;&nbsp;</TD><TD ALIGN="LEFT">c.ldsp</TD><TD ALIGN="LEFT">s0, 0xe0(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e80e&#58;&nbsp;</TD><TD ALIGN="LEFT">c.ldsp</TD><TD ALIGN="LEFT">s1, 0xd8(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e810&#58;&nbsp;</TD><TD ALIGN="LEFT">c.ldsp</TD><TD ALIGN="LEFT">s2, 0xd0(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e812&#58;&nbsp;</TD><TD ALIGN="LEFT">c.ldsp</TD><TD ALIGN="LEFT">s3, 0xc8(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e814&#58;&nbsp;</TD><TD ALIGN="LEFT">c.li</TD><TD ALIGN="LEFT">a0, 0</TD></TR><TR><TD ALIGN="LEFT">0x0000e816&#58;&nbsp;</TD><TD ALIGN="LEFT">c.addi16sp</TD><TD ALIGN="LEFT">sp, 0xf0</TD></TR><TR><TD ALIGN="LEFT">0x0000e818&#58;&nbsp;</TD><TD ALIGN="LEFT">c.jr</TD><TD ALIGN="LEFT">ra</TD></TR></TABLE> }>];
 "0xe81a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e81a)</TD><TD ><B>crypto_generichash_blake2b__init_key+0xbc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e81a&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0xb92c</TD></TR></TABLE> }>];
-"0xe81e" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e81e)</TD><TD ><B>crypto_generichash_blake2b__init_key_salt_personal</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0xe75e" -> "0xe77c" [color=red];
 "0xe75e" -> "0xe81a" [color=green];
 "0xe77c" -> "0xe780" [color=red];
@@ -27,5 +26,4 @@ edge [fontname=monospace, fontsize=8];
 "0xe7e6" -> "0xe7f4" [color=gray, style=dashed];
 "0xe7f4" -> "0xe800" [color=gray, style=dashed];
 "0xe800" -> "0xe80a" [color=gray, style=dashed];
-"0xe81a" -> "0xe81e" [color=gray, style=dashed];
 }

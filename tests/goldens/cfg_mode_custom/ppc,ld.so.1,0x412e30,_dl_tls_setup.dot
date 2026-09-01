@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x412ec0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x412ec0)</TD><TD ><B>_dl_tls_setup+0x90</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00412ec0&#58;&nbsp;</TD><TD ALIGN="LEFT">li</TD><TD ALIGN="LEFT">r3, -1</TD></TR><TR><TD ALIGN="LEFT">0x00412ec4&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">0x412ea4</TD></TR></TABLE> }>];
 "0x412ec8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x412ec8)</TD><TD ><B>_dl_tls_setup+0x98</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00412ec8&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r3, -0x2c8(r30)</TD></TR><TR><TD ALIGN="LEFT">0x00412ecc&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r4, -0x2dc(r30)</TD></TR><TR><TD ALIGN="LEFT">0x00412ed0&#58;&nbsp;</TD><TD ALIGN="LEFT">li</TD><TD ALIGN="LEFT">r5, 0x105</TD></TR><TR><TD ALIGN="LEFT">0x00412ed4&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r6, -0x2f0(r30)</TD></TR><TR><TD ALIGN="LEFT">0x00412ed8&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">0x417e70</TD></TR></TABLE> }>];
 "0x412edc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x412edc)</TD><TD ><B>_dl_tls_setup+0xac</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00412edc&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r3, -0x2c4(r30)</TD></TR><TR><TD ALIGN="LEFT">0x00412ee0&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r4, -0x2dc(r30)</TD></TR><TR><TD ALIGN="LEFT">0x00412ee4&#58;&nbsp;</TD><TD ALIGN="LEFT">li</TD><TD ALIGN="LEFT">r5, 0x104</TD></TR><TR><TD ALIGN="LEFT">0x00412ee8&#58;&nbsp;</TD><TD ALIGN="LEFT">lwz</TD><TD ALIGN="LEFT">r6, -0x2f0(r30)</TD></TR><TR><TD ALIGN="LEFT">0x00412eec&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">0x417e70</TD></TR></TABLE> }>];
-"0x412ef0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x412ef0)</TD><TD ><B>_dl_get_tls_static_info</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x412e30" -> "0x412e64" [color=red];
 "0x412e30" -> "0x412edc" [color=green];
 "0x412e64" -> "0x412e70" [color=red];
@@ -24,5 +23,4 @@ edge [fontname=monospace, fontsize=8];
 "0x412ea0" -> "0x412ea4" [color=blue, style=dashed];
 "0x412ec0" -> "0x412ea4" [color=blue];
 "0x412ec8" -> "0x412edc" [color=gray, style=dashed];
-"0x412edc" -> "0x412ef0" [color=gray, style=dashed];
 }

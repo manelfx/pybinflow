@@ -47,7 +47,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80526e7" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80526e7)</TD><TD ><B>__libc_message+0x267</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080526e7&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">esp, 0x10</TD></TR><TR><TD ALIGN="LEFT">0x080526ea&#58;&nbsp;</TD><TD ALIGN="LEFT">cmp</TD><TD ALIGN="LEFT">eax, -1</TD></TR><TR><TD ALIGN="LEFT">0x080526ed&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">dword ptr [ebp - 0x40], eax</TD></TR><TR><TD ALIGN="LEFT">0x080526f0&#58;&nbsp;</TD><TD ALIGN="LEFT">jne</TD><TD ALIGN="LEFT">0x80524b9</TD></TR></TABLE> }>];
 "0x80526f6" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80526f6)</TD><TD ><B>__libc_message+0x276</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080526f6&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x80524b2</TD></TR></TABLE> }>];
 "0x80526fb" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80526fb)</TD><TD ><B>__libc_message+0x27b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080526fb&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x806f0b0</TD></TR></TABLE> }>];
-"0x8052700" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8052700)</TD><TD ><B>__libc_fatal</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8052480" -> "0x805248b" [color=gray, style=dashed];
 "0x805248b" -> "0x80524b2" [color=red];
 "0x805248b" -> "0x80526b0" [color=green];
@@ -110,5 +109,4 @@ edge [fontname=monospace, fontsize=8];
 "0x80526e7" -> "0x80524b9" [color=green];
 "0x80526e7" -> "0x80526f6" [color=red];
 "0x80526f6" -> "0x80524b2" [color=blue];
-"0x80526fb" -> "0x8052700" [color=gray, style=dashed];
 }

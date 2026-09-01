@@ -163,7 +163,6 @@ edge [fontname=monospace, fontsize=8];
 "0x449a51" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x449a51)</TD><TD ><B>release+0x841</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00449a51&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdx, [rip + 0x5a400]</TD></TR><TR><TD ALIGN="LEFT">0x00449a58&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">esi, esi</TD></TR><TR><TD ALIGN="LEFT">0x00449a5a&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">eax, eax</TD></TR><TR><TD ALIGN="LEFT">0x00449a5c&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 1</TD></TR><TR><TD ALIGN="LEFT">0x00449a61&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x41ef50</TD></TR></TABLE> }>];
 "0x449a66" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x449a66)</TD><TD ><B>release+0x856</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00449a66&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x449776</TD></TR></TABLE> }>];
 "0x449a6b" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x449a6b)</TD><TD ><B>release+0x85b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00449a6b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x449a70" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x449a70)</TD><TD ><B>remove_fileproc</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x449210" -> "0x449261" [color=red];
 "0x449210" -> "0x449948" [color=green];
 "0x449261" -> "0x449266" [color=red];
@@ -372,5 +371,4 @@ edge [fontname=monospace, fontsize=8];
 "0x449a45" -> "0x449a51" [color=gray, style=dashed];
 "0x449a51" -> "0x449a66" [color=gray, style=dashed];
 "0x449a66" -> "0x449776" [color=blue];
-"0x449a6b" -> "0x449a70" [color=gray, style=dashed];
 }

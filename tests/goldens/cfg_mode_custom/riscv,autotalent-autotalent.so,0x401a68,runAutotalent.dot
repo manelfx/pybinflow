@@ -324,7 +324,6 @@ edge [fontname=monospace, fontsize=8];
 "0x403c34" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x403c34)</TD><TD ><B>runAutotalent+0x21cc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00403c34&#58;&nbsp;</TD><TD ALIGN="LEFT">fmv.s</TD><TD ALIGN="LEFT">ft11, fs8</TD></TR><TR><TD ALIGN="LEFT">0x00403c38&#58;&nbsp;</TD><TD ALIGN="LEFT">c.li</TD><TD ALIGN="LEFT">a2, 1</TD></TR><TR><TD ALIGN="LEFT">0x00403c3a&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">-0x1442</TD></TR></TABLE> }>];
 "0x403c3e" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x403c3e)</TD><TD ><B>runAutotalent+0x21d6</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00403c3e&#58;&nbsp;</TD><TD ALIGN="LEFT">sext.w</TD><TD ALIGN="LEFT">s4, s9</TD></TR><TR><TD ALIGN="LEFT">0x00403c42&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">s4, 0x18(sp)</TD></TR><TR><TD ALIGN="LEFT">0x00403c44&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">-0x1032</TD></TR></TABLE> }>];
 "0x403c48" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x403c48)</TD><TD ><B>runAutotalent+0x21e0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00403c48&#58;&nbsp;</TD><TD ALIGN="LEFT">c.fsdsp</TD><TD ALIGN="LEFT">fs2, 0x1e8(sp)</TD></TR><TR><TD ALIGN="LEFT">0x00403c4a&#58;&nbsp;</TD><TD ALIGN="LEFT">c.fsdsp</TD><TD ALIGN="LEFT">fs11, 0x1a0(sp)</TD></TR><TR><TD ALIGN="LEFT">0x00403c4c&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0x324c</TD></TR></TABLE> }>];
-"0x403c50" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x403c50)</TD><TD ><B>_init</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x401a68" -> "0x401c88" [color=red];
 "0x401a68" -> "0x401c8c" [color=green];
 "0x401c88" -> "0x401c8c" [color=gray, style=dashed];
@@ -863,5 +862,4 @@ edge [fontname=monospace, fontsize=8];
 "0x403c34" -> "0x403c3e" [color=gray, style=dashed];
 "0x403c3e" -> "0x402c12" [color=gray];
 "0x403c3e" -> "0x403c48" [color=gray, style=dashed];
-"0x403c48" -> "0x403c50" [color=gray, style=dashed];
 }

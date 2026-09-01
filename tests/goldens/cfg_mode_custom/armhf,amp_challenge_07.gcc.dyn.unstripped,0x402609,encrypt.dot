@@ -14,7 +14,6 @@ edge [fontname=monospace, fontsize=8];
 "0x40265f" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40265f)</TD><TD ><B>encrypt+0x56</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040265f&#58;&nbsp;</TD><TD ALIGN="LEFT">ldr</TD><TD ALIGN="LEFT">r3, [sp, &#35;0xc]</TD></TR><TR><TD ALIGN="LEFT">0x00402661&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, r4</TD></TR><TR><TD ALIGN="LEFT">0x00402663&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">r5, r3</TD></TR><TR><TD ALIGN="LEFT">0x00402665&#58;&nbsp;</TD><TD ALIGN="LEFT">blx</TD><TD ALIGN="LEFT">&#35;0x400e78</TD></TR></TABLE> }>];
 "0x402669" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x402669)</TD><TD ><B>encrypt+0x60</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00402669&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, r5</TD></TR><TR><TD ALIGN="LEFT">0x0040266b&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">sp, &#35;0x14</TD></TR><TR><TD ALIGN="LEFT">0x0040266d&#58;&nbsp;</TD><TD ALIGN="LEFT">pop.w</TD><TD ALIGN="LEFT">&#123;r4, r5, r6, r7, r8, sb, pc&#125;</TD></TR></TABLE> }>];
 "0x402671" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x402671)</TD><TD ><B>encrypt+0x68</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00402671&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x402581</TD></TR></TABLE> }>];
-"0x402675" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x402675)</TD><TD ><B>decrypt</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x402609" -> "0x40261d" [color=gray, style=dashed];
 "0x40261d" -> "0x40261f" [color=red];
 "0x40261d" -> "0x402671" [color=green];
@@ -29,5 +28,4 @@ edge [fontname=monospace, fontsize=8];
 "0x40265b" -> "0x40265f" [color=red];
 "0x40265b" -> "0x402671" [color=green];
 "0x40265f" -> "0x402669" [color=gray, style=dashed];
-"0x402671" -> "0x402675" [color=gray, style=dashed];
 }

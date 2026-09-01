@@ -21,7 +21,6 @@ edge [fontname=monospace, fontsize=8];
 "0xea14" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00ea14)</TD><TD ><B>crypto_generichash_blake2b__final+0x118</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000ea14&#58;&nbsp;</TD><TD ALIGN="LEFT">c.li</TD><TD ALIGN="LEFT">a0, -1</TD></TR><TR><TD ALIGN="LEFT">0x0000ea16&#58;&nbsp;</TD><TD ALIGN="LEFT">c.j</TD><TD ALIGN="LEFT">-0x1c</TD></TR></TABLE> }>];
 "0xea18" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00ea18)</TD><TD ><B>crypto_generichash_blake2b__final+0x11c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000ea18&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0xbb2a</TD></TR></TABLE> }>];
 "0xea1c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00ea1c)</TD><TD ><B>crypto_generichash_blake2b__final+0x120</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000ea1c&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a3, 0xc</TD></TR><TR><TD ALIGN="LEFT">0x0000ea20&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a3, a3, -0x724</TD></TR><TR><TD ALIGN="LEFT">0x0000ea24&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a2, zero, 0x130</TD></TR><TR><TD ALIGN="LEFT">0x0000ea28&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a1, 0xc</TD></TR><TR><TD ALIGN="LEFT">0x0000ea2c&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a1, a1, -0x570</TD></TR><TR><TD ALIGN="LEFT">0x0000ea30&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a0, 0xc</TD></TR><TR><TD ALIGN="LEFT">0x0000ea34&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a0, a0, -0x548</TD></TR><TR><TD ALIGN="LEFT">0x0000ea38&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0xd9fe</TD></TR></TABLE> }>];
-"0xea3c" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00ea3c)</TD><TD ><B>crypto_generichash_blake2b__blake2b</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0xe8fc" -> "0xe91e" [color=red];
 "0xe8fc" -> "0xea18" [color=green];
 "0xe91e" -> "0xe926" [color=red];
@@ -44,5 +43,4 @@ edge [fontname=monospace, fontsize=8];
 "0xea0e" -> "0xe996" [color=blue];
 "0xea14" -> "0xe9fa" [color=blue];
 "0xea18" -> "0xea1c" [color=gray, style=dashed];
-"0xea1c" -> "0xea3c" [color=gray, style=dashed];
 }

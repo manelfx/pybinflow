@@ -13,7 +13,6 @@ edge [fontname=monospace, fontsize=8];
 "0x401080" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x401080)</TD><TD ><B>handle_line_error+0xbe</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00401080&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x401096</TD></TR></TABLE> }>];
 "0x401082" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x401082)</TD><TD ><B>handle_line_error+0xc0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00401082&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rax, qword ptr [rip + 0xff04f]</TD></TR><TR><TD ALIGN="LEFT">0x00401089&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rsi, rax</TD></TR><TR><TD ALIGN="LEFT">0x0040108c&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 0xa</TD></TR><TR><TD ALIGN="LEFT">0x00401091&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x5000e8</TD></TR></TABLE> }>];
 "0x401096" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x401096)</TD><TD ><B>handle_line_error+0xd4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00401096&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x400324</TD></TR></TABLE> }>];
-"0x40109b" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40109b)</TD><TD ><B>process_line_count</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x400fc2" -> "0x400fff" [color=gray, style=dashed];
 "0x400fff" -> "0x401007" [color=gray, style=dashed];
 "0x401007" -> "0x40101d" [color=gray, style=dashed];
@@ -25,5 +24,4 @@ edge [fontname=monospace, fontsize=8];
 "0x401063" -> "0x401080" [color=gray, style=dashed];
 "0x401080" -> "0x401096" [color=blue];
 "0x401082" -> "0x401096" [color=gray, style=dashed];
-"0x401096" -> "0x40109b" [color=gray, style=dashed];
 }

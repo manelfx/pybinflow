@@ -33,7 +33,6 @@ edge [fontname=monospace, fontsize=8];
 "0x40ad9b" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40ad9b)</TD><TD ><B>areadlinkat_with_size+0x17b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040ad9b&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r15, rax</TD></TR><TR><TD ALIGN="LEFT">0x0040ad9e&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x40ad1b</TD></TR></TABLE> }>];
 "0x40ada3" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40ada3)</TD><TD ><B>areadlinkat_with_size+0x183</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040ada3&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">r15d, r15d</TD></TR><TR><TD ALIGN="LEFT">0x0040ada6&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x40ad1b</TD></TR></TABLE> }>];
 "0x40adab" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40adab)</TD><TD ><B>areadlinkat_with_size+0x18b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040adab&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x4026f0</TD></TR></TABLE> }>];
-"0x40adb0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40adb0)</TD><TD ><B>numbered_backup</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x40ac20" -> "0x40ac58" [color=red];
 "0x40ac20" -> "0x40ac6f" [color=green];
 "0x40ac58" -> "0x40ac6f" [color=blue, style=dashed];
@@ -76,5 +75,4 @@ edge [fontname=monospace, fontsize=8];
 "0x40ad90" -> "0x40ad9b" [color=gray, style=dashed];
 "0x40ad9b" -> "0x40ad1b" [color=blue];
 "0x40ada3" -> "0x40ad1b" [color=blue];
-"0x40adab" -> "0x40adb0" [color=gray, style=dashed];
 }

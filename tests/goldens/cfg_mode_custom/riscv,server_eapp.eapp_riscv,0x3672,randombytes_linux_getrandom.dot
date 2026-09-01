@@ -18,7 +18,6 @@ edge [fontname=monospace, fontsize=8];
 "0x36d6" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x0036d6)</TD><TD ><B>randombytes_linux_getrandom+0x64</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x000036d6&#58;&nbsp;</TD><TD ALIGN="LEFT">sub</TD><TD ALIGN="LEFT">s4, s4, s5</TD></TR><TR><TD ALIGN="LEFT">0x000036da&#58;&nbsp;</TD><TD ALIGN="LEFT">c.add</TD><TD ALIGN="LEFT">s0, s5</TD></TR><TR><TD ALIGN="LEFT">0x000036dc&#58;&nbsp;</TD><TD ALIGN="LEFT">bnez</TD><TD ALIGN="LEFT">s4, -0x4e</TD></TR></TABLE> }>];
 "0x36e0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x0036e0)</TD><TD ><B>randombytes_linux_getrandom+0x6e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x000036e0&#58;&nbsp;</TD><TD ALIGN="LEFT">c.li</TD><TD ALIGN="LEFT">a0, 0</TD></TR><TR><TD ALIGN="LEFT">0x000036e2&#58;&nbsp;</TD><TD ALIGN="LEFT">c.j</TD><TD ALIGN="LEFT">-0x22</TD></TR></TABLE> }>];
 "0x36e4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x0036e4)</TD><TD ><B>randombytes_linux_getrandom+0x72</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x000036e4&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a3, 0xf</TD></TR><TR><TD ALIGN="LEFT">0x000036e8&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a3, a3, -0x494</TD></TR><TR><TD ALIGN="LEFT">0x000036ec&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a2, zero, 0xea</TD></TR><TR><TD ALIGN="LEFT">0x000036f0&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a1, 0x17</TD></TR><TR><TD ALIGN="LEFT">0x000036f4&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a1, a1, -0x3a0</TD></TR><TR><TD ALIGN="LEFT">0x000036f8&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a0, 0x17</TD></TR><TR><TD ALIGN="LEFT">0x000036fc&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a0, a0, -0x378</TD></TR><TR><TD ALIGN="LEFT">0x00003700&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0x26c6</TD></TR></TABLE> }>];
-"0x3704" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x003704)</TD><TD ><B>randombytes_sysrandom_stir</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x3672" -> "0x368e" [color=blue, style=dashed];
 "0x368e" -> "0x3692" [color=red];
 "0x368e" -> "0x3698" [color=green];
@@ -40,5 +39,4 @@ edge [fontname=monospace, fontsize=8];
 "0x36d6" -> "0x368e" [color=green];
 "0x36d6" -> "0x36e0" [color=red];
 "0x36e0" -> "0x36c0" [color=blue];
-"0x36e4" -> "0x3704" [color=gray, style=dashed];
 }

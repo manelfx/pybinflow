@@ -34,7 +34,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8001d372" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8001d372)</TD><TD ><B>__gconv+0x232</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8001d372&#58;&nbsp;</TD><TD ALIGN="LEFT">lr</TD><TD ALIGN="LEFT">%r2, %r4</TD></TR><TR><TD ALIGN="LEFT">0x8001d374&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8001d2b8</TD></TR></TABLE> }>];
 "0x8001d378" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8001d378)</TD><TD ><B>__gconv+0x238</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8001d378&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r5, 0x80070740</TD></TR><TR><TD ALIGN="LEFT">0x8001d37e&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r4, 0x4a</TD></TR><TR><TD ALIGN="LEFT">0x8001d382&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r3, 0x80070700</TD></TR><TR><TD ALIGN="LEFT">0x8001d388&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x8007071e</TD></TR><TR><TD ALIGN="LEFT">0x8001d38e&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x800011a8</TD></TR></TABLE> }>];
 "0x8001d394" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8001d394)</TD><TD ><B>__gconv+0x254</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8001d394&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r5, 0x80070740</TD></TR><TR><TD ALIGN="LEFT">0x8001d39a&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r4, 0x2c</TD></TR><TR><TD ALIGN="LEFT">0x8001d39e&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r3, 0x80070700</TD></TR><TR><TD ALIGN="LEFT">0x8001d3a4&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x80070708</TD></TR><TR><TD ALIGN="LEFT">0x8001d3aa&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x800011a8</TD></TR></TABLE> }>];
-"0x8001d3b0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8001d3b0)</TD><TD ><B>__gconv_close</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8001d140" -> "0x8001d152" [color=red];
 "0x8001d140" -> "0x8001d2ca" [color=green];
 "0x8001d152" -> "0x8001d17c" [color=red];
@@ -79,5 +78,4 @@ edge [fontname=monospace, fontsize=8];
 "0x8001d36a" -> "0x8001d19a" [color=blue];
 "0x8001d372" -> "0x8001d2b8" [color=blue];
 "0x8001d378" -> "0x8001d394" [color=gray, style=dashed];
-"0x8001d394" -> "0x8001d3b0" [color=gray, style=dashed];
 }

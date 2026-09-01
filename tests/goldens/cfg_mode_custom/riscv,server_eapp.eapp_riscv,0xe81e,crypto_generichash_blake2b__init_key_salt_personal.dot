@@ -19,7 +19,6 @@ edge [fontname=monospace, fontsize=8];
 "0xe8ec" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e8ec)</TD><TD ><B>crypto_generichash_blake2b__init_key_salt_personal+0xce</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e8ec&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">zero, 0x20(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e8ee&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">zero, 0x28(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e8f0&#58;&nbsp;</TD><TD ALIGN="LEFT">c.bnez</TD><TD ALIGN="LEFT">s0, -0x5c</TD></TR></TABLE> }>];
 "0xe8f2" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e8f2)</TD><TD ><B>crypto_generichash_blake2b__init_key_salt_personal+0xd4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e8f2&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">zero, 0x30(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e8f4&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">zero, 0x38(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e8f6&#58;&nbsp;</TD><TD ALIGN="LEFT">c.j</TD><TD ALIGN="LEFT">-0x58</TD></TR></TABLE> }>];
 "0xe8f8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e8f8)</TD><TD ><B>crypto_generichash_blake2b__init_key_salt_personal+0xda</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e8f8&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0xba0a</TD></TR></TABLE> }>];
-"0xe8fc" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e8fc)</TD><TD ><B>crypto_generichash_blake2b__final</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0xe81e" -> "0xe83a" [color=red];
 "0xe81e" -> "0xe8f8" [color=green];
 "0xe83a" -> "0xe83e" [color=red];
@@ -42,5 +41,4 @@ edge [fontname=monospace, fontsize=8];
 "0xe8ec" -> "0xe894" [color=green];
 "0xe8ec" -> "0xe8f2" [color=red];
 "0xe8f2" -> "0xe89e" [color=blue];
-"0xe8f8" -> "0xe8fc" [color=gray, style=dashed];
 }

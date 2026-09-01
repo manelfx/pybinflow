@@ -69,6 +69,39 @@ def test_select_cfg_nodes_respects_the_exit_display_policy() -> None:
     }
 
 
+def test_select_cfg_nodes_hides_fake_return_only_leaves_in_jump_mode() -> None:
+    """Treat outer fake-return leaves like calls unless exits are always shown."""
+
+    graph = nx.DiGraph()
+    function_node = _Node(0x1000, 0x1000)
+    fake_return_leaf = _Node(0x4000, 0x1000, is_simprocedure=True)
+    graph.add_edge(function_node, fake_return_leaf, jumpkind="Ijk_FakeRet")
+
+    assert _select_cfg_nodes(graph, 0x1000, "never") == {function_node}
+    assert _select_cfg_nodes(graph, 0x1000, "jump") == {function_node}
+    assert _select_cfg_nodes(graph, 0x1000, "always") == {
+        function_node,
+        fake_return_leaf,
+    }
+
+
+def test_select_cfg_nodes_keeps_fake_return_leaf_with_a_real_exit() -> None:
+    """Keep a fake-return leaf under jump mode when it has a branch input."""
+
+    graph = nx.DiGraph()
+    function_node = _Node(0x1000, 0x1000)
+    branch_node = _Node(0x1010, 0x1000)
+    shared_leaf = _Node(0x4000, 0x1000, is_simprocedure=True)
+    graph.add_edge(function_node, shared_leaf, jumpkind="Ijk_FakeRet")
+    graph.add_edge(branch_node, shared_leaf, jumpkind="Ijk_Boring")
+
+    assert _select_cfg_nodes(graph, 0x1000, "jump") == {
+        function_node,
+        branch_node,
+        shared_leaf,
+    }
+
+
 def test_select_cfg_nodes_keeps_structural_indirect_dispatchers() -> None:
     """Keep a dispatcher that connects selected blocks under every policy."""
 

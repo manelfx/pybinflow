@@ -81,7 +81,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8001ffd8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8001ffd8)</TD><TD ><B>__gconv_transform_ucs4_internal+0x4d8</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8001ffd8&#58;&nbsp;</TD><TD ALIGN="LEFT">st</TD><TD ALIGN="LEFT">%r3, 0xc8(%r15)</TD></TR><TR><TD ALIGN="LEFT">0x8001ffdc&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8001fe3a</TD></TR></TABLE> }>];
 "0x8001ffe0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8001ffe0)</TD><TD ><B>__gconv_transform_ucs4_internal+0x4e0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8001ffe0&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r5, 0x800712f8</TD></TR><TR><TD ALIGN="LEFT">0x8001ffe6&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r4, 0x309</TD></TR><TR><TD ALIGN="LEFT">0x8001ffea&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r3, 0x80070f38</TD></TR><TR><TD ALIGN="LEFT">0x8001fff0&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x80070f60</TD></TR><TR><TD ALIGN="LEFT">0x8001fff6&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x800011a8</TD></TR></TABLE> }>];
 "0x8001fffc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8001fffc)</TD><TD ><B>__gconv_transform_ucs4_internal+0x4fc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8001fffc&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r5, 0x800712f8</TD></TR><TR><TD ALIGN="LEFT">0x80020002&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r4, 0x22f</TD></TR><TR><TD ALIGN="LEFT">0x80020006&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r3, 0x80070f38</TD></TR><TR><TD ALIGN="LEFT">0x8002000c&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x80070f4c</TD></TR><TR><TD ALIGN="LEFT">0x80020012&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x800011a8</TD></TR></TABLE> }>];
-"0x80020018" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80020018)</TD><TD ><B>__gconv_transform_internal_ucs4le</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8001fb00" -> "0x8001fb64" [color=red];
 "0x8001fb00" -> "0x8001fbca" [color=green];
 "0x8001fb64" -> "0x8001fb74" [color=red];
@@ -193,5 +192,4 @@ edge [fontname=monospace, fontsize=8];
 "0x8001ffbc" -> "0x8001ffd8" [color=gray, style=dashed];
 "0x8001ffd8" -> "0x8001fe3a" [color=blue];
 "0x8001ffe0" -> "0x8001fffc" [color=gray, style=dashed];
-"0x8001fffc" -> "0x80020018" [color=gray, style=dashed];
 }

@@ -15,7 +15,6 @@ edge [fontname=monospace, fontsize=8];
 "0x401268" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x401268)</TD><TD ><B>regexp_error+0xe7</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00401268&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x400f94</TD></TR></TABLE> }>];
 "0x40126d" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40126d)</TD><TD ><B>regexp_error+0xec</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040126d&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x4019f7</TD></TR></TABLE> }>];
 "0x401272" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x401272)</TD><TD ><B>regexp_error+0xf1</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00401272&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x400324</TD></TR></TABLE> }>];
-"0x401277" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x401277)</TD><TD ><B>process_regexp</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x401181" -> "0x4011ce" [color=gray, style=dashed];
 "0x4011ce" -> "0x4011e4" [color=gray, style=dashed];
 "0x4011e4" -> "0x401201" [color=gray, style=dashed];
@@ -30,5 +29,4 @@ edge [fontname=monospace, fontsize=8];
 "0x40125d" -> "0x401272" [color=green];
 "0x401268" -> "0x40126d" [color=gray, style=dashed];
 "0x40126d" -> "0x401272" [color=gray, style=dashed];
-"0x401272" -> "0x401277" [color=gray, style=dashed];
 }

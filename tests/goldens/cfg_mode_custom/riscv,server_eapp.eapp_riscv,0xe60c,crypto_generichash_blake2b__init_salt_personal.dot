@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0xe68a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e68a)</TD><TD ><B>crypto_generichash_blake2b__init_salt_personal+0x7e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e68a&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">zero, 0x30(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e68c&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">zero, 0x38(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e68e&#58;&nbsp;</TD><TD ALIGN="LEFT">c.bnez</TD><TD ALIGN="LEFT">s0, -0x20</TD></TR></TABLE> }>];
 "0xe690" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e690)</TD><TD ><B>crypto_generichash_blake2b__init_salt_personal+0x84</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e690&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">zero, 0x40(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e692&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">zero, 0x48(sp)</TD></TR><TR><TD ALIGN="LEFT">0x0000e694&#58;&nbsp;</TD><TD ALIGN="LEFT">c.j</TD><TD ALIGN="LEFT">-0x1c</TD></TR></TABLE> }>];
 "0xe696" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e696)</TD><TD ><B>crypto_generichash_blake2b__init_salt_personal+0x8a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000e696&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0xb7a8</TD></TR></TABLE> }>];
-"0xe69a" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00e69a)</TD><TD ><B>crypto_generichash_blake2b__update</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0xe60c" -> "0xe624" [color=red];
 "0xe60c" -> "0xe696" [color=green];
 "0xe624" -> "0xe664" [color=red];
@@ -25,5 +24,4 @@ edge [fontname=monospace, fontsize=8];
 "0xe68a" -> "0xe66e" [color=green];
 "0xe68a" -> "0xe690" [color=red];
 "0xe690" -> "0xe678" [color=blue];
-"0xe696" -> "0xe69a" [color=gray, style=dashed];
 }

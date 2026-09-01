@@ -48,7 +48,6 @@ edge [fontname=monospace, fontsize=8];
 "0x43e300" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x43e300)</TD><TD ><B>RCS_getbranch+0x210</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0043e300&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">eax, dword ptr [rsp + 0xc]</TD></TR><TR><TD ALIGN="LEFT">0x0043e304&#58;&nbsp;</TD><TD ALIGN="LEFT">test</TD><TD ALIGN="LEFT">eax, eax</TD></TR><TR><TD ALIGN="LEFT">0x0043e306&#58;&nbsp;</TD><TD ALIGN="LEFT">je</TD><TD ALIGN="LEFT">0x43e203</TD></TR></TABLE> }>];
 "0x43e30c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x43e30c)</TD><TD ><B>RCS_getbranch+0x21c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0043e30c&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x43e220</TD></TR></TABLE> }>];
 "0x43e311" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x43e311)</TD><TD ><B>RCS_getbranch+0x221</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0043e311&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rcx, [rip + 0x65388]</TD></TR><TR><TD ALIGN="LEFT">0x0043e318&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0xa76</TD></TR><TR><TD ALIGN="LEFT">0x0043e31d&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rsi, [rip + 0x649b8]</TD></TR><TR><TD ALIGN="LEFT">0x0043e324&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdi, [rip + 0x54817]</TD></TR><TR><TD ALIGN="LEFT">0x0043e32b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x4044a0</TD></TR></TABLE> }>];
-"0x43e330" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x43e330)</TD><TD ><B>RCS_branch_head</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x458070" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x458070)</TD><TD ><B>Xstrdup</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x43e0f0" -> "0x43e10f" [color=red];
 "0x43e0f0" -> "0x43e311" [color=green];
@@ -111,5 +110,4 @@ edge [fontname=monospace, fontsize=8];
 "0x43e300" -> "0x43e203" [color=green];
 "0x43e300" -> "0x43e30c" [color=red];
 "0x43e30c" -> "0x43e220" [color=blue];
-"0x43e311" -> "0x43e330" [color=gray, style=dashed];
 }

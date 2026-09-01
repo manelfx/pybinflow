@@ -26,7 +26,6 @@ edge [fontname=monospace, fontsize=8];
 "0x47d870" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47d870)</TD><TD ><B>_dl_fixup+0x1a0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047d870&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">rax</TD></TR></TABLE> }>];
 "0x47d872" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47d872)</TD><TD ><B>_dl_fixup+0x1a2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047d872&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x47d7db</TD></TR></TABLE> }>];
 "0x47d877" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47d877)</TD><TD ><B>_dl_fixup+0x1a7</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047d877&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">ecx, 0x4bc190</TD></TR><TR><TD ALIGN="LEFT">0x0047d87c&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0x4f</TD></TR><TR><TD ALIGN="LEFT">0x0047d881&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">esi, 0x4bc144</TD></TR><TR><TD ALIGN="LEFT">0x0047d886&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 0x4bc158</TD></TR><TR><TD ALIGN="LEFT">0x0047d88b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x401750</TD></TR></TABLE> }>];
-"0x47d890" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47d890)</TD><TD ><B>_dl_profile_fixup</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x47d6d0" -> "0x47d727" [color=red];
 "0x47d6d0" -> "0x47d877" [color=green];
 "0x47d727" -> "0x47d731" [color=red];
@@ -59,5 +58,4 @@ edge [fontname=monospace, fontsize=8];
 "0x47d864" -> "0x47d7b5" [color=blue];
 "0x47d870" -> "0x47d872" [color=gray, style=dashed];
 "0x47d872" -> "0x47d7db" [color=blue];
-"0x47d877" -> "0x47d890" [color=gray, style=dashed];
 }

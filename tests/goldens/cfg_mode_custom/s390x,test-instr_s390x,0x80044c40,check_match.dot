@@ -35,7 +35,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80044dd6" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80044dd6)</TD><TD ><B>check_match+0x196</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x80044dd6&#58;&nbsp;</TD><TD ALIGN="LEFT">lgr</TD><TD ALIGN="LEFT">%r3, %r12</TD></TR><TR><TD ALIGN="LEFT">0x80044dda&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r2, 0x10(%r4)</TD></TR><TR><TD ALIGN="LEFT">0x80044de0&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x80049ea8</TD></TR></TABLE> }>];
 "0x80044de6" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80044de6)</TD><TD ><B>check_match+0x1a6</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x80044de6&#58;&nbsp;</TD><TD ALIGN="LEFT">cije</TD><TD ALIGN="LEFT">%r2, 0, 0x80044d16</TD></TR></TABLE> }>];
 "0x80044dec" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80044dec)</TD><TD ><B>check_match+0x1ac</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x80044dec&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r5, 0x80080736</TD></TR><TR><TD ALIGN="LEFT">0x80044df2&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r4, 0x80</TD></TR><TR><TD ALIGN="LEFT">0x80044df6&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r3, 0x800804f8</TD></TR><TR><TD ALIGN="LEFT">0x80044dfc&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x80080504</TD></TR><TR><TD ALIGN="LEFT">0x80044e02&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x800011a8</TD></TR></TABLE> }>];
-"0x80044e08" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80044e08)</TD><TD ><B>do_lookup_x</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x80044c40" -> "0x80044c6e" [color=red];
 "0x80044c40" -> "0x80044dbe" [color=green];
 "0x80044c6e" -> "0x80044c84" [color=red];
@@ -89,5 +88,4 @@ edge [fontname=monospace, fontsize=8];
 "0x80044dd6" -> "0x80044de6" [color=gray, style=dashed];
 "0x80044de6" -> "0x80044d16" [color=green];
 "0x80044de6" -> "0x80044dec" [color=red];
-"0x80044dec" -> "0x80044e08" [color=gray, style=dashed];
 }

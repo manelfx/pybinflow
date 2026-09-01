@@ -39,7 +39,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80a65ba" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a65ba)</TD><TD ><B>do_sym+0x20a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a65ba&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, dword ptr [esp + 0x1c]</TD></TR><TR><TD ALIGN="LEFT">0x080a65be&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">eax, dword ptr [esp + 0x24]</TD></TR><TR><TD ALIGN="LEFT">0x080a65c2&#58;&nbsp;</TD><TD ALIGN="LEFT">test</TD><TD ALIGN="LEFT">edx, edx</TD></TR><TR><TD ALIGN="LEFT">0x080a65c4&#58;&nbsp;</TD><TD ALIGN="LEFT">je</TD><TD ALIGN="LEFT">0x80a642b</TD></TR></TABLE> }>];
 "0x80a65ca" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a65ca)</TD><TD ><B>do_sym+0x21a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a65ca&#58;&nbsp;</TD><TD ALIGN="LEFT">sub</TD><TD ALIGN="LEFT">esp, 4</TD></TR><TR><TD ALIGN="LEFT">0x080a65cd&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">ebx, edi</TD></TR><TR><TD ALIGN="LEFT">0x080a65cf&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">0</TD></TR><TR><TD ALIGN="LEFT">0x080a65d1&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">ebp</TD></TR><TR><TD ALIGN="LEFT">0x080a65d2&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">dword ptr [esp + 0x14]</TD></TR><TR><TD ALIGN="LEFT">0x080a65d6&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x809ed20</TD></TR></TABLE> }>];
 "0x80a65db" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a65db)</TD><TD ><B>do_sym+0x22b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a65db&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x806f0b0</TD></TR></TABLE> }>];
-"0x80a65e0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a65e0)</TD><TD ><B>_dl_vsym</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x80a63b0" -> "0x80a63bb" [color=gray, style=dashed];
 "0x80a63bb" -> "0x80a63ec" [color=gray, style=dashed];
 "0x80a63ec" -> "0x80a63ff" [color=red];
@@ -90,5 +89,4 @@ edge [fontname=monospace, fontsize=8];
 "0x80a65ba" -> "0x80a642b" [color=green];
 "0x80a65ba" -> "0x80a65ca" [color=red];
 "0x80a65ca" -> "0x80a65db" [color=gray, style=dashed];
-"0x80a65db" -> "0x80a65e0" [color=gray, style=dashed];
 }

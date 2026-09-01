@@ -19,7 +19,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8005c5e8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8005c5e8)</TD><TD ><B>_IO_seekoff_unlocked+0xb0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8005c5e8&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x80097070</TD></TR><TR><TD ALIGN="LEFT">0x8005c5ee&#58;&nbsp;</TD><TD ALIGN="LEFT">lg</TD><TD ALIGN="LEFT">%r2, 0(%r2)</TD></TR><TR><TD ALIGN="LEFT">0x8005c5f4&#58;&nbsp;</TD><TD ALIGN="LEFT">ear</TD><TD ALIGN="LEFT">%r1, %a0</TD></TR><TR><TD ALIGN="LEFT">0x8005c5f8&#58;&nbsp;</TD><TD ALIGN="LEFT">sllg</TD><TD ALIGN="LEFT">%r1, %r1, 0x20</TD></TR><TR><TD ALIGN="LEFT">0x8005c5fe&#58;&nbsp;</TD><TD ALIGN="LEFT">ear</TD><TD ALIGN="LEFT">%r1, %a1</TD></TR><TR><TD ALIGN="LEFT">0x8005c602&#58;&nbsp;</TD><TD ALIGN="LEFT">la</TD><TD ALIGN="LEFT">%r1, 0(%r2, %r1)</TD></TR><TR><TD ALIGN="LEFT">0x8005c606&#58;&nbsp;</TD><TD ALIGN="LEFT">lghi</TD><TD ALIGN="LEFT">%r2, -1</TD></TR><TR><TD ALIGN="LEFT">0x8005c60a&#58;&nbsp;</TD><TD ALIGN="LEFT">mvhi</TD><TD ALIGN="LEFT">0(%r1), 0x16</TD></TR><TR><TD ALIGN="LEFT">0x8005c610&#58;&nbsp;</TD><TD ALIGN="LEFT">br</TD><TD ALIGN="LEFT">%r14</TD></TR></TABLE> }>];
 "0x8005c612" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8005c612)</TD><TD ><B>_IO_seekoff_unlocked+0xda</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8005c612&#58;&nbsp;</TD><TD ALIGN="LEFT">tm</TD><TD ALIGN="LEFT">2(%r2), 1</TD></TR><TR><TD ALIGN="LEFT">0x8005c616&#58;&nbsp;</TD><TD ALIGN="LEFT">je</TD><TD ALIGN="LEFT">0x8005c584</TD></TR></TABLE> }>];
 "0x8005c61a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8005c61a)</TD><TD ><B>_IO_seekoff_unlocked+0xe2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8005c61a&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x80006428</TD></TR></TABLE> }>];
-"0x8005c620" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8005c620)</TD><TD ><B>_IO_seekoff</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8005c538" -> "0x8005c53e" [color=red];
 "0x8005c538" -> "0x8005c5e8" [color=green];
 "0x8005c53e" -> "0x8005c560" [color=red];
@@ -44,5 +43,4 @@ edge [fontname=monospace, fontsize=8];
 "0x8005c5e4" -> "0x8005c58e" [color=blue];
 "0x8005c612" -> "0x8005c584" [color=green];
 "0x8005c612" -> "0x8005c61a" [color=red];
-"0x8005c61a" -> "0x8005c620" [color=gray, style=dashed];
 }

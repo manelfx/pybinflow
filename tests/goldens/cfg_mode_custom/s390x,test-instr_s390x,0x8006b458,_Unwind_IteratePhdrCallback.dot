@@ -76,7 +76,6 @@ edge [fontname=monospace, fontsize=8];
 "0x8006b936" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8006b936)</TD><TD ><B>_Unwind_IteratePhdrCallback+0x4de</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8006b936&#58;&nbsp;</TD><TD ALIGN="LEFT">lgrl</TD><TD ALIGN="LEFT">%r8, 0x8009a2f0</TD></TR><TR><TD ALIGN="LEFT">0x8006b93c&#58;&nbsp;</TD><TD ALIGN="LEFT">ldgr</TD><TD ALIGN="LEFT">%f2, %r8</TD></TR><TR><TD ALIGN="LEFT">0x8006b940&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x8006b492</TD></TR></TABLE> }>];
 "0x8006b944" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8006b944)</TD><TD ><B>_Unwind_IteratePhdrCallback+0x4ec</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8006b944&#58;&nbsp;</TD><TD ALIGN="LEFT">clgrjl</TD><TD ALIGN="LEFT">%r4, %r1, 0x8006b8c8</TD></TR></TABLE> }>];
 "0x8006b94a" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8006b94a)</TD><TD ><B>_Unwind_IteratePhdrCallback+0x4f2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x8006b94a&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x80006428</TD></TR></TABLE> }>];
-"0x8006b950" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8006b950)</TD><TD ><B>__register_frame_info.part.6</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8006b458" -> "0x8006b47a" [color=red];
 "0x8006b458" -> "0x8006b480" [color=green];
 "0x8006b47a" -> "0x8006b480" [color=red];
@@ -185,5 +184,4 @@ edge [fontname=monospace, fontsize=8];
 "0x8006b936" -> "0x8006b492" [color=blue];
 "0x8006b944" -> "0x8006b8c8" [color=green];
 "0x8006b944" -> "0x8006b94a" [color=red];
-"0x8006b94a" -> "0x8006b950" [color=gray, style=dashed];
 }

@@ -141,7 +141,6 @@ edge [fontname=monospace, fontsize=8];
 "0x413daf" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x413daf)</TD><TD ><B>_IO_file_fopen+0x77f</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00413daf&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdx, [r12 + 1]</TD></TR><TR><TD ALIGN="LEFT">0x00413db4&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">byte ptr [r12], 0x2f</TD></TR><TR><TD ALIGN="LEFT">0x00413db9&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x413951</TD></TR></TABLE> }>];
 "0x413dbe" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x413dbe)</TD><TD ><B>_IO_file_fopen+0x78e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00413dbe&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">ecx, 0x4a16f0</TD></TR><TR><TD ALIGN="LEFT">0x00413dc3&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0x180</TD></TR><TR><TD ALIGN="LEFT">0x00413dc8&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">esi, 0x4a13d4</TD></TR><TR><TD ALIGN="LEFT">0x00413dcd&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 0x4a16cc</TD></TR><TR><TD ALIGN="LEFT">0x00413dd2&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x401750</TD></TR></TABLE> }>];
 "0x413dd7" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x413dd7)</TD><TD ><B>_IO_file_fopen+0x7a7</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00413dd7&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">ecx, 0x4a16f0</TD></TR><TR><TD ALIGN="LEFT">0x00413ddc&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0x17f</TD></TR><TR><TD ALIGN="LEFT">0x00413de1&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">esi, 0x4a13d4</TD></TR><TR><TD ALIGN="LEFT">0x00413de6&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 0x4a16b6</TD></TR><TR><TD ALIGN="LEFT">0x00413deb&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x401750</TD></TR></TABLE> }>];
-"0x413df0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x413df0)</TD><TD ><B>_IO_new_file_finish</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x413630" -> "0x413644" [color=red];
 "0x413630" -> "0x413698" [color=green];
 "0x413644" -> "0x41364f" [color=red];
@@ -344,5 +343,4 @@ edge [fontname=monospace, fontsize=8];
 "0x413da7" -> "0x413958" [color=blue];
 "0x413daf" -> "0x413951" [color=blue];
 "0x413dbe" -> "0x413dd7" [color=gray, style=dashed];
-"0x413dd7" -> "0x413df0" [color=gray, style=dashed];
 }

@@ -24,7 +24,6 @@ edge [fontname=monospace, fontsize=8];
 "0x80a6ebf" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a6ebf)</TD><TD ><B>read_encoded_value_with_base+0x12f</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a6ebf&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">ebx, edi</TD></TR><TR><TD ALIGN="LEFT">0x080a6ec1&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">eax, dword ptr [esp + 8]</TD></TR><TR><TD ALIGN="LEFT">0x080a6ec5&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x80a6dd5</TD></TR></TABLE> }>];
 "0x80a6ed0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a6ed0)</TD><TD ><B>read_encoded_value_with_base+0x140</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a6ed0&#58;&nbsp;</TD><TD ALIGN="LEFT">movzx</TD><TD ALIGN="LEFT">ebx, word ptr [ecx]</TD></TR><TR><TD ALIGN="LEFT">0x080a6ed3&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">edx, [ecx + 2]</TD></TR><TR><TD ALIGN="LEFT">0x080a6ed6&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x80a6dd5</TD></TR></TABLE> }>];
 "0x80a6edb" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a6edb)</TD><TD ><B>read_encoded_value_with_base+0x14b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x080a6edb&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x804e330</TD></TR></TABLE> }>];
-"0x80a6ee0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x80a6ee0)</TD><TD ><B>base_of_encoded_value</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x80a6d90" -> "0x80a6d9b" [color=gray, style=dashed];
 "0x80a6d9b" -> "0x80a6da8" [color=red];
 "0x80a6d9b" -> "0x80a6e00" [color=green];
@@ -58,5 +57,4 @@ edge [fontname=monospace, fontsize=8];
 "0x80a6ea8" -> "0x80a6ebf" [color=red];
 "0x80a6ebf" -> "0x80a6dd5" [color=blue];
 "0x80a6ed0" -> "0x80a6dd5" [color=blue];
-"0x80a6edb" -> "0x80a6ee0" [color=gray, style=dashed];
 }

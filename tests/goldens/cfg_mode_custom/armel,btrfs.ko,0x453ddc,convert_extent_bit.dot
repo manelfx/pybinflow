@@ -91,7 +91,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4542e0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4542e0)</TD><TD ><B>convert_extent_bit+0x504</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004542e0&#58;&nbsp;</TD><TD ALIGN="LEFT">subs</TD><TD ALIGN="LEFT">r4, r0, &#35;0</TD></TR><TR><TD ALIGN="LEFT">0x004542e4&#58;&nbsp;</TD><TD ALIGN="LEFT">bne</TD><TD ALIGN="LEFT">&#35;0x454068</TD></TR></TABLE> }>];
 "0x4542e8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4542e8)</TD><TD ><B>convert_extent_bit+0x50c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004542e8&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x4541bc</TD></TR></TABLE> }>];
 "0x4542ec" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4542ec)</TD><TD ><B>convert_extent_bit+0x510</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004542ec&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r0, sl</TD></TR><TR><TD ALIGN="LEFT">0x004542f0&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r1, r3</TD></TR><TR><TD ALIGN="LEFT">0x004542f4&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x451e38</TD></TR></TABLE> }>];
-"0x4542f8" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4542f8)</TD><TD ><B>set_record_extent_bits</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x453ddc" -> "0x453e14" [color=red];
 "0x453ddc" -> "0x4540dc" [color=green];
 "0x453e14" -> "0x453e1c" [color=red];
@@ -221,5 +220,4 @@ edge [fontname=monospace, fontsize=8];
 "0x4542e0" -> "0x454068" [color=green];
 "0x4542e0" -> "0x4542e8" [color=red];
 "0x4542e8" -> "0x4541bc" [color=blue];
-"0x4542ec" -> "0x4542f8" [color=gray, style=dashed];
 }

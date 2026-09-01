@@ -69,7 +69,6 @@ edge [fontname=monospace, fontsize=8];
 "0x48be18" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x48be18)</TD><TD ><B>build_tree+0x568</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0048be18&#58;&nbsp;</TD><TD ALIGN="LEFT">sub</TD><TD ALIGN="LEFT">rax, 1</TD></TR><TR><TD ALIGN="LEFT">0x0048be1c&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x48bdb8</TD></TR></TABLE> }>];
 "0x48be1e" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x48be1e)</TD><TD ><B>build_tree+0x56e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0048be1e&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">edx, edx</TD></TR><TR><TD ALIGN="LEFT">0x0048be20&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r12d, 0xffffffff</TD></TR><TR><TD ALIGN="LEFT">0x0048be26&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x48b959</TD></TR></TABLE> }>];
 "0x48be2b" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x48be2b)</TD><TD ><B>build_tree+0x57b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0048be2b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x48be30" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x48be30)</TD><TD ><B>scan_tree</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x48b8b0" -> "0x48b8fd" [color=red];
 "0x48b8b0" -> "0x48be1e" [color=green];
 "0x48b8fd" -> "0x48b93f" [color=blue];
@@ -168,5 +167,4 @@ edge [fontname=monospace, fontsize=8];
 "0x48be0f" -> "0x48bda0" [color=blue];
 "0x48be18" -> "0x48bdb8" [color=blue];
 "0x48be1e" -> "0x48b959" [color=blue];
-"0x48be2b" -> "0x48be30" [color=gray, style=dashed];
 }

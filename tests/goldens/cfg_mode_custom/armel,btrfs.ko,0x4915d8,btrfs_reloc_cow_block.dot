@@ -50,7 +50,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4918a4" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4918a4)</TD><TD ><B>btrfs_reloc_cow_block+0x2cc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004918a4&#58;&nbsp;</TD><TD ALIGN="LEFT">b</TD><TD ALIGN="LEFT">&#35;0x4916cc</TD></TR></TABLE> }>];
 "0x4918a8" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4918a8)</TD><TD ><B>btrfs_reloc_cow_block+0x2d0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004918a8&#58;&nbsp;</TD><TD ALIGN="LEFT">udf</TD><TD ALIGN="LEFT">&#35;0x12</TD></TR></TABLE> }>];
 "0x4918ac" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4918ac)</TD><TD ><B>btrfs_reloc_cow_block+0x2d4</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004918ac&#58;&nbsp;</TD><TD ALIGN="LEFT">ldrd</TD><TD ALIGN="LEFT">r2, r3, [r6, &#35;0x10]</TD></TR><TR><TD ALIGN="LEFT">0x004918b0&#58;&nbsp;</TD><TD ALIGN="LEFT">bl</TD><TD ALIGN="LEFT">&#35;0x4ba79c</TD></TR></TABLE> }>];
-"0x4918b4" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4918b4)</TD><TD ><B>btrfs_reloc_pre_snapshot</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4915d8" -> "0x4915f0" [color=red];
 "0x4915d8" -> "0x49169c" [color=green];
 "0x4915f0" -> "0x491604" [color=red];
@@ -122,5 +121,4 @@ edge [fontname=monospace, fontsize=8];
 "0x491894" -> "0x4918a4" [color=gray, style=dashed];
 "0x4918a4" -> "0x4916cc" [color=blue];
 "0x4918a8" -> "0x4918ac" [color=blue, style=dashed];
-"0x4918ac" -> "0x4918b4" [color=gray, style=dashed];
 }

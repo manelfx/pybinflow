@@ -19,7 +19,6 @@ edge [fontname=monospace, fontsize=8];
 "0x473cf7" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x473cf7)</TD><TD ><B>is_dir_p.isra.0+0x127</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00473cf7&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x473cb2</TD></TR></TABLE> }>];
 "0x473d00" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x473d00)</TD><TD ><B>is_dir_p.isra.0+0x130</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00473d00&#58;&nbsp;</TD><TD ALIGN="LEFT">or</TD><TD ALIGN="LEFT">qword ptr [rsp + rdx - 8], 0</TD></TR><TR><TD ALIGN="LEFT">0x00473d06&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x473c58</TD></TR></TABLE> }>];
 "0x473d0b" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x473d0b)</TD><TD ><B>is_dir_p.isra.0+0x13b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00473d0b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x473d10" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x473d10)</TD><TD ><B>rpl_globfree.part.0</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x473bd0" -> "0x473c0e" [color=gray, style=dashed];
 "0x473c0e" -> "0x473c31" [color=red];
 "0x473c0e" -> "0x473c46" [color=green];
@@ -42,5 +41,4 @@ edge [fontname=monospace, fontsize=8];
 "0x473ced" -> "0x473cf7" [color=red];
 "0x473cf7" -> "0x473cb2" [color=blue];
 "0x473d00" -> "0x473c58" [color=blue];
-"0x473d0b" -> "0x473d10" [color=gray, style=dashed];
 }

@@ -12,7 +12,6 @@ edge [fontname=monospace, fontsize=8];
 "0x3ce0" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x003ce0)</TD><TD ><B>randombytes_salsa20_random_buf+0x82</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00003ce0&#58;&nbsp;</TD><TD ALIGN="LEFT">c.sdsp</TD><TD ALIGN="LEFT">a0, 0(sp)</TD></TR><TR><TD ALIGN="LEFT">0x00003ce2&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0x2dc</TD></TR></TABLE> }>];
 "0x3ce6" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x003ce6)</TD><TD ><B>randombytes_salsa20_random_buf+0x88</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00003ce6&#58;&nbsp;</TD><TD ALIGN="LEFT">c.ldsp</TD><TD ALIGN="LEFT">a0, 0(sp)</TD></TR><TR><TD ALIGN="LEFT">0x00003ce8&#58;&nbsp;</TD><TD ALIGN="LEFT">c.j</TD><TD ALIGN="LEFT">-0x76</TD></TR></TABLE> }>];
 "0x3cea" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x003cea)</TD><TD ><B>randombytes_salsa20_random_buf+0x8c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00003cea&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a3, 0xe</TD></TR><TR><TD ALIGN="LEFT">0x00003cee&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a3, a3, 0x5b6</TD></TR><TR><TD ALIGN="LEFT">0x00003cf2&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a2, zero, 0x1f9</TD></TR><TR><TD ALIGN="LEFT">0x00003cf6&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a1, 0x16</TD></TR><TR><TD ALIGN="LEFT">0x00003cfa&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a1, a1, 0x702</TD></TR><TR><TD ALIGN="LEFT">0x00003cfe&#58;&nbsp;</TD><TD ALIGN="LEFT">auipc</TD><TD ALIGN="LEFT">a0, 0x16</TD></TR><TR><TD ALIGN="LEFT">0x00003d02&#58;&nbsp;</TD><TD ALIGN="LEFT">addi</TD><TD ALIGN="LEFT">a0, a0, 0x752</TD></TR><TR><TD ALIGN="LEFT">0x00003d06&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0x2ccc</TD></TR></TABLE> }>];
-"0x3d0a" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x003d0a)</TD><TD ><B>randombytes_salsa20_random</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x3c5e" -> "0x3c72" [color=red];
 "0x3c5e" -> "0x3ce0" [color=green];
 "0x3c72" -> "0x3c88" [color=gray, style=dashed];
@@ -24,5 +23,4 @@ edge [fontname=monospace, fontsize=8];
 "0x3cb2" -> "0x3cd8" [color=gray, style=dashed];
 "0x3ce0" -> "0x3ce6" [color=gray, style=dashed];
 "0x3ce6" -> "0x3c72" [color=blue];
-"0x3cea" -> "0x3d0a" [color=gray, style=dashed];
 }

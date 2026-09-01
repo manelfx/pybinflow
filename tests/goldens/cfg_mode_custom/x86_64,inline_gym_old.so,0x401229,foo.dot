@@ -15,7 +15,6 @@ edge [fontname=monospace, fontsize=8];
 "0x4012b7" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4012b7)</TD><TD ><B>foo+0x8e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004012b7&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 0x402006</TD></TR><TR><TD ALIGN="LEFT">0x004012bc&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x401090</TD></TR></TABLE> }>];
 "0x4012c1" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4012c1)</TD><TD ><B>foo+0x98</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004012c1&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x401260</TD></TR></TABLE> }>];
 "0x4012c3" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4012c3)</TD><TD ><B>foo+0x9a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x004012c3&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x4010a0</TD></TR></TABLE> }>];
-"0x4012c8" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x4012c8)</TD><TD ><B>mylloc</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 subgraph entry_rank {
 rank=source;
 "0x401229";
@@ -35,5 +34,4 @@ rank=source;
 "0x4012b5" -> "0x401260" [color=blue];
 "0x4012b7" -> "0x4012c1" [color=gray, style=dashed];
 "0x4012c1" -> "0x401260" [color=blue];
-"0x4012c3" -> "0x4012c8" [color=gray, style=dashed];
 }

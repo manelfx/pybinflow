@@ -31,7 +31,6 @@ edge [fontname=monospace, fontsize=8];
 "0x400962" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400962)</TD><TD ><B>jump_table_a+0x122</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00400962&#58;&nbsp;</TD><TD ALIGN="LEFT">larl</TD><TD ALIGN="LEFT">%r2, 0x400a2e</TD></TR><TR><TD ALIGN="LEFT">0x00400968&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x4006a8</TD></TR></TABLE> }>];
 "0x40096e" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x40096e)</TD><TD ><B>jump_table_a+0x12e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0040096e&#58;&nbsp;</TD><TD ALIGN="LEFT">j</TD><TD ALIGN="LEFT">0x400886</TD></TR></TABLE> }>];
 "0x400972" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400972)</TD><TD ><B>jump_table_a+0x132</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00400972&#58;&nbsp;</TD><TD ALIGN="LEFT">brasl</TD><TD ALIGN="LEFT">%r14, 0x400688</TD></TR></TABLE> }>];
-"0x400978" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x400978)</TD><TD ><B>__libc_csu_init</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x400840" -> "0x400870" [color=gray, style=dashed];
 "0x400870" -> "0x40087a" [color=red];
 "0x400870" -> "0x4008ac" [color=green];
@@ -82,5 +81,4 @@ edge [fontname=monospace, fontsize=8];
 "0x40095e" -> "0x400886" [color=blue];
 "0x400962" -> "0x40096e" [color=gray, style=dashed];
 "0x40096e" -> "0x400886" [color=blue];
-"0x400972" -> "0x400978" [color=gray, style=dashed];
 }

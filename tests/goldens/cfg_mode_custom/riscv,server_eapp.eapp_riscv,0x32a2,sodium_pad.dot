@@ -17,7 +17,6 @@ edge [fontname=monospace, fontsize=8];
 "0x3324" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x003324)</TD><TD ><B>sodium_pad+0x82</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00003324&#58;&nbsp;</TD><TD ALIGN="LEFT">c.li</TD><TD ALIGN="LEFT">a0, -1</TD></TR><TR><TD ALIGN="LEFT">0x00003326&#58;&nbsp;</TD><TD ALIGN="LEFT">c.j</TD><TD ALIGN="LEFT">-0x12</TD></TR></TABLE> }>];
 "0x3328" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x003328)</TD><TD ><B>sodium_pad+0x86</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00003328&#58;&nbsp;</TD><TD ALIGN="LEFT">c.li</TD><TD ALIGN="LEFT">a0, -1</TD></TR><TR><TD ALIGN="LEFT">0x0000332a&#58;&nbsp;</TD><TD ALIGN="LEFT">c.jr</TD><TD ALIGN="LEFT">ra</TD></TR></TABLE> }>];
 "0x332c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00332c)</TD><TD ><B>sodium_pad+0x8a</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0000332c&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">-0x43e</TD></TR></TABLE> }>];
-"0x3330" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x003330)</TD><TD ><B>sodium_unpad</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x32a2" -> "0x32a4" [color=red];
 "0x32a2" -> "0x3328" [color=green];
 "0x32a4" -> "0x32b8" [color=red];
@@ -36,5 +35,4 @@ edge [fontname=monospace, fontsize=8];
 "0x3312" -> "0x3314" [color=blue, style=dashed];
 "0x331a" -> "0x32bc" [color=blue];
 "0x3324" -> "0x3314" [color=blue];
-"0x332c" -> "0x3330" [color=gray, style=dashed];
 }

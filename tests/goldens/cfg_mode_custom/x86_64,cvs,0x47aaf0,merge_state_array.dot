@@ -17,7 +17,6 @@ edge [fontname=monospace, fontsize=8];
 "0x47ab9c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47ab9c)</TD><TD ><B>merge_state_array+0xac</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047ab9c&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rcx, qword ptr [rsp + 0x28]</TD></TR><TR><TD ALIGN="LEFT">0x0047aba1&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">rcx, qword ptr fs&#58;[0x28]</TD></TR><TR><TD ALIGN="LEFT">0x0047abaa&#58;&nbsp;</TD><TD ALIGN="LEFT">jne</TD><TD ALIGN="LEFT">0x47abbb</TD></TR></TABLE> }>];
 "0x47abac" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47abac)</TD><TD ><B>merge_state_array+0xbc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047abac&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 0x38</TD></TR><TR><TD ALIGN="LEFT">0x0047abb0&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbx</TD></TR><TR><TD ALIGN="LEFT">0x0047abb1&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">rbp</TD></TR><TR><TD ALIGN="LEFT">0x0047abb2&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r12</TD></TR><TR><TD ALIGN="LEFT">0x0047abb4&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r13</TD></TR><TR><TD ALIGN="LEFT">0x0047abb6&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r14</TD></TR><TR><TD ALIGN="LEFT">0x0047abb8&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">r15</TD></TR><TR><TD ALIGN="LEFT">0x0047abba&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
 "0x47abbb" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47abbb)</TD><TD ><B>merge_state_array+0xcb</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0047abbb&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x47abc0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x47abc0)</TD><TD ><B>expand_bkref_cache</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x47aaf0" -> "0x47ab17" [color=red];
 "0x47aaf0" -> "0x47ab9a" [color=green];
 "0x47ab17" -> "0x47ab7d" [color=blue];
@@ -39,5 +38,4 @@ edge [fontname=monospace, fontsize=8];
 "0x47ab9a" -> "0x47ab9c" [color=blue, style=dashed];
 "0x47ab9c" -> "0x47abac" [color=red];
 "0x47ab9c" -> "0x47abbb" [color=green];
-"0x47abbb" -> "0x47abc0" [color=gray, style=dashed];
 }

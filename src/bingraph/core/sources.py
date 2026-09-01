@@ -19,6 +19,18 @@ def _is_call_like_exit(jumpkind: object) -> bool:
     )
 
 
+def _is_fake_return_only_leaf(cfg_graph: Any, node: Any) -> bool:
+    """Return whether a synthetic leaf is reached only after calls return."""
+
+    predecessors = tuple(cfg_graph.predecessors(node))
+    if not node.is_simprocedure or not predecessors:
+        return False
+    return all(
+        cfg_graph.get_edge_data(predecessor, node).get("jumpkind") == "Ijk_FakeRet"
+        for predecessor in predecessors
+    )
+
+
 def _is_path_terminator(node: Any) -> bool:
     """Return whether ``node`` is angr's artificial path-end marker."""
 
@@ -110,7 +122,11 @@ def _select_cfg_nodes(
                 selected.add(destination)
             elif is_semantic_exit and (
                 exits == "always"
-                or (exits == "jump" and not _is_call_like_exit(jumpkind))
+                or (
+                    exits == "jump"
+                    and not _is_call_like_exit(jumpkind)
+                    and not _is_fake_return_only_leaf(cfg_graph, destination)
+                )
             ):
                 selected.add(destination)
 

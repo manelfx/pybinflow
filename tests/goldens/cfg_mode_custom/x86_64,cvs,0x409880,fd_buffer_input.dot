@@ -39,7 +39,6 @@ edge [fontname=monospace, fontsize=8];
 "0x409a32" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x409a32)</TD><TD ><B>fd_buffer_input+0x1b2</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00409a32&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">eax, 0xffffffff</TD></TR><TR><TD ALIGN="LEFT">0x00409a37&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x4098ec</TD></TR></TABLE> }>];
 "0x409a3c" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x409a3c)</TD><TD ><B>fd_buffer_input+0x1bc</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00409a3c&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rcx, [rip + 0x8901d]</TD></TR><TR><TD ALIGN="LEFT">0x00409a43&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, 0x722</TD></TR><TR><TD ALIGN="LEFT">0x00409a48&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rsi, [rip + 0x90bf8]</TD></TR><TR><TD ALIGN="LEFT">0x00409a4f&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdi, [rip + 0x88ec6]</TD></TR><TR><TD ALIGN="LEFT">0x00409a56&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x4044a0</TD></TR></TABLE> }>];
 "0x409a5b" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x409a5b)</TD><TD ><B>fd_buffer_input+0x1db</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00409a5b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x409a60" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x409a60)</TD><TD ><B>fd_buffer_output</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x409880" -> "0x4098b1" [color=red];
 "0x409880" -> "0x409a3c" [color=green];
 "0x4098b1" -> "0x4098cb" [color=red];
@@ -89,5 +88,4 @@ edge [fontname=monospace, fontsize=8];
 "0x409a2e" -> "0x4099e2" [color=blue];
 "0x409a32" -> "0x4098ec" [color=blue];
 "0x409a3c" -> "0x409a5b" [color=gray, style=dashed];
-"0x409a5b" -> "0x409a60" [color=gray, style=dashed];
 }

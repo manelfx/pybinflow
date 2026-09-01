@@ -26,7 +26,6 @@ edge [fontname=monospace, fontsize=8];
 "0x805834d" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x805834d)</TD><TD ><B>get_free_list+0xbd</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0805834d&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">dword ptr gs&#58;[edi], esi</TD></TR></TABLE> }>];
 "0x8058350" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8058350)</TD><TD ><B>get_free_list+0xc0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x08058350&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">eax, esi</TD></TR><TR><TD ALIGN="LEFT">0x08058352&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">ebx</TD></TR><TR><TD ALIGN="LEFT">0x08058353&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">esi</TD></TR><TR><TD ALIGN="LEFT">0x08058354&#58;&nbsp;</TD><TD ALIGN="LEFT">pop</TD><TD ALIGN="LEFT">edi</TD></TR><TR><TD ALIGN="LEFT">0x08058355&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
 "0x8058360" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8058360)</TD><TD ><B>get_free_list+0xd0</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x08058360&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">eax, [ebx - 0x2c560]</TD></TR><TR><TD ALIGN="LEFT">0x08058366&#58;&nbsp;</TD><TD ALIGN="LEFT">sub</TD><TD ALIGN="LEFT">esp, 0xc</TD></TR><TR><TD ALIGN="LEFT">0x08058369&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">edx, [ebx - 0x2d418]</TD></TR><TR><TD ALIGN="LEFT">0x0805836f&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">ecx, 0x301</TD></TR><TR><TD ALIGN="LEFT">0x08058374&#58;&nbsp;</TD><TD ALIGN="LEFT">push</TD><TD ALIGN="LEFT">eax</TD></TR><TR><TD ALIGN="LEFT">0x08058375&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">eax, [ebx - 0x2d410]</TD></TR><TR><TD ALIGN="LEFT">0x0805837b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x80581d0</TD></TR></TABLE> }>];
-"0x8058380" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x8058380)</TD><TD ><B>malloc_printerr</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x8058290" -> "0x8058298" [color=gray, style=dashed];
 "0x8058298" -> "0x80582ac" [color=red];
 "0x8058298" -> "0x8058350" [color=green];
@@ -59,5 +58,4 @@ edge [fontname=monospace, fontsize=8];
 "0x8058344" -> "0x805834d" [color=green];
 "0x8058346" -> "0x805834d" [color=gray, style=dashed];
 "0x805834d" -> "0x8058350" [color=blue, style=dashed];
-"0x8058360" -> "0x8058380" [color=gray, style=dashed];
 }

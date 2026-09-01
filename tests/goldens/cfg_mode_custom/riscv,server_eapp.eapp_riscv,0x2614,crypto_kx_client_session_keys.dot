@@ -27,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x2752" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x002752)</TD><TD ><B>crypto_kx_client_session_keys+0x13e</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00002752&#58;&nbsp;</TD><TD ALIGN="LEFT">c.j</TD><TD ALIGN="LEFT">-0x5e</TD></TR></TABLE> }>];
 "0x2754" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x002754)</TD><TD ><B>crypto_kx_client_session_keys+0x140</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00002754&#58;&nbsp;</TD><TD ALIGN="LEFT">c.li</TD><TD ALIGN="LEFT">s3, -1</TD></TR><TR><TD ALIGN="LEFT">0x00002756&#58;&nbsp;</TD><TD ALIGN="LEFT">c.j</TD><TD ALIGN="LEFT">-0x58</TD></TR></TABLE> }>];
 "0x2758" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x002758)</TD><TD ><B>crypto_kx_client_session_keys+0x144</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00002758&#58;&nbsp;</TD><TD ALIGN="LEFT">jal</TD><TD ALIGN="LEFT">0x796</TD></TR></TABLE> }>];
-"0x275c" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x00275c)</TD><TD ><B>crypto_kx_server_session_keys</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x2614" -> "0x264c" [color=red];
 "0x2614" -> "0x272a" [color=green];
 "0x264c" -> "0x2652" [color=red];
@@ -58,5 +57,4 @@ edge [fontname=monospace, fontsize=8];
 "0x2738" -> "0x2752" [color=red];
 "0x2752" -> "0x26f4" [color=blue];
 "0x2754" -> "0x26fe" [color=blue];
-"0x2758" -> "0x275c" [color=gray, style=dashed];
 }

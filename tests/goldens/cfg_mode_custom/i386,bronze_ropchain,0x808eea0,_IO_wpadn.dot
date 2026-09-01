@@ -27,7 +27,6 @@ edge [fontname=monospace, fontsize=8];
 "0x808efdc" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x808efdc)</TD><TD ><B>_IO_wpadn+0x13c</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0808efdc&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">dword ptr [esp + 0xc], edx</TD></TR><TR><TD ALIGN="LEFT">0x0808efe0&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x8052740</TD></TR></TABLE> }>];
 "0x808efe5" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x808efe5)</TD><TD ><B>_IO_wpadn+0x145</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0808efe5&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edx, dword ptr [esp + 0xc]</TD></TR><TR><TD ALIGN="LEFT">0x0808efe9&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x808efb0</TD></TR></TABLE> }>];
 "0x808efeb" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x808efeb)</TD><TD ><B>_IO_wpadn+0x14b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0808efeb&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x806f0b0</TD></TR></TABLE> }>];
-"0x808eff0" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x808eff0)</TD><TD ><B>save_for_wbackup.isra.0</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x808eea0" -> "0x808eea9" [color=gray, style=dashed];
 "0x808eea9" -> "0x808eee2" [color=red];
 "0x808eea9" -> "0x808ef05" [color=green];
@@ -61,5 +60,4 @@ edge [fontname=monospace, fontsize=8];
 "0x808efd8" -> "0x808ef86" [color=blue];
 "0x808efdc" -> "0x808efe5" [color=gray, style=dashed];
 "0x808efe5" -> "0x808efb0" [color=blue];
-"0x808efeb" -> "0x808eff0" [color=gray, style=dashed];
 }

@@ -231,7 +231,6 @@ edge [fontname=monospace, fontsize=8];
 "0x42e857" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x42e857)</TD><TD ><B>cvslog+0xb27</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0042e857&#58;&nbsp;</TD><TD ALIGN="LEFT">lea</TD><TD ALIGN="LEFT">rdi, [rip + 0x99202]</TD></TR><TR><TD ALIGN="LEFT">0x0042e85e&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x4334d0</TD></TR></TABLE> }>];
 "0x42e863" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x42e863)</TD><TD ><B>cvslog+0xb33</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0042e863&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">r13d, r13d</TD></TR><TR><TD ALIGN="LEFT">0x0042e866&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x42e3ef</TD></TR></TABLE> }>];
 "0x42e86b" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x42e86b)</TD><TD ><B>cvslog+0xb3b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0042e86b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x42e870" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x42e870)</TD><TD ><B>log_buffer_get_fd</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x42dd30" -> "0x42dd6b" [color=blue, style=dashed];
 "0x42dd6b" -> "0x42dd6b" [color=green];
 "0x42dd6b" -> "0x42dd6d" [color=red];
@@ -546,5 +545,4 @@ edge [fontname=monospace, fontsize=8];
 "0x42e852" -> "0x42e416" [color=blue];
 "0x42e857" -> "0x42e863" [color=gray, style=dashed];
 "0x42e863" -> "0x42e3ef" [color=blue];
-"0x42e86b" -> "0x42e870" [color=gray, style=dashed];
 }

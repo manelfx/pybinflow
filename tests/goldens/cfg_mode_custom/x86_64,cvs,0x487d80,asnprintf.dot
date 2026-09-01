@@ -8,12 +8,10 @@ edge [fontname=monospace, fontsize=8];
 "0x487e13" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x487e13)</TD><TD ><B>asnprintf+0x93</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00487e13&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">rcx, qword ptr [rsp + 0x18]</TD></TR><TR><TD ALIGN="LEFT">0x00487e18&#58;&nbsp;</TD><TD ALIGN="LEFT">xor</TD><TD ALIGN="LEFT">rcx, qword ptr fs&#58;[0x28]</TD></TR><TR><TD ALIGN="LEFT">0x00487e21&#58;&nbsp;</TD><TD ALIGN="LEFT">jne</TD><TD ALIGN="LEFT">0x487e2b</TD></TR></TABLE> }>];
 "0x487e23" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x487e23)</TD><TD ><B>asnprintf+0xa3</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00487e23&#58;&nbsp;</TD><TD ALIGN="LEFT">add</TD><TD ALIGN="LEFT">rsp, 0xd8</TD></TR><TR><TD ALIGN="LEFT">0x00487e2a&#58;&nbsp;</TD><TD ALIGN="LEFT">ret</TD><TD></TD></TR></TABLE> }>];
 "0x487e2b" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x487e2b)</TD><TD ><B>asnprintf+0xab</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00487e2b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x404350</TD></TR></TABLE> }>];
-"0x487e30" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x487e30)</TD><TD ><B>xnmalloc</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x487d80" -> "0x487d9e" [color=red];
 "0x487d80" -> "0x487dd5" [color=green];
 "0x487d9e" -> "0x487dd5" [color=blue, style=dashed];
 "0x487dd5" -> "0x487e13" [color=gray, style=dashed];
 "0x487e13" -> "0x487e23" [color=red];
 "0x487e13" -> "0x487e2b" [color=green];
-"0x487e2b" -> "0x487e30" [color=gray, style=dashed];
 }

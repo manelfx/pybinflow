@@ -47,7 +47,6 @@ edge [fontname=monospace, fontsize=8];
 "0x412539" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x412539)</TD><TD ><B>renameatu+0x279</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00412539&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">edi, 0x14</TD></TR><TR><TD ALIGN="LEFT">0x0041253e&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x412290</TD></TR></TABLE> }>];
 "0x412543" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x412543)</TD><TD ><B>renameatu+0x283</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x00412543&#58;&nbsp;</TD><TD ALIGN="LEFT">mov</TD><TD ALIGN="LEFT">r15d, eax</TD></TR><TR><TD ALIGN="LEFT">0x00412546&#58;&nbsp;</TD><TD ALIGN="LEFT">jmp</TD><TD ALIGN="LEFT">0x412380</TD></TR></TABLE> }>];
 "0x41254b" [label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x41254b)</TD><TD ><B>renameatu+0x28b</B></TD><TD></TD></TR></TABLE> | <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD ALIGN="LEFT">0x0041254b&#58;&nbsp;</TD><TD ALIGN="LEFT">call</TD><TD ALIGN="LEFT">0x4026f0</TD></TR></TABLE> }>];
-"0x412550" [style=filled, fillcolor="#dddddd", label=<{ <TABLE BORDER="0" CELLPADDING="1" ALIGN="LEFT"><TR><TD >(0x412550)</TD><TD ><B>get_root_dev_ino</B></TD><TD > SIMP</TD></TR></TABLE> }>];
 "0x4122c0" -> "0x41230a" [color=gray, style=dashed];
 "0x41230a" -> "0x412311" [color=red];
 "0x41230a" -> "0x412380" [color=green];
@@ -115,5 +114,4 @@ edge [fontname=monospace, fontsize=8];
 "0x412539" -> "0x412290" [color=gray];
 "0x412539" -> "0x412543" [color=gray, style=dashed];
 "0x412543" -> "0x412380" [color=blue];
-"0x41254b" -> "0x412550" [color=gray, style=dashed];
 }

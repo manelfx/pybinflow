@@ -89,6 +89,23 @@ def decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
     return fallback_insns[0] if fallback_insns else None
 
 
+def _is_trusted_direct_call_target(project: Project, addr: int) -> bool:
+    """Return whether a constant VEX call target is safe to materialize.
+
+    Address zero can be a valid code address in a deliberately zero-based
+    image. In an image that does not map zero, however, it commonly denotes an
+    unresolved weak function reference. Do not turn such a reference into a
+    concrete external callee merely because another zero-valued symbol exists.
+    """
+
+    if addr != 0:
+        return True
+    try:
+        return project.loader.find_object_containing(addr) is not None
+    except AttributeError:
+        return False
+
+
 def is_post_prefix_instruction_entry(insn: CsInsn, addr: int) -> bool:
     """Return whether ``addr`` enters immediately after all instruction prefixes.
 
@@ -766,7 +783,9 @@ def lift_block_terminator(
 
     if semantic.is_call() or vex.jumpkind == "Ijk_Call":
         direct_targets: tuple[int, ...] = ()
-        if isinstance(default_target, int):
+        if isinstance(default_target, int) and _is_trusted_direct_call_target(
+            project, default_target
+        ):
             # A constant VEX call target is precise even when it has no loader
             # symbol. The extractor materializes an ExternalTarget leaf for
             # such unnamed callees, allowing later render policy to decide
@@ -877,6 +896,7 @@ def decode_bounded_block(
     preserve_conditional_return_fallthrough: bool = False,
     split_syscall_blocks: bool = False,
     resolve_declared_nonreturning: bool = False,
+    on_linear_direct_transfer: Callable[[int], None] | None = None,
     stop_at_data: Callable[[int], bool] | None = None,
 ) -> BlockSpec | None:
     """Decode one bounded block until control flow or a known leader stops it."""
@@ -912,7 +932,10 @@ def decode_bounded_block(
         semantic = InsnSemantics(insn)
         next_addr = insn.address + insn.size
 
-        if semantic.is_control_transfer():
+        is_linear_direct_transfer = semantic.is_linear_direct_jump(project.arch.name)
+        if is_linear_direct_transfer and on_linear_direct_transfer is not None:
+            on_linear_direct_transfer(insn.address)
+        if semantic.is_control_transfer() and not is_linear_direct_transfer:
             if has_delay_slot and bounds.addr <= next_addr < bounds.end_addr:
                 delay_insn = decode_one(project, next_addr, max_inst_bytes)
                 if delay_insn is not None:
@@ -986,6 +1009,7 @@ def decode_bounded_block(
             preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
             split_syscall_blocks=split_syscall_blocks,
             resolve_declared_nonreturning=resolve_declared_nonreturning,
+            on_linear_direct_transfer=on_linear_direct_transfer,
             stop_at_data=stop_at_data,
         )
 

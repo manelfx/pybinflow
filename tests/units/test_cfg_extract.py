@@ -23,7 +23,7 @@ from bingraph.cfg_extract.sweep import (
 from bingraph.cfg.models import BlockSpec, FunctionBounds, StaticJumpTable
 from bingraph.cfg.models import StaticJumpTablePlan
 from bingraph.cfg.decode import decode_bounded_block
-from bingraph.cfg_extract.models import ExtractedCFGStats
+from bingraph.cfg_extract.models import ExtractedCFGStats, ExtractedCFGSummary
 from bingraph.core import project as project_module
 
 
@@ -41,6 +41,18 @@ def test_extract_builder_decodes_a_bounded_function_without_cfgfast() -> None:
     nodes = [node for node in cfg.graph.nodes() if not node.is_simprocedure]
     assert [node.addr for node in nodes] == [0x40043C, 0x40044C, 0x40044E]
     assert cfg.functions.get(0x40043C) is not None
+    assert cfg.extract_summary == ExtractedCFGSummary(
+        normal_blocks=3,
+        synthetic_leaves=1,
+        nodes=4,
+        edges=4,
+        calls=1,
+        direct_branches=1,
+        conditional_branches=1,
+        returns=1,
+        direct_edges=1,
+        fallthrough_edges=2,
+    )
 
 
 def test_extract_mode_bypasses_fast_cfg(monkeypatch) -> None:
@@ -141,6 +153,33 @@ def test_extract_preserves_powerpc_conditional_return_fallthrough() -> None:
     assert block.fallthrough_addr == 0x10019140
 
 
+def test_extract_keeps_powerpc_pc_materialization_in_one_block() -> None:
+    """Retain a branch-and-link to its next instruction as linear code."""
+
+    project = project_module.load_project(Path("angr-binaries/tests/ppc/ld.so.1"))
+    bounds = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x40A320
+    ).bounds
+
+    continued_transfers: list[int] = []
+    block = decode_bounded_block(
+        project,
+        bounds,
+        0x40A320,
+        set(),
+        on_linear_direct_transfer=continued_transfers.append,
+    )
+
+    assert block is not None
+    assert 0x40A32C in block.instruction_addrs
+    assert 0x40A330 in block.instruction_addrs
+    assert continued_transfers == [0x40A32C]
+
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x40A320)
+
+    assert cfg.extract_stats.linear_direct_transfers_continued == 1
+
+
 def test_extract_retains_external_call_target() -> None:
     """Keep a resolved direct callee even when it lies outside function bounds."""
 
@@ -172,6 +211,34 @@ def test_extract_retains_unnamed_external_call_target() -> None:
     assert block is not None
     assert block.jumpkind == "Ijk_Call"
     assert block.direct_targets == (0x10026988,)
+
+
+def test_extract_models_an_unmapped_zero_call_as_unresolved() -> None:
+    """Do not confuse an unresolved weak call with another zero-valued symbol."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/s390x/test-instr_s390x")
+    )
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x80046660
+    )
+
+    block = decode_bounded_block(project, session.bounds, 0x80046680, set())
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Call"
+    assert block.direct_targets == ()
+    assert block.fallthrough_addr == 0x8004668C
+
+    cfg = session.build()
+    source = next(node for node in cfg.graph.nodes() if node.addr == 0x80046680)
+    unresolved = next(
+        node
+        for node in cfg.graph.successors(source)
+        if node.is_simprocedure and node.name == "UnresolvableCallTarget"
+    )
+    assert cfg.graph.get_edge_data(source, unresolved)["jumpkind"] == "Ijk_Call"
+    assert cfg.extract_stats.unresolved_call_targets == 1
 
 
 def test_extract_models_syscalls_as_call_like_block_terminators() -> None:
@@ -305,6 +372,8 @@ def test_extract_does_not_fall_through_to_a_verified_literal_pool() -> None:
         for successor in cfg.graph.successors(nodes[0x416654])
     )
     assert cfg.extract_stats.data_leaders_rejected == 1
+    assert cfg.extract_stats.data_region_observations > 0
+    assert cfg.extract_stats.data_bytes_discovered > 0
     assert cfg.extract_stats.call_fallthroughs_suppressed == 1
 
 
@@ -456,6 +525,11 @@ def test_extract_static_table_discovery_discards_stale_snapshot_plans(
 
     assert 0x1000 not in session.blocks
     assert session.static_targets == {0x1100: (0x1008,)}
+    assert session.stats.static_jump_plan_attempts == 2
+    assert session.stats.static_jump_plans_invalidated == 1
+    assert session.stats.static_jump_plans_resolved == 1
+    assert session.stats.static_jump_table_entries_read == 2
+    assert session.stats.static_jump_targets_accepted == 2
 
 
 def test_extract_recovers_reconnecting_components_from_one_dispatcher() -> None:
@@ -472,7 +546,8 @@ def test_extract_recovers_reconnecting_components_from_one_dispatcher() -> None:
     assert cfg.extract_stats.sweep_reconnecting_components > 0
     assert cfg.extract_stats.sweep_reconnecting_blocks > 0
     assert cfg.extract_stats.sweep_component_roots_attached > 0
-    assert cfg.extract_stats.output_anomalies == 0
+    assert cfg.extract_stats.output_anomaly_count == 0
+    assert cfg.extract_stats.output_anomalies_by_kind == {}
 
     dispatcher = next(
         node
@@ -520,7 +595,7 @@ def test_extract_rejects_sweep_targets_inside_thumb_instructions() -> None:
     )
     cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x41DD)
 
-    assert cfg.extract_stats.output_anomalies == 0
+    assert cfg.extract_stats.output_anomaly_count == 0
 
 
 def test_extract_accepts_thumb_alternate_instruction_stream() -> None:
@@ -681,4 +756,53 @@ def test_extract_validation_rejects_targets_inside_other_blocks() -> None:
         "overlapping_blocks",
         "missing_direct_edge",
         "target_inside_block",
+    }
+
+
+def test_extract_validation_checks_block_spec_coverage_and_bounds() -> None:
+    """Require normal nodes to exactly represent their recovered block spec."""
+
+    node = _Node(0x1000, 4, (0x1000,))
+    graph = nx.DiGraph()
+    graph.add_node(node)
+    bounds = FunctionBounds(0x1000, 0x1003, 3, SimpleNamespace(name="f"))
+    blocks = {0x1000: BlockSpec(0x1000, 3, (0x1000, 0x1001), "Ijk_Ret")}
+
+    anomalies = find_extracted_cfg_anomalies(graph, bounds, 0x1000, blocks)
+
+    assert {anomaly.kind for anomaly in anomalies} == {
+        "block_out_of_bounds",
+        "block_size_mismatch",
+        "instruction_coverage_mismatch",
+    }
+
+
+def test_extract_validation_checks_direct_and_fallthrough_jumpkinds() -> None:
+    """Require materialized call and fake-return edges to retain their semantics."""
+
+    source = _Node(0x1000, 4, (0x1000,))
+    fallthrough = _Node(0x1004, 4, (0x1004,))
+    callee = _Node(0x1010, 4, (0x1010,))
+    graph = nx.DiGraph()
+    graph.add_edge(source, fallthrough, jumpkind="Ijk_Boring")
+    graph.add_edge(source, callee, jumpkind="Ijk_Boring")
+    bounds = FunctionBounds(0x1000, 0x1020, 0x20, SimpleNamespace(name="f"))
+    blocks = {
+        0x1000: BlockSpec(
+            0x1000,
+            4,
+            (0x1000,),
+            "Ijk_Call",
+            direct_targets=(0x1010,),
+            fallthrough_addr=0x1004,
+        ),
+        0x1004: BlockSpec(0x1004, 4, (0x1004,), "Ijk_Ret"),
+        0x1010: BlockSpec(0x1010, 4, (0x1010,), "Ijk_Ret"),
+    }
+
+    anomalies = find_extracted_cfg_anomalies(graph, bounds, 0x1000, blocks)
+
+    assert {anomaly.kind for anomaly in anomalies} == {
+        "direct_edge_jumpkind_mismatch",
+        "fallthrough_edge_jumpkind_mismatch",
     }

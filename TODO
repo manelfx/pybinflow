@@ -178,22 +178,6 @@ do not hard-code that policy before auditing representative artifacts.
 - Are these differences specific to comments, or do they come from another kind
   of label annotation?
 
-=== Make call-target SIMP visibility configurable
-
-Add a CLI/settings option that controls whether rendered CFGs show call-target
-SIMP leaves:
-
-- `always`: materialize a SIMP leaf for every direct call target outside the
-  selected function, including resolved calls to ordinary functions.
-- `never`: hide call-target SIMP leaves, including angr extern-object nodes
-  produced for unresolved relocations in object files such as `client_loop.o`.
-
-Keep non-call synthetic leaves visible: unresolved indirect jumps, external
-branch targets, and non-returning control-flow exits still communicate CFG
-semantics rather than optional call-detail. Apply the policy at render time so
-the recovered CFG remains complete and one CLI choice does not affect another
-consumer of the same graph.
-
 === Review custom CFG transformation statistics
 
 `CustomCFGStats` now logs the input/output graph shape, anomaly counts, and
@@ -208,35 +192,6 @@ full corpus and aggregate these counters before adding more repair heuristics.
   preserving real block leaders instead of merely preventing useful merges.
 - Use large outliers such as `execute_stack_op` to identify transformations
   that dominate custom-mode runtime or repeatedly redo the same repair work.
-
-=== Compare exporter and application function-symbol discovery
-
-`scripts/export_playground_functions_csv.py` and
-`bingraph.helpers.symbols.list_function_symbols()` both derive function
-candidates from CLE symbols and infer missing sizes, but they maintain separate
-implementations. Generate a symbols golden for each supported playground
-binary, then compare its `(name, address, size)` entries with the corresponding
-rows in `tests/playground_functions.csv`. Define expected exclusions explicitly
-(for example imports, which the exporter filters, and the application's
-CFGFast fallback) so unexpected differences catch symbol-discovery or
-size-inference regressions.
-
-=== Investigate x86 REP instruction loops
-
-Observed while inspecting `x86_64/static`, function `abort` at `0x40dc00`:
-
-- angr may model an x86 `REP` string instruction as a single-instruction basic
-  block with a self-loop.
-- That loop represents the instruction's internal repetition, not a
-  control-flow edge that fetches the instruction again from the architectural
-  CFG's point of view.
-
-Investigate whether the renderer or custom CFG repair should suppress those
-micro-architectural self-loops and merge the instruction with its natural
-predecessor or successor block when no real basic-block boundary exists.
-
-Related to this, some conditional stores are also shown as 1-instruction
-blocks: look at `s390x/test-instr_s390x:0x80049360` at `0x800493b2`.
 
 === Investigate dominator-aware CFG layout
 

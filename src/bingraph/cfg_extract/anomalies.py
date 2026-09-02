@@ -90,6 +90,24 @@ def find_extracted_cfg_anomalies(
     instruction_owners: dict[int, CFGNode] = {}
 
     for index, node in enumerate(nodes):
+        if node.size <= 0 or not node.instruction_addrs:
+            anomalies.append(
+                ExtractedCFGAnomaly(
+                    "empty_block",
+                    node.addr,
+                    f"Extracted block {node.addr:#x} has no decoded instructions",
+                )
+            )
+        if node.addr < bounds.addr or node_range_end(node) > bounds.end_addr:
+            anomalies.append(
+                ExtractedCFGAnomaly(
+                    "block_out_of_bounds",
+                    node.addr,
+                    f"Extracted block {node.addr:#x} exceeds function bounds "
+                    f"{bounds.addr:#x}-{bounds.end_addr:#x}",
+                )
+            )
+
         for other in nodes[index + 1 :]:
             if other.addr >= node_range_end(node):
                 break
@@ -129,9 +147,31 @@ def find_extracted_cfg_anomalies(
             )
             continue
 
-        successor_addrs = {successor.addr for successor in graph.successors(node)}
+        if node.size != block.size:
+            anomalies.append(
+                ExtractedCFGAnomaly(
+                    "block_size_mismatch",
+                    node.addr,
+                    f"Extracted block {node.addr:#x} has size {node.size:#x}, "
+                    f"expected {block.size:#x}",
+                )
+            )
+        if tuple(node.instruction_addrs) != block.instruction_addrs:
+            anomalies.append(
+                ExtractedCFGAnomaly(
+                    "instruction_coverage_mismatch",
+                    node.addr,
+                    f"Extracted block {node.addr:#x} instruction coverage does not "
+                    "match its recovered block specification",
+                )
+            )
+
+        successors_by_addr = {
+            successor.addr: successor for successor in graph.successors(node)
+        }
         for target in block.direct_targets:
-            if target not in successor_addrs:
+            destination = successors_by_addr.get(target)
+            if destination is None:
                 anomalies.append(
                     ExtractedCFGAnomaly(
                         "missing_direct_edge",
@@ -140,6 +180,21 @@ def find_extracted_cfg_anomalies(
                         f"{target:#x}",
                     )
                 )
+            else:
+                expected_jumpkind = (
+                    "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
+                )
+                edge_data = graph.get_edge_data(node, destination) or {}
+                if edge_data.get("jumpkind") != expected_jumpkind:
+                    anomalies.append(
+                        ExtractedCFGAnomaly(
+                            "direct_edge_jumpkind_mismatch",
+                            node.addr,
+                            f"Extracted direct edge {node.addr:#x} -> {target:#x} has "
+                            f"jumpkind {edge_data.get('jumpkind')!r}, expected "
+                            f"{expected_jumpkind}",
+                        )
+                    )
             covering = next(
                 (
                     candidate
@@ -165,7 +220,8 @@ def find_extracted_cfg_anomalies(
 
         fallthrough = block.fallthrough_addr
         if fallthrough is not None and fallthrough in node_by_addr:
-            if fallthrough not in successor_addrs:
+            destination = successors_by_addr.get(fallthrough)
+            if destination is None:
                 anomalies.append(
                     ExtractedCFGAnomaly(
                         "missing_fallthrough_edge",
@@ -174,6 +230,24 @@ def find_extracted_cfg_anomalies(
                         f"to {fallthrough:#x}",
                     )
                 )
+            else:
+                expected_jumpkind = (
+                    "Ijk_FakeRet"
+                    if block.jumpkind in {"Ijk_Call", "Ijk_Syscall"}
+                    else "Ijk_Boring"
+                )
+                edge_data = graph.get_edge_data(node, destination) or {}
+                if edge_data.get("jumpkind") != expected_jumpkind:
+                    anomalies.append(
+                        ExtractedCFGAnomaly(
+                            "fallthrough_edge_jumpkind_mismatch",
+                            node.addr,
+                            f"Extracted fallthrough edge {node.addr:#x} -> "
+                            f"{fallthrough:#x} has jumpkind "
+                            f"{edge_data.get('jumpkind')!r}, expected "
+                            f"{expected_jumpkind}",
+                        )
+                    )
 
     entry = node_by_addr.get(func_addr)
     if entry is None:

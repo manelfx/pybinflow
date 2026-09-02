@@ -11,7 +11,7 @@ never reads CFGFast's discovered regions.
 
 from __future__ import annotations
 
-from collections import deque
+from collections import Counter, deque
 from dataclasses import replace
 from types import SimpleNamespace
 from typing import cast
@@ -38,11 +38,12 @@ from bingraph.cfg.decode import (
 
 from .anomalies import find_extracted_cfg_anomalies
 from .data import StaticDataRegions
-from .models import ExtractedCFG, ExtractedCFGStats
+from .models import ExtractedCFG, ExtractedCFGStats, ExtractedCFGSummary
 from .sweep import recover_executable_components, select_reconnecting_components
 
 
 _UNRESOLVABLE_SYSCALL_ADDR = 0xFFFFFFFFFFFFFFE0
+_UNRESOLVABLE_CALL_ADDR = 0xFFFFFFFFFFFFFFD0
 
 
 def _unknown_syscall_target(project: Project) -> tuple[int, str]:
@@ -153,6 +154,7 @@ class _ExtractionSession:
         self.model = CFGModel("CFGExtract", cfg_manager=manager)
         self.graph = cast(CFGGraph, self.model.graph)
         self.stats = ExtractedCFGStats()
+        self.summary = ExtractedCFGSummary()
         self.leaders = {func_addr}
         self.rejected_leaders: set[int] = set()
         self.pending = deque([func_addr])
@@ -164,6 +166,7 @@ class _ExtractionSession:
         self.static_targets: dict[int, tuple[int, ...]] = {}
         self.sweep_dispatcher_addr: int | None = None
         self.sweep_component_roots: frozenset[int] = frozenset()
+        self.continued_linear_direct_transfers: set[int] = set()
 
     def _is_data_leader(self, addr: int) -> bool:
         """Return whether this prospective leader is VEX-proven data."""
@@ -179,7 +182,7 @@ class _ExtractionSession:
     def _reject_data_leader(self, addr: int) -> None:
         """Reject a literal-pool leader and remove impossible call returns."""
 
-        self._reject_leader(addr)
+        self._reject_leader(addr, reason="data")
         self.stats.data_leaders_rejected += 1
         for start, block in tuple(self.blocks.items()):
             if block.jumpkind != "Ijk_Call" or block.fallthrough_addr != addr:
@@ -197,9 +200,11 @@ class _ExtractionSession:
         self.pending.append(addr)
         self.pending_addrs.add(addr)
 
-    def _reject_leader(self, addr: int) -> None:
+    def _reject_leader(self, addr: int, *, reason: str = "invalid_entry") -> None:
         """Forget an unsafe target that lands inside a decoded instruction."""
 
+        if reason == "invalid_entry" and addr not in self.rejected_leaders:
+            self.stats.leaders_rejected_invalid_entry += 1
         self.rejected_leaders.add(addr)
         self.leaders.discard(addr)
         self.blocks.pop(addr, None)
@@ -216,6 +221,7 @@ class _ExtractionSession:
                 continue
             del self.blocks[start]
             self.stats.block_redecodes += 1
+            self.stats.blocks_redecoded_for_data += 1
             self._queue(start)
 
     def _add_leader(self, addr: int) -> bool:
@@ -247,7 +253,7 @@ class _ExtractionSession:
         is_new_leader = addr not in self.leaders
         self.leaders.add(addr)
         if is_new_leader:
-            self.stats.leaders_discovered += 1
+            self.stats.additional_leaders_discovered += 1
             for start, block in tuple(self.blocks.items()):
                 if start < addr < start + block.size:
                     rejoin_addr = alternate_block_entry_rejoin_addr(
@@ -258,11 +264,19 @@ class _ExtractionSession:
                         continue
                     del self.blocks[start]
                     self.stats.block_redecodes += 1
+                    self.stats.blocks_redecoded_for_leader_split += 1
                     self.stats.leaders_split_existing_block += 1
                     self._queue(start)
         if is_new_leader or addr not in self.blocks:
             self._queue(addr)
         return True
+
+    def _record_linear_direct_transfer(self, addr: int) -> None:
+        """Count each direct next-instruction transfer kept within its block."""
+
+        if addr not in self.continued_linear_direct_transfers:
+            self.continued_linear_direct_transfers.add(addr)
+            self.stats.linear_direct_transfers_continued += 1
 
     def _decode_all_blocks(self) -> None:
         """Drain discovered leaders until their block boundaries stabilize."""
@@ -287,6 +301,7 @@ class _ExtractionSession:
                 preserve_conditional_return_fallthrough=True,
                 split_syscall_blocks=True,
                 resolve_declared_nonreturning=True,
+                on_linear_direct_transfer=self._record_linear_direct_transfer,
                 stop_at_data=lambda target: self.data_regions.contains(
                     self.project, target
                 ),
@@ -332,13 +347,19 @@ class _ExtractionSession:
                     continue
                 del self.blocks[start]
                 self.stats.block_redecodes += 1
+                self.stats.blocks_redecoded_for_leader_split += 1
                 self.stats.leaders_split_existing_block += 1
                 self._queue(start)
 
             for target in block.direct_targets:
                 self._claim_code_target(target)
             self.blocks[addr] = block
+            data_bytes_before = len(self.data_regions.data_bytes)
             if self.data_regions.record_block(self.project, block):
+                self.stats.data_region_observations += 1
+                self.stats.data_bytes_discovered += (
+                    len(self.data_regions.data_bytes) - data_bytes_before
+                )
                 self._truncate_blocks_at_data()
             self.stats.blocks_decoded += 1
             for rejoin_addr in alternate_rejoins:
@@ -392,11 +413,12 @@ class _ExtractionSession:
                     or block.fallthrough_addr is not None
                 ):
                     continue
+                self.stats.static_jump_plan_attempts += 1
                 plan, reason = plan_static_jump_table(
                     self.project, graph, self.bounds, node
                 )
                 if plan is None:
-                    self.stats.static_jump_dispatchers_unresolved += 1
+                    self.stats.static_jump_unresolved_dispatcher_attempts += 1
                     if reason is not None:
                         field = f"static_jump_{reason}"
                         setattr(self.stats, field, getattr(self.stats, field) + 1)
@@ -407,12 +429,15 @@ class _ExtractionSession:
                 if targets is None:
                     self.stats.static_jump_table_unreadable += 1
                     continue
+                self.stats.static_jump_table_entries_read += len(targets)
                 rejected = [
                     static_jump_target_rejection_reason(self.project, target)
                     for target in targets
                 ]
                 if any(rejected):
-                    self.stats.static_jump_table_rejected_targets += 1
+                    self.stats.static_jump_targets_rejected += sum(
+                        reason is not None for reason in rejected
+                    )
                     continue
                 accepted_targets: list[int] = []
                 for target in targets:
@@ -425,15 +450,16 @@ class _ExtractionSession:
                         accepted_targets.append(target)
                         discovered |= not before
                 plans[addr] = tuple(accepted_targets)
-                self.stats.static_jump_tables_resolved += 1
-                self.stats.static_jump_targets_read += len(targets)
+                self.stats.static_jump_targets_accepted += len(accepted_targets)
 
             if discovered:
                 # Block splits invalidate plans built from this graph snapshot.
                 # Decode and rebuild the analysis graph before retaining any.
+                self.stats.static_jump_plans_invalidated += len(plans)
                 self._decode_all_blocks()
                 continue
             self.static_targets.update(plans)
+            self.stats.static_jump_plans_resolved += len(plans)
             return
 
     def _leaf(self, addr: int, name: str, *, is_syscall: bool = False) -> CFGNode:
@@ -452,6 +478,8 @@ class _ExtractionSession:
             self.graph.add_node(node)
             self.leaf_nodes[key] = node
             self.stats.synthetic_leaves_created += 1
+        else:
+            self.stats.synthetic_leaves_reused += 1
         return node
 
     def _target_node(self, addr: int) -> CFGNode:
@@ -461,9 +489,9 @@ class _ExtractionSession:
         if node is not None:
             return node
         if self.bounds.addr <= addr < self.bounds.end_addr:
-            self.stats.undecodable_targets += 1
+            self.stats.undecodable_target_references += 1
             return self._leaf(addr, "UndecodableInstructionTarget")
-        self.stats.external_targets += 1
+        self.stats.external_target_references += 1
         return self._leaf(addr, _external_target_name(self.project, addr))
 
     def _fallthrough_target_node(self, addr: int) -> CFGNode | None:
@@ -505,18 +533,18 @@ class _ExtractionSession:
                     EdgeJumpKind, block.syscall_jumpkind or "Ijk_Sys_syscall"
                 )
                 if add_successor_edge(self.graph, source, syscall, syscall_jumpkind):
-                    self.stats.direct_edges += 1
+                    self.summary.direct_edges += 1
 
             for target in block.direct_targets:
                 destination = self._target_node(target)
                 jumpkind = "Ijk_Call" if block.jumpkind == "Ijk_Call" else "Ijk_Boring"
                 if add_successor_edge(self.graph, source, destination, jumpkind):
-                    self.stats.direct_edges += 1
+                    self.summary.direct_edges += 1
 
             for target in self.static_targets.get(addr, ()):
                 destination = self._target_node(target)
                 if add_successor_edge(self.graph, source, destination, "Ijk_Boring"):
-                    self.stats.static_jump_targets_added += 1
+                    self.stats.static_jump_target_edges_added += 1
 
             if block.fallthrough_addr is not None:
                 destination = self._fallthrough_target_node(block.fallthrough_addr)
@@ -527,7 +555,15 @@ class _ExtractionSession:
                         else "Ijk_Boring"
                     )
                     if add_successor_edge(self.graph, source, destination, jumpkind):
-                        self.stats.fallthrough_edges += 1
+                        self.summary.fallthrough_edges += 1
+
+            if block.jumpkind == "Ijk_Call" and not block.direct_targets:
+                unresolved = self._leaf(
+                    _UNRESOLVABLE_CALL_ADDR,
+                    "UnresolvableCallTarget",
+                )
+                if add_successor_edge(self.graph, source, unresolved, "Ijk_Call"):
+                    self.stats.unresolved_call_targets += 1
 
             if (
                 block.jumpkind == "Ijk_Boring"
@@ -629,6 +665,26 @@ class _ExtractionSession:
             ):
                 self.stats.sweep_component_roots_attached += 1
 
+    def _summarize_output(self) -> None:
+        """Record the final graph shape separately from extraction decisions."""
+
+        self.summary.normal_blocks = len(self.blocks)
+        self.summary.synthetic_leaves = len(self.leaf_nodes)
+        self.summary.nodes = len(tuple(self.graph.nodes()))
+        self.summary.edges = len(tuple(self.graph.edges()))
+        for block in self.blocks.values():
+            if block.jumpkind == "Ijk_Call":
+                self.summary.calls += 1
+            elif block.jumpkind == "Ijk_Syscall":
+                self.summary.syscalls += 1
+            elif block.jumpkind == "Ijk_Ret":
+                self.summary.returns += 1
+            elif block.jumpkind == "Ijk_Terminal":
+                self.summary.terminal_blocks += 1
+            elif block.direct_targets:
+                self.summary.direct_branches += 1
+                self.summary.conditional_branches += block.fallthrough_addr is not None
+
     def build(self) -> ExtractedCFG:
         """Recover the bounded function graph and expose it to rendering."""
 
@@ -642,18 +698,7 @@ class _ExtractionSession:
             # angr treats names such as ``sub_119320`` as address selectors.
             # Create by the rebased address first, then set the display name.
             function.name = self.bounds.name
-        for block in self.blocks.values():
-            if block.jumpkind == "Ijk_Call":
-                self.stats.calls += 1
-            elif block.jumpkind == "Ijk_Syscall":
-                self.stats.syscalls += 1
-            elif block.jumpkind == "Ijk_Ret":
-                self.stats.returns += 1
-            elif block.jumpkind == "Ijk_Terminal":
-                self.stats.terminal_blocks += 1
-            elif block.direct_targets:
-                self.stats.direct_branches += 1
-                self.stats.conditional_branches += block.fallthrough_addr is not None
+        self._summarize_output()
 
         anomalies = find_extracted_cfg_anomalies(
             self.graph,
@@ -662,7 +707,10 @@ class _ExtractionSession:
             self.blocks,
             project=self.project,
         )
-        self.stats.output_anomalies = len(anomalies)
+        self.stats.output_anomaly_count = len(anomalies)
+        self.stats.output_anomalies_by_kind = dict(
+            sorted(Counter(anomaly.kind for anomaly in anomalies).items())
+        )
         if anomalies:
             for anomaly in anomalies:
                 logger.warning(anomaly.message)
@@ -676,6 +724,7 @@ class _ExtractionSession:
             functions=self.kb.functions,
             kb=self.kb,
             extract_stats=self.stats,
+            extract_summary=self.summary,
         )
 
 
@@ -688,8 +737,7 @@ def build_extracted_cfg(
     cfg = _ExtractionSession(project, kb, func_addr).build()
     logger.info(
         f"Extracted CFG for {func_addr:#x}: "
-        f"{len(tuple(cfg.graph.nodes()))} nodes, "
-        f"{len(tuple(cfg.graph.edges()))} edges, "
-        f"stats={cfg.extract_stats.as_dict()}"
+        f"stats={cfg.extract_stats.as_dict()}, "
+        f"summary={cfg.extract_summary.as_dict()}"
     )
     return cfg

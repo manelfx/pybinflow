@@ -67,6 +67,25 @@ class InsnSemantics:
 
         return self.is_ret() or self.is_call() or self.is_jump()
 
+    def is_linear_direct_jump(self, arch_name: str) -> bool:
+        """Return whether a plain direct jump only reaches its next instruction.
+
+        Some architectures use a branch-and-link to materialize the current
+        program counter. Its link-register side effect must be decoded, but a
+        CFG does not need a boundary when every normal path continues at the
+        immediately following instruction. Restrict this to Capstone's plain
+        jump group so exceptional transfers, such as x86 ``xbegin``, retain
+        their dedicated control-flow boundary.
+        """
+
+        return (
+            not arch_has_delay_slot(arch_name)
+            and self.is_jump()
+            and not self.is_call()
+            and set(self.insn.groups) == {CS_GRP_JUMP}
+            and self.direct_target_for_arch(arch_name) == self.address + self.size
+        )
+
     def is_avx512(self) -> bool:
         """Return whether Capstone classifies this x86 instruction as AVX-512."""
 
@@ -241,7 +260,10 @@ def control_transfer_index(
 
     has_delay_slot = arch_has_delay_slot(arch_name)
     for index in range(len(insns) - 1, -1, -1):
-        if not InsnSemantics(insns[index]).is_control_transfer():
+        semantic = InsnSemantics(insns[index])
+        if not semantic.is_control_transfer() or semantic.is_linear_direct_jump(
+            arch_name
+        ):
             continue
 
         if index != len(insns) - 1 and not has_delay_slot and strict:

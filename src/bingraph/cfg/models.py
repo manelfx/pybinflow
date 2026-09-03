@@ -37,6 +37,7 @@ class BlockSpec:
     direct_targets: tuple[int, ...] = ()
     fallthrough_addr: int | None = None
     syscall_jumpkind: str | None = None
+    vex_linear_instruction_sizes: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)

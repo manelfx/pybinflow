@@ -1,5 +1,9 @@
 from typing import Any
 
+from angr import Project
+from angr.knowledge_plugins.cfg import CFGNode
+from bingraph.cfg.decode import decode_one
+
 from .vis import Content, Node
 from archinfo.archerror import ArchError
 from loguru import logger
@@ -37,10 +41,66 @@ class NodeAsm(Content):
     name: str = "asm"
     columns: list[str] = ["addr", "mnemonic", "operands"]
 
+    @staticmethod
+    def _vex_word(project: Any, addr: int, size: int) -> str:
+        """Return a raw instruction word for a VEX-only decoded instruction."""
+
+        try:
+            raw = project.loader.memory.load(addr, size)
+        except Exception:
+            return "<unavailable>"
+        return f"0x{raw.hex()}"
+
+    def _extracted_insns(self, node: Node) -> list[dict[str, Any]] | None:
+        """Render extractor VEX spans without losing later Capstone instructions."""
+
+        cfg_node = node.obj
+        vex_sizes = getattr(cfg_node, "vex_linear_instruction_sizes", None)
+        if not vex_sizes:
+            return None
+        project = getattr(getattr(cfg_node, "block", None), "_project", None)
+        if not isinstance(project, Project):
+            return None
+
+        data: list[dict[str, Any]] = []
+        for addr in cfg_node.instruction_addrs:
+            vex_size = vex_sizes.get(addr)
+            if vex_size is not None:
+                data.append(
+                    {
+                        "addr": {"content": "0x%08x:\t" % addr, "align": "LEFT"},
+                        "mnemonic": {"content": ".word", "align": "LEFT"},
+                        "operands": {
+                            "content": self._vex_word(project, addr, vex_size),
+                            "align": "LEFT",
+                        },
+                        "_ins": None,
+                        "_addr": addr,
+                        "_comments": ["VEX linear decode"],
+                    }
+                )
+                continue
+
+            insn = decode_one(
+                project, addr, getattr(project.arch, "max_inst_bytes", 16)
+            )
+            if insn is None:
+                continue
+            data.append(
+                {
+                    "addr": {"content": "0x%08x:\t" % insn.address, "align": "LEFT"},
+                    "mnemonic": {"content": insn.mnemonic, "align": "LEFT"},
+                    "operands": {"content": insn.op_str, "align": "LEFT"},
+                    "_ins": insn,
+                    "_addr": insn.address,
+                }
+            )
+        return data
+
     def gen_render(self, node: Node) -> None:
         cfg_node: Any = node.obj
 
-        if type(cfg_node).__name__ in ["CFGNode", "CFGENode"]:
+        if isinstance(cfg_node, CFGNode):
             is_syscall = cfg_node.is_syscall
             is_simprocedure = cfg_node.is_simprocedure
         elif type(cfg_node).__name__ == "CodeLocation":
@@ -64,6 +124,14 @@ class NodeAsm(Content):
 
         if is_simprocedure or is_syscall:
             return None
+
+        extracted_data = self._extracted_insns(node)
+        if extracted_data is not None:
+            node.content[self.name] = {
+                "data": extracted_data,
+                "columns": self.columns,
+            }
+            return
 
         try:
             # FIXME -- pp writes "call <fn>" instead of "call <addr>"

@@ -44,10 +44,12 @@ class CommentsAnnotator(ContentAnnotator):
 
         for k in content["data"]:
             ins = k["_ins"]
-            if ins.address in comments_by_addr:
-                k["comment"] = {
-                    "content": " ; " + "\n".join(comments_by_addr[ins.address])
-                }
+            ins_addr = ins.address if ins is not None else k.get("_addr")
+            comments = list(k.get("_comments", ()))
+            if ins_addr is not None:
+                comments.extend(comments_by_addr.get(ins_addr, ()))
+            if comments:
+                k["comment"] = {"content": " ; " + "\n".join(comments)}
                 k["comment"]["color"] = "gray"
                 k["comment"]["align"] = "LEFT"
 

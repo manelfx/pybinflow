@@ -89,6 +89,51 @@ def decode_one(project: Project, addr: int, size: int) -> CsInsn | None:
     return fallback_insns[0] if fallback_insns else None
 
 
+def decode_linear_vex_span(
+    project: Project, addr: int, size: int
+) -> tuple[int, int] | None:
+    """Return one VEX-proven linear instruction Capstone cannot decode.
+
+    This deliberately accepts only an unambiguous one-instruction lift with no
+    side exits. It gives the independent extractor a narrow fallback for valid
+    ISA instructions missing from Capstone without using VEX to infer ordinary
+    branch semantics.
+    """
+
+    try:
+        block = project.factory.block(
+            addr,
+            size=size,
+            num_inst=1,
+            strict_block_end=True,
+            cross_insn_opt=False,
+        )
+        vex = block.vex
+    except Exception:
+        return None
+
+    marks = [
+        statement
+        for statement in vex.statements
+        if isinstance(statement, pyvex.stmt.IMark)
+    ]
+    if len(marks) != 1:
+        return None
+
+    mark = marks[0]
+    next_addr = getattr(getattr(vex.next, "con", None), "value", None)
+    if (
+        mark.addr != addr
+        or mark.len <= 0
+        or block.size != mark.len
+        or vex.jumpkind != "Ijk_Boring"
+        or vex.exit_statements
+        or next_addr != addr + mark.len
+    ):
+        return None
+    return mark.addr, mark.len
+
+
 def _is_trusted_direct_call_target(project: Project, addr: int) -> bool:
     """Return whether a constant VEX call target is safe to materialize.
 
@@ -896,7 +941,9 @@ def decode_bounded_block(
     preserve_conditional_return_fallthrough: bool = False,
     split_syscall_blocks: bool = False,
     resolve_declared_nonreturning: bool = False,
+    allow_vex_linear_fallback: bool = False,
     on_linear_direct_transfer: Callable[[int], None] | None = None,
+    on_vex_linear_fallback: Callable[[int], None] | None = None,
     stop_at_data: Callable[[int], bool] | None = None,
 ) -> BlockSpec | None:
     """Decode one bounded block until control flow or a known leader stops it."""
@@ -904,6 +951,10 @@ def decode_bounded_block(
     max_inst_bytes = getattr(project.arch, "max_inst_bytes", 16)
     cur = start_addr
     insns: list[CsInsn] = []
+    instruction_addrs: list[int] = []
+    decoded_size = 0
+    vex_linear_instruction_sizes: list[tuple[int, int]] = []
+    last_was_vex_fallback = False
     has_delay_slot = arch_has_delay_slot(project.arch.name)
     has_nonfallthrough_vex_terminator = False
     unclassified_vex_terminator_addr: int | None = None
@@ -925,10 +976,28 @@ def decode_bounded_block(
 
         insn = decode_one(project, cur, max_inst_bytes)
         if insn is None:
+            vex_span = (
+                decode_linear_vex_span(project, cur, max_inst_bytes)
+                if allow_vex_linear_fallback
+                else None
+            )
+            if vex_span is not None:
+                _, vex_size = vex_span
+                instruction_addrs.append(cur)
+                decoded_size += vex_size
+                vex_linear_instruction_sizes.append((cur, vex_size))
+                last_was_vex_fallback = True
+                if on_vex_linear_fallback is not None:
+                    on_vex_linear_fallback(cur)
+                cur += vex_size
+                continue
             logger.warning(f"CFG decoder could not decode instruction at {cur:#x}")
             break
 
         insns.append(insn)
+        instruction_addrs.append(insn.address)
+        decoded_size += insn.size
+        last_was_vex_fallback = False
         semantic = InsnSemantics(insn)
         next_addr = insn.address + insn.size
 
@@ -940,6 +1009,8 @@ def decode_bounded_block(
                 delay_insn = decode_one(project, next_addr, max_inst_bytes)
                 if delay_insn is not None:
                     insns.append(delay_insn)
+                    instruction_addrs.append(delay_insn.address)
+                    decoded_size += delay_insn.size
             break
 
         if semantic.is_undefined_instruction_trap():
@@ -963,6 +1034,8 @@ def decode_bounded_block(
                 delay_insn = decode_one(project, next_addr, max_inst_bytes)
                 if delay_insn is not None:
                     insns.append(delay_insn)
+                    instruction_addrs.append(delay_insn.address)
+                    decoded_size += delay_insn.size
             break
 
         if next_addr == native_vex_transfer_end:
@@ -974,21 +1047,28 @@ def decode_bounded_block(
     if not insns:
         return None
 
-    terminator = lift_block_terminator(
-        project,
-        bounds,
-        insns,
-        has_nonfallthrough_vex_terminator=has_nonfallthrough_vex_terminator,
-        unclassified_vex_terminator_addr=unclassified_vex_terminator_addr,
-        preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
-        split_syscall_blocks=split_syscall_blocks,
-        resolve_declared_nonreturning=resolve_declared_nonreturning,
-    )
+    if last_was_vex_fallback:
+        fallthrough_addr = cur if cur < bounds.end_addr else None
+        terminator = TerminatorInfo(
+            jumpkind="Ijk_Fallthrough", fallthrough_addr=fallthrough_addr
+        )
+    else:
+        terminator = lift_block_terminator(
+            project,
+            bounds,
+            insns,
+            has_nonfallthrough_vex_terminator=has_nonfallthrough_vex_terminator,
+            unclassified_vex_terminator_addr=unclassified_vex_terminator_addr,
+            preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
+            split_syscall_blocks=split_syscall_blocks,
+            resolve_declared_nonreturning=resolve_declared_nonreturning,
+        )
     block = BlockSpec(
-        addr=insns[0].address,
-        size=sum(obj.size for obj in insns),
-        instruction_addrs=tuple(obj.address for obj in insns),
+        addr=start_addr,
+        size=decoded_size,
+        instruction_addrs=tuple(instruction_addrs),
         jumpkind=terminator.jumpkind,
+        vex_linear_instruction_sizes=tuple(vex_linear_instruction_sizes),
         direct_targets=terminator.direct_targets,
         fallthrough_addr=terminator.fallthrough_addr,
         syscall_jumpkind=terminator.syscall_jumpkind,
@@ -1009,7 +1089,9 @@ def decode_bounded_block(
             preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
             split_syscall_blocks=split_syscall_blocks,
             resolve_declared_nonreturning=resolve_declared_nonreturning,
+            allow_vex_linear_fallback=allow_vex_linear_fallback,
             on_linear_direct_transfer=on_linear_direct_transfer,
+            on_vex_linear_fallback=on_vex_linear_fallback,
             stop_at_data=stop_at_data,
         )
 

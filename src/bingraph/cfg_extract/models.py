@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from angr import KnowledgeBase
-from angr.knowledge_plugins.cfg import CFGModel
+from angr.knowledge_plugins.cfg import CFGModel, CFGNode
 
 
 @dataclass
@@ -22,10 +22,14 @@ class ExtractedCFGStats:
     blocks_redecoded_for_leader_split: int = 0
     blocks_redecoded_for_data: int = 0
     decode_failures: int = 0
+    vex_linear_fallbacks: int = 0
     data_leaders_rejected: int = 0
     data_region_observations: int = 0
     data_bytes_discovered: int = 0
     call_fallthroughs_suppressed: int = 0
+    static_syscall_resolution_attempts: int = 0
+    static_syscalls_resolved: int = 0
+    static_syscall_fallthroughs_suppressed: int = 0
     linear_direct_transfers_continued: int = 0
     unresolved_indirect_targets: int = 0
     unresolved_call_targets: int = 0
@@ -85,6 +89,18 @@ class ExtractedCFGSummary:
         """Return a stable log-friendly view of the materialized graph."""
 
         return asdict(self)
+
+
+class ExtractedCFGNode(CFGNode):
+    """A normal CFG node with extractor-only VEX fallback rendering spans."""
+
+    __slots__ = ("vex_linear_instruction_sizes",)
+
+    def __init__(
+        self, *args: Any, vex_linear_instruction_sizes: dict[int, int], **kwargs: Any
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.vex_linear_instruction_sizes = vex_linear_instruction_sizes
 
 
 class ExtractedCFG(SimpleNamespace):

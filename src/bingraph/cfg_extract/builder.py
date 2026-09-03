@@ -18,7 +18,6 @@ from typing import cast
 
 from angr import KnowledgeBase, Project
 from angr.knowledge_plugins.cfg import CFGModel, CFGNode
-from angr.simos.userland import SimUserland
 from loguru import logger
 import networkx as nx
 
@@ -38,39 +37,17 @@ from bingraph.cfg.decode import (
 
 from .anomalies import find_extracted_cfg_anomalies
 from .data import StaticDataRegions
-from .models import ExtractedCFG, ExtractedCFGStats, ExtractedCFGSummary
+from .models import (
+    ExtractedCFG,
+    ExtractedCFGNode,
+    ExtractedCFGStats,
+    ExtractedCFGSummary,
+)
 from .sweep import recover_executable_components, select_reconnecting_components
+from .syscalls import ResolvedSyscall, resolve_static_syscall, unknown_syscall_target
 
 
-_UNRESOLVABLE_SYSCALL_ADDR = 0xFFFFFFFFFFFFFFE0
 _UNRESOLVABLE_CALL_ADDR = 0xFFFFFFFFFFFFFFD0
-
-
-def _unknown_syscall_target(project: Project) -> tuple[int, str]:
-    """Return angr's stable synthetic identity for an unresolved syscall.
-
-    CFGFast obtains this leaf through the active SimOS. Reusing the same
-    fallback keeps extractor output comparable without claiming that the
-    synthetic syscall number is statically known by the extractor.
-    """
-
-    try:
-        simos = project.simos
-        if not isinstance(simos, SimUserland):
-            return _UNRESOLVABLE_SYSCALL_ADDR, "UnresolvableSyscallTarget"
-        number = simos.unknown_syscall_number
-        if not isinstance(number, int):
-            raise TypeError("missing unknown syscall number")
-        procedure = simos.syscall_from_number(number)
-        if procedure is None:
-            return _UNRESOLVABLE_SYSCALL_ADDR, "UnresolvableSyscallTarget"
-        addr = procedure.addr
-        name = procedure.display_name
-        if isinstance(addr, int) and isinstance(name, str) and name:
-            return addr, name
-    except (AttributeError, TypeError, ValueError):
-        pass
-    return _UNRESOLVABLE_SYSCALL_ADDR, "UnresolvableSyscallTarget"
 
 
 def _thumb_mode(project: Project, addr: int) -> bool:
@@ -99,7 +76,7 @@ def _make_block_node(
 ) -> CFGNode:
     """Materialize one recovered normal CFG node."""
 
-    return CFGNode(
+    return ExtractedCFGNode(
         block.addr,
         block.size,
         cfg=model,
@@ -108,6 +85,7 @@ def _make_block_node(
         instruction_addrs=block.instruction_addrs,
         thumb=_thumb_mode(project, block.addr),
         name=_node_name(bounds, block.addr),
+        vex_linear_instruction_sizes=dict(block.vex_linear_instruction_sizes),
     )
 
 
@@ -167,6 +145,7 @@ class _ExtractionSession:
         self.sweep_dispatcher_addr: int | None = None
         self.sweep_component_roots: frozenset[int] = frozenset()
         self.continued_linear_direct_transfers: set[int] = set()
+        self.resolved_syscalls: dict[int, ResolvedSyscall] = {}
 
     def _is_data_leader(self, addr: int) -> bool:
         """Return whether this prospective leader is VEX-proven data."""
@@ -278,6 +257,29 @@ class _ExtractionSession:
             self.continued_linear_direct_transfers.add(addr)
             self.stats.linear_direct_transfers_continued += 1
 
+    def _record_vex_linear_fallback(self, _addr: int) -> None:
+        """Count a valid linear instruction unavailable from Capstone."""
+
+        self.stats.vex_linear_fallbacks += 1
+
+    def _resolve_syscall(self, block: BlockSpec) -> BlockSpec:
+        """Apply a locally proven syscall target before discovering successors."""
+
+        if block.jumpkind != "Ijk_Syscall":
+            return block
+        self.stats.static_syscall_resolution_attempts += 1
+        resolved = resolve_static_syscall(self.project, block)
+        if resolved is None:
+            self.resolved_syscalls.pop(block.addr, None)
+            return block
+
+        self.resolved_syscalls[block.addr] = resolved
+        self.stats.static_syscalls_resolved += 1
+        if resolved.no_return and block.fallthrough_addr is not None:
+            self.stats.static_syscall_fallthroughs_suppressed += 1
+            return replace(block, fallthrough_addr=None)
+        return block
+
     def _decode_all_blocks(self) -> None:
         """Drain discovered leaders until their block boundaries stabilize."""
 
@@ -301,7 +303,9 @@ class _ExtractionSession:
                 preserve_conditional_return_fallthrough=True,
                 split_syscall_blocks=True,
                 resolve_declared_nonreturning=True,
+                allow_vex_linear_fallback=True,
                 on_linear_direct_transfer=self._record_linear_direct_transfer,
+                on_vex_linear_fallback=self._record_vex_linear_fallback,
                 stop_at_data=lambda target: self.data_regions.contains(
                     self.project, target
                 ),
@@ -313,6 +317,7 @@ class _ExtractionSession:
                     f"function {self.func_addr:#x}"
                 )
                 continue
+            block = self._resolve_syscall(block)
 
             alternate_rejoins: set[int] = set()
             for leader in tuple(self.leaders):
@@ -523,10 +528,12 @@ class _ExtractionSession:
         for addr, block in sorted(self.blocks.items()):
             source = self.nodes[addr]
             if block.jumpkind == "Ijk_Syscall":
-                syscall_addr, syscall_name = _unknown_syscall_target(self.project)
+                syscall_target = self.resolved_syscalls.get(addr)
+                if syscall_target is None:
+                    syscall_target = unknown_syscall_target(self.project)
                 syscall = self._leaf(
-                    syscall_addr,
-                    syscall_name,
+                    syscall_target.addr,
+                    syscall_target.name,
                     is_syscall=True,
                 )
                 syscall_jumpkind = cast(

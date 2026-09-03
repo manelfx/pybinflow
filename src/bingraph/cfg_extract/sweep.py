@@ -183,6 +183,7 @@ def _recover_direct_closure(
             preserve_conditional_return_fallthrough=True,
             split_syscall_blocks=True,
             resolve_declared_nonreturning=True,
+            allow_vex_linear_fallback=True,
             stop_at_data=stop_at_data,
         )
         if block is None or block.size <= 0:
@@ -261,6 +262,7 @@ def recover_executable_components(
             preserve_conditional_return_fallthrough=True,
             split_syscall_blocks=True,
             resolve_declared_nonreturning=True,
+            allow_vex_linear_fallback=True,
             stop_at_data=stop_at_data,
         )
         if block is None or block.size <= 0:

@@ -55,7 +55,9 @@ class Node:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Node):
             return False
-        return self.obj == other.obj  # and self.seq == other.seq
+        # CFGNode's equality does not recognize extractor-only subclasses,
+        # even when both wrappers hold the exact same underlying object.
+        return self is other or self.obj is other.obj or self.obj == other.obj
 
     def __hash__(self) -> int:
         return hash(self.obj)

@@ -152,6 +152,7 @@ CHECKPOINT_ARTIFACTS = frozenset(
         "i386,bronze_ropchain,0x806b8e0,handle_amd.dot",
         "i386,bronze_ropchain,0x809cc70,_dl_mcount.dot",
         "i386,bronze_ropchain,0x80a7db0,execute_stack_op.dot",
+        "mips,dir,0x40f6f4,hash_initialize.dot",
         "mipsel,mips_syscall_demo,0x401390,__libc_setup_tls.dot",
         "mipsel,mips_syscall_demo,0x420240,__gconv_db_freemem.dot",
         "mipsel,btrfs-tools_btrfs-calc-size,0x4162c8,btrfs_find_block_group.isra.14.dot",

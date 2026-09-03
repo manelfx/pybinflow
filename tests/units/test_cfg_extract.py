@@ -266,6 +266,28 @@ def test_extract_models_syscalls_as_call_like_block_terminators() -> None:
     )
 
 
+def test_extract_resolves_a_static_nonreturning_syscall() -> None:
+    """Use the active syscall ABI when one local block fixes its number."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/mipsel/mips_syscall_demo")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x400EFC)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    syscall_block = nodes[0x400FBC]
+
+    successors = tuple(cfg.graph.successors(syscall_block))
+    assert len(successors) == 1
+    syscall = successors[0]
+    assert syscall.is_syscall
+    assert syscall.name == "exit"
+    assert syscall.addr == 0x700004
+    assert 0x400FC4 not in nodes
+    assert 0x400FD0 not in nodes
+    assert cfg.extract_stats.static_syscalls_resolved == 1
+    assert cfg.extract_stats.static_syscall_fallthroughs_suppressed == 1
+
+
 def test_extract_models_vex_traps_without_a_linear_successor() -> None:
     """Keep MIPS ``break`` as VEX's synchronous trap instead of falling through."""
 

@@ -23,12 +23,17 @@ for caller_addr, callee_addr in callgraph.edges():
 
 === Render DDG for basic block (based on CFGEmulated) ===
 
-By default, angr calculates its Data Dependency Graph (DDG) at the VEX IR statement level, not the raw assembly instruction level. However, because every VEX statement is tied back to the assembly instruction that generated it, you can easily map those dependencies back to the basic block's assembly instructions.
+By default, angr calculates its Data Dependency Graph (DDG) at the VEX IR statement level,
+not the raw assembly instruction level. However, because every VEX statement is tied back
+to the assembly instruction that generated it, you can easily map those dependencies back
+to the basic block's assembly instructions.
 
-Here is a practical guide on how a DDG works in angr and how to scope it down to analyze a single basic block.
+Here is a practical guide on how a DDG works in angr and how to scope it down to analyze
+a single basic block.
 
 Step 1: Generate the DDG for the Function
-The DDG analysis requires an emulated context to trace how data moves through registers and memory. Because of this, you must feed it a CFGEmulated object, not a CFGFast object.
+The DDG analysis requires an emulated context to trace how data moves through registers
+and memory. Because of this, you must feed it a CFGEmulated object, not a CFGFast object.
 
 # 1. Generate the required Emulated CFG
 cfg = project.analyses.CFGEmulated(keep_state=True)
@@ -36,7 +41,8 @@ cfg = project.analyses.CFGEmulated(keep_state=True)
 # 2. Run the Data Dependency Graph analysis
 ddg = project.analyses.DDG(cfg)
 Step 2: How DDG Nodes Work
-The nodes inside ddg.graph are ProgramPoint objects. A data dependency edge exists between two program points if data written by one is read by the other.
+The nodes inside ddg.graph are ProgramPoint objects. A data dependency edge exists between
+two program points if data written by one is read by the other.
 
 To filter these down to your specific basic block, you look at the ProgramPoint attributes:
 
@@ -45,7 +51,9 @@ stmt_idx: The index of the VEX IR statement.
 ins_addr: The memory address of the actual assembly instruction!
 
 Step 3: Getting Instruction-Level Dependencies for Your Block
-To look at how assembly instructions within a single basic block depend on each other, you can iterate through the DDG edges, filtering for edges where both the source and destination reside inside your target block's address range.
+To look at how assembly instructions within a single basic block depend on each other,
+you can iterate through the DDG edges, filtering for edges where both the source and
+destination reside inside your target block's address range.
 
 Here is a complete recipe to extract that data:
 
@@ -76,11 +84,21 @@ for src_pp, dst_pp in ddg.graph.edges():
 What kind of dependencies will you see?
 When you run this on a block, angr will expose two main types of dependencies via the edge data:
 
-Register Dependencies: For example, instruction 1 writes a value to RAX, and instruction 2 immediately reads from RAX.
+Register Dependencies: For example, instruction 1 writes a value to RAX,
+and instruction 2 immediately reads from RAX.
 
-Memory Dependencies: Instruction 1 stores a value onto the stack ([RBP - 0x8]), and a later instruction pops that same stack memory address back into a register.
+Memory Dependencies: Instruction 1 stores a value onto the stack ([RBP - 0x8]),
+and a later instruction pops that same stack memory address back into a register.
 
 === Revisit unresolved indirect jumps
+
+Review http://127.0.0.1:8000/cfg?filepath=x86_64/fmt-rust&function=0x4ad760
+(custom and extract) for more than one dispatchers in a function.
+
+Check in extract how `UnresolvedJumpTarget` node is connected with dispatcher
+(e.g., http://127.0.0.1:8000/cfg?filepath=x86_64/rust_hello_world&function=0x43cff0&mode=extract).
+
+-- (this is slightly deprecated)
 
 Static jump-table recovery is intentionally bounded and VEX-driven. The
 current implementation resolves 64 tables and adds 1,629 validated target
@@ -112,39 +130,6 @@ inspection found stack-held callbacks and MIPS GOT-style transfers whose `gp`
 base cannot be proven statically. Revisit it only with a stronger provenance
 analysis rather than a heuristic resolver.
 
-=== Move from CFGFast repair to independent CFG construction
-
-The current `cfg_mode=custom` path starts from a bounded CFGFast graph and
-repairs malformed blocks, missing successors, stale splits, overlap, and
-unresolved indirect dispatches. This has improved many corpus artifacts, but
-the growing anomaly and repair surface suggests that CFGFast should eventually
-become optional enrichment rather than the source of CFG topology.
-
-The end state is to construct the function CFG without invoking CFGFast:
-
-- Decode blocks from the function entry and discovered leaders, using exact
-  instruction coverage to make block boundaries canonical by construction.
-- Derive direct fallthrough, call, return, and direct-branch edges from decoded
-  terminators, preserving architecture details such as Thumb mode and delay
-  slots through angr/Capstone/VEX helpers.
-- Reuse VEX selectively for hard control-transfer semantics and static
-  jump-table recovery, but represent unresolved indirect transfers explicitly
-  instead of connecting them to CFGFast-discovered disconnected regions.
-- Expose the result through the existing CFG-compatible wrapper so rendering,
-  knowledge-base integration, and downstream consumers continue to work.
-- Replace CFGFast-derived comments and other metadata with optional enrichment
-  passes over the canonical graph.
-
-Do this incrementally and in parallel with the current repair path:
-
-- Implement a direct-control-flow prototype over the checkpoint corpus.
-- Compare it with custom mode for instruction coverage, unique block ranges,
-  direct-edge correctness, indirect-edge uncertainty, and runtime.
-- Port only the existing VEX/table analyses that improve the new builder.
-- Switch the default only once the independent builder wins broadly; retain
-  CFGFast temporarily as an optional hint and comparison oracle during the
-  migration.
-
 === Preserve meaningful local labels in CFG extract mode
 
 `cfg_mode=extract` currently gives every non-entry block a canonical
@@ -170,6 +155,8 @@ do not hard-code that policy before auditing representative artifacts.
 
 === Address comments
 
+- First, try to make extract mode to work with existing comments in custome
+  mode.
 - Bring back comments by default.
 - Analyze which comments are shown, which ones could be shown.
 - Are comments/xrefs still being emitted in a nondeterministic order somewhere?

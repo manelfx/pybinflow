@@ -280,6 +280,26 @@ def test_relative_jump_table_accepts_a_guarded_full_width_index() -> None:
     assert table.entries_are_relative
 
 
+def test_relative_jump_table_normalizes_signed_entry_casts() -> None:
+    """Recognize a signed entry after a VEX zero-extend/truncate detour."""
+
+    # mov eax, eax; lea rdx, [rax * 4]; lea rax, [rip + table];
+    # mov eax, [rdx + rax]; cdqe; lea rdx, [rip + base]; add rax, rdx; jmp rax
+    vex = pyvex.lift(
+        bytes.fromhex(
+            "89c0488d148500000000488d05000000008b04024898488d15000000004801d03effe0"
+        ),
+        0x1000,
+        archinfo.ArchAMD64(),
+    )
+
+    table = _vex_relative_jump_table(vex, allow_full_width_index=True)
+
+    assert table is not None
+    assert table.entry_size == 4
+    assert table.signed_entries
+
+
 def test_relative_jump_table_accepts_a_vex_folded_static_base() -> None:
     """Recognize a RIP-relative table base folded to a VEX constant."""
 
@@ -315,6 +335,36 @@ def test_guarded_jump_table_bound_tracks_a_narrowed_register_view() -> None:
     vex = pyvex.lift(bytes.fromhex("4183f8117600"), 0x1000, archinfo.ArchAMD64())
 
     assert _vex_guarded_index_upper_bound(vex, 0x1006, (80, 64)) == 17
+
+
+def test_guarded_table_bound_tracks_a_zero_extended_index_value() -> None:
+    """Match a narrow guard after its value was written into a wider register."""
+
+    # mov eax, [rip]; cmp eax, 4; ja 0x1015
+    # The not-taken edge enters the dispatcher at 0x100f with rax holding the
+    # zero-extended 32-bit value used by the comparison.
+    vex = pyvex.lift(
+        bytes.fromhex("8b050000000083f8040f8706000000"),
+        0x1000,
+        archinfo.ArchAMD64(),
+    )
+
+    assert _vex_guarded_index_upper_bound(vex, 0x100F, (16, 64)) == 4
+
+
+def test_guarded_table_bound_handles_an_ite_index_expression() -> None:
+    """Use VEX's type environment while tracing a conditional-move index."""
+
+    # cmp rcx, 6; mov eax, 2; cmovb rax, rcx; cmp rax, 4; ja 0x1013
+    # The conditional move produces an ITE expression whose type depends on
+    # the block type environment rather than being derivable in isolation.
+    vex = pyvex.lift(
+        bytes.fromhex("4883f906b802000000480f42c14883f8047700"),
+        0x1000,
+        archinfo.ArchAMD64(),
+    )
+
+    assert _vex_guarded_index_upper_bound(vex, 0x1013, (16, 64)) == 4
 
 
 def test_guarded_jump_table_bound_tracks_a_same_block_index_assignment() -> None:

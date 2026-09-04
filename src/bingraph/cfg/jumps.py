@@ -227,6 +227,48 @@ def _vex_static_int(expr, definitions: dict[int, Any]) -> int | None:
     return None
 
 
+def _vex_width_conversion(
+    expr,
+) -> tuple[int, int, str | None] | None:
+    """Describe one VEX integer-width conversion without accepting arithmetic."""
+
+    if not isinstance(expr, pyvex.expr.Unop):
+        return None
+    conversion = expr.op.removeprefix("Iop_")
+    source, separator, destination = conversion.partition("to")
+    if not separator or not destination.isdecimal():
+        return None
+    signedness = source[-1:] if source[-1:] in {"S", "U"} else None
+    source_bits = source[:-1] if signedness is not None else source
+    if not source_bits.isdecimal():
+        return None
+    return int(source_bits), int(destination), signedness
+
+
+def _vex_low_bits_source(expr, definitions: dict[int, Any], tyenv, bits: int):
+    """Return the expression supplying ``bits`` unchanged low-order bits."""
+
+    while True:
+        expr = _resolve_vex_expr(expr, definitions)
+        conversion = _vex_width_conversion(expr)
+        if conversion is None:
+            return expr if expr.result_size(tyenv) >= bits else None
+        source_bits, destination_bits, _ = conversion
+        if destination_bits < bits or source_bits < bits:
+            return None
+        expr = expr.args[0]
+
+
+def _vex_is_zero_extension_from(
+    expr, definitions: dict[int, Any], bits: int, register_bits: int
+) -> bool:
+    """Return whether ``expr`` zero-extends exactly ``bits`` into a register."""
+
+    expr = _resolve_vex_expr(expr, definitions)
+    conversion = _vex_width_conversion(expr)
+    return conversion == (bits, register_bits, "U")
+
+
 def _vex_guarded_index_upper_bound(
     vex, target_addr: int, index_key: tuple[int, int]
 ) -> int | None:
@@ -275,11 +317,22 @@ def _vex_guard_matches_index_register(
     resolved_expr = _resolve_vex_expr(expr, definitions)
     if resolved_expr is None:
         return False
+    guard_bits = resolved_expr.result_size(vex.tyenv)
+    guard_source = _vex_low_bits_source(
+        resolved_expr, definitions, vex.tyenv, guard_bits
+    )
     for stmt in reversed(preceding_statements):
         if not isinstance(stmt, pyvex.stmt.Put) or stmt.offset != index_key[0]:
             continue
         value = _resolve_vex_expr(stmt.data, definitions)
-        return value is resolved_expr or value == resolved_expr
+        if value is resolved_expr or value == resolved_expr:
+            return True
+        if guard_source is None or not _vex_is_zero_extension_from(
+            value, definitions, guard_bits, index_key[1]
+        ):
+            return False
+        value_source = _vex_low_bits_source(value, definitions, vex.tyenv, guard_bits)
+        return value_source is guard_source or value_source == guard_source
     return False
 
 
@@ -310,6 +363,68 @@ def _guarded_jump_table_entry_count(
     upper_bound = next(iter(bounds_found))
     entry_count = upper_bound + 1
     return entry_count if entry_count <= MAX_STATIC_JUMPTABLE_ENTRIES else None
+
+
+def _vex_normalized_table_entry_load(
+    expr, definitions: dict[int, Any]
+) -> tuple[pyvex.expr.Load, bool] | None:
+    """Return a table load and effective signedness through width casts.
+
+    Lifters can express a signed 32-bit table entry as a zero extension, a
+    truncation, and a final sign extension. Normalize only conversion chains
+    that return to the original load width before one final direct extension.
+    This accepts representation-only casts without mistaking arithmetic for a
+    jump-table entry.
+    """
+
+    casts: list[tuple[int, int, str | None]] = []
+    while True:
+        expr = _resolve_vex_expr(expr, definitions)
+        if isinstance(expr, pyvex.expr.Load):
+            break
+        if not isinstance(expr, pyvex.expr.Unop):
+            return None
+
+        conversion = _vex_width_conversion(expr)
+        if conversion is None:
+            return None
+        casts.append(conversion)
+        expr = expr.args[0]
+
+    entry_bits = expr.result_size(None)
+    casts.reverse()
+    current_bits = entry_bits
+    for source_bits, destination_bits, _ in casts:
+        if source_bits != current_bits:
+            return None
+        current_bits = destination_bits
+
+    # An extension followed by a truncation back to the load width preserves
+    # the original entry bits. Discard these detours before deciding whether
+    # the final value is signed or unsigned.
+    normalized: list[tuple[int, int, str | None]] = []
+    cursor = 0
+    while cursor < len(casts):
+        start = cursor
+        current_bits = entry_bits
+        while cursor < len(casts):
+            _, current_bits, _ = casts[cursor]
+            cursor += 1
+            if current_bits == entry_bits:
+                break
+        if current_bits == entry_bits:
+            continue
+        normalized.extend(casts[start:])
+        break
+
+    if not normalized:
+        return expr, False
+    if len(normalized) != 1:
+        return None
+    source_bits, destination_bits, signedness = normalized[0]
+    if source_bits != entry_bits or destination_bits <= entry_bits:
+        return None
+    return expr, signedness == "S"
 
 
 def _vex_relative_jump_table(
@@ -357,13 +472,11 @@ def _vex_relative_jump_table(
         if base_bits <= 0:
             continue
 
-        signed_entries = False
         entry_expr = _resolve_vex_expr(entry_expr, definitions)
-        if isinstance(entry_expr, pyvex.expr.Unop):
-            signed_entries = "Sto" in entry_expr.op
-            entry_expr = _resolve_vex_expr(entry_expr.args[0], definitions)
-        if not isinstance(entry_expr, pyvex.expr.Load):
+        normalized_entry = _vex_normalized_table_entry_load(entry_expr, definitions)
+        if normalized_entry is None:
             continue
+        entry_expr, signed_entries = normalized_entry
 
         entry_size = entry_expr.result_size(vex.tyenv) // 8
         if entry_size not in {1, 2, 4, 8}:

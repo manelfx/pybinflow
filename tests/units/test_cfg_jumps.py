@@ -367,6 +367,47 @@ def test_guarded_table_bound_handles_an_ite_index_expression() -> None:
     assert _vex_guarded_index_upper_bound(vex, 0x1013, (16, 64)) == 4
 
 
+def test_relative_jump_table_accepts_a_finite_ite_index_domain() -> None:
+    """Recover a table domain selected by a VEX conditional move."""
+
+    # value -= 2; index = value <u 5 ? value : 1; jump table[index]
+    vex = pyvex.lift(
+        bytes.fromhex(
+            "498b064883c0fe4883f805b901000000480f42c8488d050000000048630c884801c1ffe1"
+        ),
+        0x1000,
+        archinfo.ArchAMD64(),
+    )
+
+    table = _vex_relative_jump_table(
+        vex,
+        allow_full_width_index=True,
+        allow_inline_index_values=True,
+    )
+
+    assert table is not None
+    assert table.index_register_offset is None
+    assert table.index_values == (0, 1, 2, 3, 4)
+
+    dispatcher = _Node(0x1000, 4, vex)
+    graph = nx.DiGraph()
+    graph.add_node(dispatcher)
+    bounds = FunctionBounds(0x1000, 0x1100, 0x100, SimpleNamespace(name="f"))
+    project = SimpleNamespace(arch=SimpleNamespace(name="AMD64", bits=64))
+
+    plan, reason = plan_static_jump_table(
+        project,
+        graph,
+        bounds,
+        dispatcher,
+        allow_inline_index_values=True,
+    )
+
+    assert reason is None
+    assert plan is not None
+    assert plan.entry_indices == (0, 1, 2, 3, 4)
+
+
 def test_guarded_jump_table_bound_tracks_a_same_block_index_assignment() -> None:
     """Use the index value written before the guard rather than only a raw GET."""
 
@@ -387,7 +428,7 @@ def test_unreadable_static_jump_table_returns_none() -> None:
         )
     )
 
-    assert _read_static_jump_table_targets(project, _table(), 0x1000, 2) is None
+    assert _read_static_jump_table_targets(project, _table(), 0x1000, (0, 1)) is None
 
 
 def test_arithmetic_pc_dispatch_keeps_only_conditionally_scaled_targets() -> None:

@@ -229,7 +229,7 @@ def test_static_jump_table_removes_a_stale_unresolved_target(
         session,
         "_static_jump_table_plan",
         lambda _node: (
-            SimpleNamespace(table=object(), base_addr=0, entry_count=1),
+            SimpleNamespace(table=object(), base_addr=0, entry_indices=(0,)),
             None,
         ),
     )
@@ -272,7 +272,7 @@ def test_static_jump_table_keeps_unresolved_target_for_invalid_entries(
         session,
         "_static_jump_table_plan",
         lambda _node: (
-            SimpleNamespace(table=object(), base_addr=0, entry_count=1),
+            SimpleNamespace(table=object(), base_addr=0, entry_indices=(0,)),
             None,
         ),
     )

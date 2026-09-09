@@ -513,7 +513,7 @@ def test_extract_static_table_discovery_discards_stale_snapshot_plans(
     monkeypatch.setattr(
         builder_module,
         "plan_static_jump_table",
-        lambda *_args: (
+        lambda *_args, **_kwargs: (
             StaticJumpTablePlan(
                 StaticJumpTable(
                     base_register_offset=None,
@@ -526,7 +526,7 @@ def test_extract_static_table_discovery_discards_stale_snapshot_plans(
                     signed_entries=False,
                 ),
                 0x2000,
-                1,
+                (0,),
             ),
             None,
         ),

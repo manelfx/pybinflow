@@ -626,26 +626,38 @@ def _exceptional_instruction_vex_jumpkind(project: Project, insn: CsInsn) -> str
     return None
 
 
-def _instruction_has_unclassified_vex_transfer(project: Project, insn: CsInsn) -> bool:
-    """Return whether VEX identifies an executable direct target as control flow."""
+def _instruction_has_unclassified_vex_transfer(
+    project: Project,
+    insn: CsInsn,
+    *,
+    include_indirect: bool = False,
+) -> str | None:
+    """Return whether VEX proves control flow absent from Capstone's groups.
+
+    ``include_indirect`` recognizes VEX's guarded ``LoadG``-to-PC shape. It
+    is opt-in because CFG extraction can recover a bounded table from that
+    shape, whereas CFGFast repair deliberately keeps its existing conservative
+    decoding behavior.
+    """
 
     semantic = InsnSemantics(insn)
     if semantic.is_control_transfer():
-        return False
+        return None
 
     target = semantic.direct_target()
-    if target is None:
-        return False
-
-    obj = project.loader.find_object_containing(target)
-    if obj is None:
-        return False
-    section = obj.find_section_containing(target)
-    if section is None or not section.is_executable:
-        return False
+    has_executable_direct_target = False
+    if target is not None:
+        obj = project.loader.find_object_containing(target)
+        section = obj.find_section_containing(target) if obj is not None else None
+        has_executable_direct_target = bool(section and section.is_executable)
+    if not include_indirect:
+        if not has_executable_direct_target:
+            return None
 
     lift_size = insn.size
-    if arch_has_delay_slot(project.arch.name):
+    if arch_has_delay_slot(project.arch.name) and (
+        not include_indirect or has_executable_direct_target
+    ):
         # VEX needs the executed delay-slot instruction to classify MIPS BAL
         # and similar branch-and-link instructions as calls.
         delay_insn = decode_one(
@@ -668,9 +680,37 @@ def _instruction_has_unclassified_vex_transfer(project: Project, insn: CsInsn) -
             f"CFG decoder could not lift possible control transfer at "
             f"{insn.address:#x}: {exc}"
         )
-        return False
+        return None
 
-    return vex.jumpkind == "Ijk_Call" or vex_jumpkind_is_terminal(vex.jumpkind)
+    if vex.jumpkind == "Ijk_Call" or vex_jumpkind_is_terminal(vex.jumpkind):
+        return vex.jumpkind
+
+    if not include_indirect or vex.jumpkind != "Ijk_Boring":
+        return None
+
+    definitions = {
+        statement.tmp: statement.data
+        for statement in vex.statements
+        if isinstance(statement, pyvex.stmt.WrTmp)
+    }
+    next_expr = vex.next
+    while isinstance(next_expr, pyvex.expr.RdTmp):
+        next_expr = definitions.get(next_expr.tmp)
+        if next_expr is None:
+            return None
+    if not isinstance(next_expr, pyvex.expr.ITE):
+        return None
+    selected = next_expr.iftrue
+    while isinstance(selected, pyvex.expr.RdTmp) and selected.tmp in definitions:
+        selected = definitions[selected.tmp]
+    if not isinstance(selected, pyvex.expr.RdTmp):
+        return None
+    if any(
+        isinstance(statement, pyvex.stmt.LoadG) and statement.dst == selected.tmp
+        for statement in vex.statements
+    ):
+        return vex.jumpkind
+    return None
 
 
 def _native_vex_transfer_end(
@@ -941,6 +981,7 @@ def decode_bounded_block(
     preserve_conditional_return_fallthrough: bool = False,
     split_syscall_blocks: bool = False,
     resolve_declared_nonreturning: bool = False,
+    split_unclassified_indirect_vex_transfers: bool = False,
     allow_vex_linear_fallback: bool = False,
     on_linear_direct_transfer: Callable[[int], None] | None = None,
     on_vex_linear_fallback: Callable[[int], None] | None = None,
@@ -1028,9 +1069,21 @@ def decode_bounded_block(
                 has_nonfallthrough_vex_terminator = True
                 break
 
-        if _instruction_has_unclassified_vex_transfer(project, insn):
+        unclassified_vex_jumpkind = _instruction_has_unclassified_vex_transfer(
+            project,
+            insn,
+            include_indirect=split_unclassified_indirect_vex_transfers,
+        )
+        if unclassified_vex_jumpkind is not None:
             unclassified_vex_terminator_addr = insn.address
-            if has_delay_slot and bounds.addr <= next_addr < bounds.end_addr:
+            if (
+                has_delay_slot
+                and (
+                    not split_unclassified_indirect_vex_transfers
+                    or not vex_jumpkind_is_terminal(unclassified_vex_jumpkind)
+                )
+                and bounds.addr <= next_addr < bounds.end_addr
+            ):
                 delay_insn = decode_one(project, next_addr, max_inst_bytes)
                 if delay_insn is not None:
                     insns.append(delay_insn)
@@ -1089,6 +1142,9 @@ def decode_bounded_block(
             preserve_conditional_return_fallthrough=preserve_conditional_return_fallthrough,
             split_syscall_blocks=split_syscall_blocks,
             resolve_declared_nonreturning=resolve_declared_nonreturning,
+            split_unclassified_indirect_vex_transfers=(
+                split_unclassified_indirect_vex_transfers
+            ),
             allow_vex_linear_fallback=allow_vex_linear_fallback,
             on_linear_direct_transfer=on_linear_direct_transfer,
             on_vex_linear_fallback=on_vex_linear_fallback,

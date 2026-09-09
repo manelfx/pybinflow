@@ -303,6 +303,7 @@ class _ExtractionSession:
                 preserve_conditional_return_fallthrough=True,
                 split_syscall_blocks=True,
                 resolve_declared_nonreturning=True,
+                split_unclassified_indirect_vex_transfers=True,
                 allow_vex_linear_fallback=True,
                 on_linear_direct_transfer=self._record_linear_direct_transfer,
                 on_vex_linear_fallback=self._record_vex_linear_fallback,
@@ -412,15 +413,16 @@ class _ExtractionSession:
                 block = self.blocks.get(addr)
                 if block is None:
                     continue
-                if (
-                    block.jumpkind != "Ijk_Boring"
-                    or block.direct_targets
-                    or block.fallthrough_addr is not None
-                ):
+                if block.jumpkind != "Ijk_Boring" or block.direct_targets:
                     continue
                 self.stats.static_jump_plan_attempts += 1
                 plan, reason = plan_static_jump_table(
-                    self.project, graph, self.bounds, node
+                    self.project,
+                    graph,
+                    self.bounds,
+                    node,
+                    allow_inline_index_values=True,
+                    allow_guarded_loads=True,
                 )
                 if plan is None:
                     self.stats.static_jump_unresolved_dispatcher_attempts += 1
@@ -429,7 +431,7 @@ class _ExtractionSession:
                         setattr(self.stats, field, getattr(self.stats, field) + 1)
                     continue
                 targets = _read_static_jump_table_targets(
-                    self.project, plan.table, plan.base_addr, plan.entry_count
+                    self.project, plan.table, plan.base_addr, plan.entry_indices
                 )
                 if targets is None:
                     self.stats.static_jump_table_unreadable += 1
@@ -438,6 +440,7 @@ class _ExtractionSession:
                 rejected = [
                     static_jump_target_rejection_reason(self.project, target)
                     for target in targets
+                    if not self.bounds.addr <= target < self.bounds.end_addr
                 ]
                 if any(rejected):
                     self.stats.static_jump_targets_rejected += sum(

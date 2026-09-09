@@ -130,6 +130,34 @@ inspection found stack-held callbacks and MIPS GOT-style transfers whose `gp`
 base cannot be proven statically. Revisit it only with a stronger provenance
 analysis rather than a heuristic resolver.
 
+=== Recover Rust/C++ unwind landing pads in extract mode
+
+`x86_64/fmt-rust:FluentValue::write` at `0x4ad760` shows the motivating
+case: extract proves its normal finite jump-table targets, but does not show
+cleanup blocks reached only when a call unwinds. Custom renders those blocks
+through an unproven unresolved-target overapproximation, which is not a
+reliable substitute for exception-flow recovery.
+
+For ELF targets using Itanium/DWARF exception handling, parse each function's
+FDE and LSDA (`.eh_frame` and `.gcc_except_table`). The LSDA call-site table
+maps instruction-PC ranges to landing-pad addresses. Add an internal
+exceptional edge from each covered potentially-throwing call to its landing
+pad, alongside the normal fake-return edge, and decode the landing pad through
+the ordinary extract worklist. Mark those edges and nodes distinctly in the
+renderer. Start with x86-64 Linux; consider ARM EHABI and other platform
+formats only after this path is validated.
+
+=== Avoid very large function names in nodes ===
+
+If function names are very large, nodes become wide.
+We want to show, instead of something like:
+
+(0x4ad824) _ZN13fluent_bundle5types11FluentValue5write17hd5d59ec48b6606d8E+0xc4
+
+show something like:
+
+(0x4ad824) _ZN13fluent_bundle5types...+0xc4
+
 === Preserve meaningful local labels in CFG extract mode
 
 `cfg_mode=extract` currently gives every non-entry block a canonical

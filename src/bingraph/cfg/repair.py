@@ -450,7 +450,7 @@ class _RepairSession:
                 self.project,
                 plan.table,
                 plan.base_addr,
-                plan.entry_count,
+                plan.entry_indices,
             )
             if not targets:
                 continue
@@ -605,7 +605,7 @@ class _RepairSession:
                 self.project,
                 plan.table,
                 plan.base_addr,
-                plan.entry_count,
+                plan.entry_indices,
             )
             if targets is None:
                 self.stats.static_jump_table_unreadable += 1

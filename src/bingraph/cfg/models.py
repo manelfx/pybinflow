@@ -74,23 +74,30 @@ class StaticJumpTable:
     base_register_offset: int | None
     base_bits: int
     table_displacement: int
-    index_register_offset: int
-    index_bits: int
+    index_register_offset: int | None
+    index_bits: int | None
     entry_size: int
     endness: str
     signed_entries: bool
     target_displacement: int = 0
     entries_are_relative: bool = True
     static_base_addr: int | None = None
+    index_values: tuple[int, ...] | None = None
 
 
 @dataclass(frozen=True)
 class StaticJumpTablePlan:
-    """A VEX-proven table, its concrete base, and finite entry count."""
+    """A VEX-proven table, its concrete base, and selected entry indices."""
 
     table: StaticJumpTable
     base_addr: int
-    entry_count: int
+    entry_indices: tuple[int, ...]
+
+    @property
+    def entry_count(self) -> int:
+        """Return the number of concrete table entries selected by the proof."""
+
+        return len(self.entry_indices)
 
 
 @dataclass(frozen=True)

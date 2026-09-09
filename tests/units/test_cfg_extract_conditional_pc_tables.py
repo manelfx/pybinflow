@@ -100,3 +100,62 @@ def test_extract_recovers_a_scaled_static_byte_table() -> None:
     assert successors == {0x401D39, 0x401D59, 0x401D61}
     assert cfg.extract_stats.static_jump_plans_resolved == 1
     assert cfg.extract_stats.static_jump_target_edges_added == 3
+
+
+def test_extract_recovers_a_scaled_static_halfword_table() -> None:
+    """Recover VEX-scaled halfword-table targets without an ARM mnemonic rule."""
+
+    project = load_project(Path("angr-binaries/tests/armel/lwip_udpecho_bm.elf"))
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x41DD)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    source = nodes[0x4747]
+    successors = {node.addr for node in cfg.graph.successors(source)}
+
+    assert successors == {
+        0x4775,
+        0x4865,
+        0x4937,
+        0x493F,
+        0x49D1,
+        0x4A05,
+        0x4A43,
+    }
+    assert cfg.extract_stats.static_jump_plans_resolved == 1
+    assert cfg.extract_stats.static_jump_target_edges_added == 7
+    assert not any(
+        node.simprocedure_name == "UnresolvableJumpTarget"
+        for node in cfg.graph.nodes()
+        if node.is_simprocedure
+    )
+
+
+def test_extract_recovers_an_unconditional_static_pc_load_table() -> None:
+    """Stop at and resolve a VEX-only absolute table load into the PC."""
+
+    project = load_project(
+        Path("angr-binaries/tests/armel/i2c_master_read-nucleol152re.elf")
+    )
+    bounds = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x800B401
+    ).bounds
+
+    block = decode_bounded_block(
+        project,
+        bounds,
+        0x800BB47,
+        set(),
+        split_unclassified_indirect_vex_transfers=True,
+    )
+
+    assert block is not None
+    assert block.instruction_addrs == (0x800BB47, 0x800BB49)
+    assert block.fallthrough_addr is None
+
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x800B401)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    source = nodes[0x800BB47]
+    successors = {node.addr for node in cfg.graph.successors(source)}
+
+    assert successors == {0x800B489, 0x800BC93, 0x800BCCB}
+    assert cfg.extract_stats.static_jump_plans_resolved >= 1
+    assert cfg.extract_stats.static_jump_target_edges_added >= 3

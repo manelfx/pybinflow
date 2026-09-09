@@ -691,11 +691,11 @@ def _instruction_has_unclassified_vex_transfer(
     # Keep conditional computed-PC detection VEX-driven. This covers both a
     # guarded table load into PC and arithmetic PC dispatch without embedding
     # instruction-set-specific mnemonic rules in the decoder.
-    from .jumps import vex_has_conditional_computed_pc_transfer
+    from .jumps import vex_has_computed_pc_transfer
 
     return (
         vex.jumpkind
-        if vex_has_conditional_computed_pc_transfer(vex, insn.address + insn.size)
+        if vex_has_computed_pc_transfer(vex, insn.address + insn.size)
         else None
     )
 

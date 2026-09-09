@@ -431,6 +431,7 @@ class _ExtractionSession:
                         node,
                         allow_inline_index_values=True,
                         allow_guarded_loads=True,
+                        allow_static_bases=True,
                     )
                     if plan is not None:
                         targets = _read_static_jump_table_targets(

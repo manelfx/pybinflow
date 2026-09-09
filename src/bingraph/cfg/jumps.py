@@ -15,7 +15,7 @@ from collections import deque
 from collections.abc import Iterable
 from typing import Any, Literal
 
-from angr import Project
+from angr import Project, options as angr_options
 from angr.knowledge_plugins.cfg import CFGNode
 from loguru import logger
 import pyvex
@@ -800,6 +800,7 @@ def _vex_direct_table_from_load(
     guard,
     allow_full_width_index: bool,
     allow_inline_index_values: bool,
+    allow_static_base: bool = False,
 ) -> StaticJumpTable | None:
     """Describe an absolute-address table load from its VEX address expression."""
 
@@ -855,7 +856,7 @@ def _vex_direct_table_from_load(
 
     if index_key is None and index_values is None:
         return None
-    if base_key is None and guard is None:
+    if base_key is None and guard is None and not allow_static_base:
         # Preserve the existing direct-table policy. An absolute base is only
         # safe here when the guarded LoadG has proved a PC-table dispatch.
         return None
@@ -888,6 +889,295 @@ def _vex_direct_table_from_load(
         static_base_addr=static_base_addr,
         index_values=index_values,
     )
+
+
+def _conditional_pc_dispatch_shape(vex, fallthrough_addr: int):
+    """Return a VEX-proven conditional non-linear program-counter update.
+
+    A conditional write to the program counter is represented as ``next =
+    ITE(condition, taken, current_pc)`` plus an ``Exit`` for the ordinary
+    continuation.  This is a VEX control-flow shape, not an instruction-set
+    convention: ARM's predicated ``ldr pc`` and ``add pc`` are two examples.
+    """
+
+    if vex.jumpkind != "Ijk_Boring":
+        return None
+
+    definitions = _vex_tmp_definitions(vex)
+    next_expr = _resolve_vex_expr(vex.next, definitions)
+    if not isinstance(next_expr, pyvex.expr.ITE):
+        return None
+
+    if not any(
+        isinstance(statement, pyvex.stmt.Exit)
+        and getattr(statement.dst, "value", None) == fallthrough_addr
+        for statement in vex.statements
+    ):
+        return None
+
+    taken = _resolve_vex_expr(next_expr.iftrue, definitions)
+    if taken is None and isinstance(next_expr.iftrue, pyvex.expr.RdTmp):
+        # LoadG destinations are statements, not WrTmps, and therefore do
+        # not appear in the normal temporary-definition mapping.
+        taken = next_expr.iftrue
+    if taken is None:
+        return None
+    return definitions, next_expr.cond, taken
+
+
+def vex_has_conditional_computed_pc_transfer(vex, fallthrough_addr: int) -> bool:
+    """Return whether VEX proves a conditional computed-PC transfer.
+
+    Decoders use this solely to choose a basic-block boundary. Target recovery
+    remains separate and requires a finite VEX-derived target domain.
+    """
+
+    return _conditional_pc_dispatch_shape(vex, fallthrough_addr) is not None
+
+
+def _conditional_pc_load_table(
+    vex,
+    definitions: dict[int, Any],
+    condition,
+    taken,
+) -> StaticJumpTable | None:
+    """Describe a guarded absolute table load selected as the next PC."""
+
+    if not isinstance(taken, pyvex.expr.RdTmp):
+        return None
+
+    condition_key = _vex_expr_key(condition, definitions)
+    if condition_key is None:
+        return None
+    for statement in vex.statements:
+        if not isinstance(statement, pyvex.stmt.LoadG) or statement.dst != taken.tmp:
+            continue
+        guard_key = _vex_expr_key(statement.guard, definitions)
+        if guard_key != condition_key:
+            continue
+        entry_size = vex.tyenv.sizeof(statement.dst) // 8
+        if statement.cvt != f"ILGop_Ident{entry_size * 8}":
+            continue
+        # The outer ITE and fallthrough Exit prove this absolute load updates
+        # the PC. Its bound is recovered from the enclosing VEX condition.
+        return _vex_direct_table_from_load(
+            vex,
+            definitions,
+            statement.addr,
+            entry_size,
+            statement.end,
+            guard=None,
+            allow_full_width_index=True,
+            allow_inline_index_values=True,
+            allow_static_base=True,
+        )
+    return None
+
+
+def _conditional_pc_arithmetic_dispatch(
+    vex,
+    definitions: dict[int, Any],
+    taken,
+) -> tuple[tuple[int, int], int, int] | None:
+    """Describe a ``constant + (register << shift)`` PC target expression."""
+
+    if not isinstance(taken, pyvex.expr.Binop) or not taken.op.startswith("Iop_Add"):
+        return None
+
+    base_addr = None
+    index_key = None
+    shift = None
+    for term in _vex_add_terms(taken, definitions) or ():
+        value = _vex_const_value(term, definitions)
+        if value is not None and base_addr is None:
+            base_addr = value
+            continue
+        shifted = _resolve_vex_expr(term, definitions)
+        if not isinstance(shifted, pyvex.expr.Binop) or not shifted.op.startswith(
+            "Iop_Shl"
+        ):
+            return None
+        candidate_shift = _vex_const_value(shifted.args[1], definitions)
+        candidate_index = _vex_get_key(shifted.args[0], definitions, vex)
+        if candidate_shift is None or candidate_index is None or index_key is not None:
+            return None
+        index_key = candidate_index
+        shift = candidate_shift
+
+    if base_addr is None or index_key is None or shift is None:
+        return None
+    return index_key, base_addr, shift
+
+
+def _unique_entry_path(
+    graph: CFGGraph, bounds: FunctionBounds, node: CFGNode
+) -> tuple[CFGNode, ...] | None:
+    """Return one acyclic in-function path from entry to ``node``.
+
+    Symbolic successor recovery is deliberately limited to this strict shape.
+    Multiple predecessor paths would require joining path constraints, which is
+    beyond a local static jump-target proof.
+    """
+
+    path = [node]
+    seen = {node}
+    current = node
+    while current.addr != bounds.addr:
+        predecessors = [
+            predecessor
+            for predecessor in graph.predecessors(current)
+            if _node_is_materialized_cfg_node(predecessor)
+            and _node_intersects_bounds(predecessor, bounds)
+        ]
+        if len(predecessors) != 1:
+            return None
+        current = predecessors[0]
+        if current in seen:
+            return None
+        seen.add(current)
+        path.append(current)
+    return tuple(reversed(path))
+
+
+def _path_constrained_pc_targets(
+    project: Project,
+    graph: CFGGraph,
+    bounds: FunctionBounds,
+    node: CFGNode,
+) -> tuple[int, ...] | None:
+    """Resolve one dispatch by replaying its unique VEX path from entry.
+
+    Replaying a unique path lets angr retain predecessor constraints without
+    turning extraction into unrestricted symbolic execution. The caller first
+    proves that the final block has a conditional arithmetic PC update.
+    """
+
+    path = _unique_entry_path(graph, bounds, node)
+    if path is None:
+        return None
+    if any(_node_vex(path_node) is None for path_node in path):
+        return None
+
+    try:
+        state = project.factory.blank_state(
+            addr=path[0].addr,
+            add_options={angr_options.SYMBOL_FILL_UNCONSTRAINED_REGISTERS},
+        )
+        for current, successor in zip(path, path[1:], strict=False):
+            successors = project.factory.successors(
+                state,
+                addr=current.addr,
+                size=current.size,
+            )
+            matching = [
+                next_state
+                for next_state in successors.flat_successors
+                if next_state.addr == successor.addr
+            ]
+            if len(matching) != 1:
+                return None
+            state = matching[0]
+
+        successors = project.factory.successors(
+            state,
+            addr=node.addr,
+            size=node.size,
+        )
+    except Exception:
+        return None
+
+    targets = {
+        successor.addr
+        for successor in successors.flat_successors
+        if isinstance(successor.addr, int)
+        and successor.addr != node.addr + node.size
+        and is_direct_target_valid(bounds, successor.addr)
+    }
+    if not targets or len(targets) > MAX_STATIC_JUMPTABLE_ENTRIES:
+        return None
+    return tuple(sorted(targets))
+
+
+def conditional_pc_dispatch_targets(
+    project: Project,
+    bounds: FunctionBounds,
+    node: CFGNode,
+    graph: CFGGraph | None = None,
+) -> tuple[tuple[int, ...] | None, str | None]:
+    """Return finite targets of one VEX-proven conditional PC dispatcher.
+
+    It supports either an absolute-address table load or an inline arithmetic
+    dispatch. The preferred proof is a same-block unsigned guard that bounds
+    the index. For arithmetic dispatches only, a unique predecessor path can
+    instead provide the necessary constraints through VEX replay. It never
+    infers targets from arbitrary code addresses, so callers can safely feed
+    its output into a leader worklist.
+    """
+
+    try:
+        # CFGNode.block may use angr's cross-instruction optimization, which
+        # substitutes an index register with an earlier temporary. Re-lift the
+        # already bounded block without that optimization so a guard and its
+        # indexed PC update retain their shared register expression.
+        vex = project.factory.block(
+            node.addr,
+            size=node.size,
+            strict_block_end=True,
+            cross_insn_opt=False,
+        ).vex
+    except Exception:
+        return None, "no_vex"
+
+    shape = _conditional_pc_dispatch_shape(vex, node.addr + node.size)
+    if shape is None:
+        return None, "not_conditional_pc"
+    definitions, condition, taken = shape
+
+    table = _conditional_pc_load_table(vex, definitions, condition, taken)
+    if table is not None:
+        if table.index_register_offset is None or table.index_bits is None:
+            return None, "unbounded_index"
+        index_values = _vex_guarded_index_values(
+            condition,
+            (table.index_register_offset, table.index_bits),
+            definitions,
+            vex,
+        )
+        if index_values is None or table.static_base_addr is None:
+            return None, "unbounded_index"
+        targets = _read_static_jump_table_targets(
+            project,
+            table,
+            table.static_base_addr,
+            index_values,
+        )
+        if targets is None:
+            return None, "table_unreadable"
+        if not all(is_direct_target_valid(bounds, target) for target in targets):
+            return None, "invalid_target"
+        return targets, None
+
+    arithmetic = _conditional_pc_arithmetic_dispatch(vex, definitions, taken)
+    if arithmetic is None:
+        return None, "no_dispatch_shape"
+    index_key, base_addr, shift = arithmetic
+    index_values = _vex_guarded_index_values(condition, index_key, definitions, vex)
+    if index_values is not None:
+        mask = (1 << project.arch.bits) - 1
+        targets = tuple(
+            sorted({(base_addr + (index << shift)) & mask for index in index_values})
+        )
+    else:
+        targets = (
+            _path_constrained_pc_targets(project, graph, bounds, node)
+            if graph is not None
+            else None
+        )
+        if targets is None:
+            return None, "unbounded_index"
+    if not all(is_direct_target_valid(bounds, target) for target in targets):
+        return None, "invalid_target"
+    return targets, None
 
 
 def _constant_register_from_predecessors(

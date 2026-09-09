@@ -45,3 +45,42 @@ def test_extract_recovers_a_guarded_pc_load_table() -> None:
         for node in cfg.graph.nodes()
         if node.is_simprocedure
     )
+
+
+def test_extract_recovers_a_guarded_arithmetic_pc_dispatch() -> None:
+    """Recover a finite ``addls pc, pc, r2, lsl #2`` target range."""
+
+    project = load_project(Path("angr-binaries/tests/armel/libc.so.6"))
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x47E114)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    source = nodes[0x47E114]
+    successors = {node.addr for node in cfg.graph.successors(source)}
+
+    assert successors == {
+        0x47E140,
+        0x47E144,
+        0x47E148,
+        0x47E14C,
+        0x47E150,
+        0x47E154,
+        0x47E158,
+        0x47E15C,
+        0x47E160,
+    }
+    assert cfg.extract_stats.conditional_pc_dispatches_resolved == 1
+    assert cfg.extract_stats.conditional_pc_targets_recovered == 8
+
+
+def test_extract_recovers_a_clz_derived_arithmetic_pc_dispatch() -> None:
+    """Recover the bounded predicated dispatcher in ``__aeabi_idiv``."""
+
+    project = load_project(Path("angr-binaries/tests/armel/test_division"))
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x8670)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    source = nodes[0x86A0]
+    successors = {node.addr for node in cfg.graph.successors(source)}
+
+    assert successors == {0x86BC, *range(0x86CC, 0x8835, 0xC)}
+    assert 0x86C0 not in successors
+    assert cfg.extract_stats.conditional_pc_dispatches_resolved == 1
+    assert cfg.extract_stats.conditional_pc_targets_recovered == 31

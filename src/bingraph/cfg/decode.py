@@ -688,29 +688,16 @@ def _instruction_has_unclassified_vex_transfer(
     if not include_indirect or vex.jumpkind != "Ijk_Boring":
         return None
 
-    definitions = {
-        statement.tmp: statement.data
-        for statement in vex.statements
-        if isinstance(statement, pyvex.stmt.WrTmp)
-    }
-    next_expr = vex.next
-    while isinstance(next_expr, pyvex.expr.RdTmp):
-        next_expr = definitions.get(next_expr.tmp)
-        if next_expr is None:
-            return None
-    if not isinstance(next_expr, pyvex.expr.ITE):
-        return None
-    selected = next_expr.iftrue
-    while isinstance(selected, pyvex.expr.RdTmp) and selected.tmp in definitions:
-        selected = definitions[selected.tmp]
-    if not isinstance(selected, pyvex.expr.RdTmp):
-        return None
-    if any(
-        isinstance(statement, pyvex.stmt.LoadG) and statement.dst == selected.tmp
-        for statement in vex.statements
-    ):
-        return vex.jumpkind
-    return None
+    # Keep conditional computed-PC detection VEX-driven. This covers both a
+    # guarded table load into PC and arithmetic PC dispatch without embedding
+    # instruction-set-specific mnemonic rules in the decoder.
+    from .jumps import vex_has_conditional_computed_pc_transfer
+
+    return (
+        vex.jumpkind
+        if vex_has_conditional_computed_pc_transfer(vex, insn.address + insn.size)
+        else None
+    )
 
 
 def _native_vex_transfer_end(

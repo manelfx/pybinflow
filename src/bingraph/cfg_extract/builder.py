@@ -25,6 +25,7 @@ from bingraph.cfg.anomalies import _lookup_function_bounds
 from bingraph.cfg.graph import CFGGraph, add_successor_edge
 from bingraph.cfg.jumps import (
     _read_static_jump_table_targets,
+    conditional_pc_dispatch_targets,
     plan_static_jump_table,
     static_jump_target_rejection_reason,
 )
@@ -407,6 +408,7 @@ class _ExtractionSession:
             graph, nodes = self._analysis_graph()
             discovered = False
             plans: dict[int, tuple[int, ...]] = {}
+            conditional_sources: set[int] = set()
             for addr, node in nodes.items():
                 # Adding a target can split a later block from this snapshot.
                 # Skip its now-stale node; the next round analyzes its decode.
@@ -416,25 +418,33 @@ class _ExtractionSession:
                 if block.jumpkind != "Ijk_Boring" or block.direct_targets:
                     continue
                 self.stats.static_jump_plan_attempts += 1
-                plan, reason = plan_static_jump_table(
-                    self.project,
-                    graph,
-                    self.bounds,
-                    node,
-                    allow_inline_index_values=True,
-                    allow_guarded_loads=True,
+                targets, reason = conditional_pc_dispatch_targets(
+                    self.project, self.bounds, node, graph
                 )
-                if plan is None:
+                if targets is not None:
+                    conditional_sources.add(addr)
+                elif reason in {"not_conditional_pc", "no_vex"}:
+                    plan, reason = plan_static_jump_table(
+                        self.project,
+                        graph,
+                        self.bounds,
+                        node,
+                        allow_inline_index_values=True,
+                        allow_guarded_loads=True,
+                    )
+                    if plan is not None:
+                        targets = _read_static_jump_table_targets(
+                            self.project,
+                            plan.table,
+                            plan.base_addr,
+                            plan.entry_indices,
+                        )
+                if targets is None:
                     self.stats.static_jump_unresolved_dispatcher_attempts += 1
                     if reason is not None:
                         field = f"static_jump_{reason}"
-                        setattr(self.stats, field, getattr(self.stats, field) + 1)
-                    continue
-                targets = _read_static_jump_table_targets(
-                    self.project, plan.table, plan.base_addr, plan.entry_indices
-                )
-                if targets is None:
-                    self.stats.static_jump_table_unreadable += 1
+                        if hasattr(self.stats, field):
+                            setattr(self.stats, field, getattr(self.stats, field) + 1)
                     continue
                 self.stats.static_jump_table_entries_read += len(targets)
                 rejected = [
@@ -467,6 +477,10 @@ class _ExtractionSession:
                 self._decode_all_blocks()
                 continue
             self.static_targets.update(plans)
+            self.stats.conditional_pc_dispatches_resolved += len(conditional_sources)
+            self.stats.conditional_pc_targets_recovered += sum(
+                len(plans[addr]) for addr in conditional_sources
+            )
             self.stats.static_jump_plans_resolved += len(plans)
             return
 

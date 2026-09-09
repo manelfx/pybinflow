@@ -50,6 +50,8 @@ class ExtractedCFGStats:
     static_jump_unbounded_index: int = 0
     static_jump_table_unreadable: int = 0
     static_jump_targets_rejected: int = 0
+    conditional_pc_dispatches_resolved: int = 0
+    conditional_pc_targets_recovered: int = 0
     sweep_runs: int = 0
     sweep_candidate_blocks: int = 0
     sweep_candidate_instructions: int = 0

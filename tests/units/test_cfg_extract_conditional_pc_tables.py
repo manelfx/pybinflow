@@ -84,3 +84,19 @@ def test_extract_recovers_a_clz_derived_arithmetic_pc_dispatch() -> None:
     assert 0x86C0 not in successors
     assert cfg.extract_stats.conditional_pc_dispatches_resolved == 1
     assert cfg.extract_stats.conditional_pc_targets_recovered == 31
+
+
+def test_extract_recovers_a_scaled_static_byte_table() -> None:
+    """Recover VEX-scaled byte-table targets without an ARM mnemonic rule."""
+
+    project = load_project(
+        Path("angr-binaries/tests/armhf/amp_challenge_07.gcc.dyn.unstripped")
+    )
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x401D29)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    source = nodes[0x401D31]
+    successors = {node.addr for node in cfg.graph.successors(source)}
+
+    assert successors == {0x401D39, 0x401D59, 0x401D61}
+    assert cfg.extract_stats.static_jump_plans_resolved == 1
+    assert cfg.extract_stats.static_jump_target_edges_added == 3

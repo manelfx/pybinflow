@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterable
+from dataclasses import replace
 from typing import Any, Literal
 
 from angr import Project, options as angr_options
@@ -342,7 +343,12 @@ def _vex_is_zero_extension_from(
 def _vex_guarded_index_upper_bound(
     vex, target_addr: int, index_key: tuple[int, int]
 ) -> int | None:
-    """Return a proven unsigned upper bound for an exit entering ``target_addr``."""
+    """Return a proven unsigned bound for a VEX path entering ``target_addr``.
+
+    A compiler may encode the dispatcher as either the taken ``Exit`` or the
+    default ``NEXT`` path.  In the latter form, the exit guard is the inverse
+    of the table-domain condition, such as ``limit <u index``.
+    """
 
     definitions = _vex_tmp_definitions(vex)
     for exit_index, stmt in enumerate(vex.statements):
@@ -351,25 +357,76 @@ def _vex_guarded_index_upper_bound(
         if getattr(stmt.dst, "value", None) != target_addr:
             continue
 
-        guard = _resolve_vex_expr(stmt.guard, definitions)
-        while isinstance(guard, pyvex.expr.Unop):
-            guard = _resolve_vex_expr(guard.args[0], definitions)
-        if not isinstance(guard, pyvex.expr.Binop):
-            continue
-        if not guard.op.endswith("U"):
-            continue
-        if not _vex_guard_matches_index_register(
-            guard.args[0], index_key, definitions, vex, vex.statements[:exit_index]
-        ):
-            continue
-        bound = _vex_static_int(guard.args[1], definitions)
-        if bound is None:
-            continue
-        if "CmpLE" in guard.op:
-            return bound
-        if "CmpLT" in guard.op and bound > 0:
-            return bound - 1
-    return None
+        upper_bound = _vex_guard_upper_bound(
+            stmt.guard,
+            index_key,
+            definitions,
+            vex,
+            vex.statements[:exit_index],
+            index_on_left=True,
+        )
+        if upper_bound is not None:
+            return upper_bound
+
+    if _vex_const_value(vex.next, definitions) != target_addr:
+        return None
+
+    bounds = {
+        upper_bound
+        for exit_index, stmt in enumerate(vex.statements)
+        if isinstance(stmt, pyvex.stmt.Exit)
+        if (
+            upper_bound := _vex_guard_upper_bound(
+                stmt.guard,
+                index_key,
+                definitions,
+                vex,
+                vex.statements[:exit_index],
+                index_on_left=False,
+            )
+        )
+        is not None
+    }
+    return next(iter(bounds)) if len(bounds) == 1 else None
+
+
+def _vex_guard_upper_bound(
+    guard,
+    index_key: tuple[int, int],
+    definitions: dict[int, Any],
+    vex,
+    preceding_statements: tuple[Any, ...] | list[Any],
+    *,
+    index_on_left: bool,
+) -> int | None:
+    """Return an unsigned bound implied when ``guard`` has the given truth."""
+
+    guard = _resolve_vex_expr(guard, definitions)
+    while isinstance(guard, pyvex.expr.Unop):
+        guard = _resolve_vex_expr(guard.args[0], definitions)
+    if not isinstance(guard, pyvex.expr.Binop) or not guard.op.endswith("U"):
+        return None
+
+    index_expr, bound_expr = (
+        (guard.args[0], guard.args[1])
+        if index_on_left
+        else (guard.args[1], guard.args[0])
+    )
+    if not _vex_guard_matches_index_register(
+        index_expr, index_key, definitions, vex, preceding_statements
+    ):
+        return None
+    bound = _vex_static_int(bound_expr, definitions)
+    if bound is None:
+        return None
+
+    if "CmpLT" in guard.op:
+        upper_bound = bound - 1 if index_on_left else bound
+    elif "CmpLE" in guard.op:
+        upper_bound = bound if index_on_left else bound - 1
+    else:
+        return None
+    return upper_bound if upper_bound >= 0 else None
 
 
 def _vex_guarded_index_values(
@@ -694,6 +751,128 @@ def _vex_relative_jump_table(
                 )
 
     return None
+
+
+def _vex_static_byte_table_load(
+    vex,
+    definitions: dict[int, Any],
+    entry_expr,
+) -> StaticJumpTable | None:
+    """Describe a byte table loaded from a static base plus one register.
+
+    This is intentionally limited to byte entries. A larger entry needs a
+    scaled index in the load address and is already handled by the ordinary
+    direct/relative table matchers.
+    """
+
+    entry = _vex_normalized_table_entry_load(entry_expr, definitions)
+    if entry is None:
+        return None
+    load, signed_entries = entry
+    if load.result_size(vex.tyenv) != 8:
+        return None
+
+    address_terms = _vex_add_terms(load.addr, definitions)
+    if address_terms is None:
+        return None
+
+    static_base_addr = 0
+    index_key = None
+    for term in address_terms:
+        value = _vex_const_value(term, definitions)
+        if value is not None:
+            static_base_addr += value
+            continue
+        candidate_index = _vex_get_key(term, definitions, vex)
+        if candidate_index is None or index_key is not None:
+            return None
+        index_key = candidate_index
+
+    if index_key is None:
+        return None
+    address_bits = load.addr.result_size(vex.tyenv)
+    if address_bits <= 0:
+        return None
+
+    return StaticJumpTable(
+        base_register_offset=None,
+        base_bits=address_bits,
+        table_displacement=0,
+        index_register_offset=index_key[0],
+        index_bits=index_key[1],
+        entry_size=1,
+        endness=load.end,
+        signed_entries=signed_entries,
+        static_base_addr=static_base_addr & ((1 << address_bits) - 1),
+    )
+
+
+def _vex_scaled_relative_jump_table(vex) -> StaticJumpTable | None:
+    """Describe a static byte table whose scaled entries update the PC.
+
+    Accept only ``next = (base + (Load8(base + index) << shift)) | mask``.
+    The duplicated static base and the VEX load/shift/or operations prove the
+    table address, target scale, and target-mode bits without using an
+    instruction-set mnemonic.
+    """
+
+    if vex.jumpkind != "Ijk_Boring":
+        return None
+
+    definitions = _vex_tmp_definitions(vex)
+    next_expr = _resolve_vex_expr(vex.next, definitions)
+    target_or_mask = 0
+    if isinstance(next_expr, pyvex.expr.Binop) and next_expr.op.startswith("Iop_Or"):
+        left, right = (
+            _resolve_vex_expr(next_expr.args[0], definitions),
+            _resolve_vex_expr(next_expr.args[1], definitions),
+        )
+        left_value = _vex_const_value(left, definitions)
+        right_value = _vex_const_value(right, definitions)
+        if left_value is not None and right_value is None:
+            next_expr, target_or_mask = right, left_value
+        elif right_value is not None and left_value is None:
+            next_expr, target_or_mask = left, right_value
+        else:
+            return None
+
+    terms = _vex_add_terms(next_expr, definitions)
+    if terms is None:
+        return None
+
+    target_base = 0
+    shifted_entry = None
+    for term in terms:
+        value = _vex_const_value(term, definitions)
+        if value is not None:
+            target_base += value
+            continue
+        term = _resolve_vex_expr(term, definitions)
+        if (
+            not isinstance(term, pyvex.expr.Binop)
+            or not term.op.startswith("Iop_Shl")
+            or shifted_entry is not None
+        ):
+            return None
+        shift = _vex_const_value(term.args[1], definitions)
+        if shift is None or shift < 0 or shift >= term.result_size(vex.tyenv):
+            return None
+        shifted_entry = term.args[0], shift
+
+    if shifted_entry is None:
+        return None
+    entry_expr, shift = shifted_entry
+    table = _vex_static_byte_table_load(vex, definitions, entry_expr)
+    if table is None or table.static_base_addr != target_base:
+        return None
+
+    target_mask = (1 << table.base_bits) - 1
+    return replace(
+        table,
+        entries_are_relative=True,
+        target_scale=1 << shift,
+        target_or_mask=target_or_mask & target_mask,
+    )
 
 
 def _vex_direct_jump_table(
@@ -1454,26 +1633,34 @@ def plan_static_jump_table(
     if vex is None:
         return None, "no_vex"
 
-    table = _vex_relative_jump_table(
-        vex, allow_inline_index_values=allow_inline_index_values
-    ) or _vex_direct_jump_table(
-        vex,
-        allow_inline_index_values=allow_inline_index_values,
-        allow_guarded_loads=allow_guarded_loads,
+    table = (
+        _vex_relative_jump_table(
+            vex, allow_inline_index_values=allow_inline_index_values
+        )
+        or _vex_scaled_relative_jump_table(vex)
+        or _vex_direct_jump_table(
+            vex,
+            allow_inline_index_values=allow_inline_index_values,
+            allow_guarded_loads=allow_guarded_loads,
+        )
     )
     if table is None:
         # A table index naturally has the architecture's full register width
         # on 64-bit targets. Recognition remains safe because table reads
         # still require a separate finite range proof.
-        table = _vex_relative_jump_table(
-            vex,
-            allow_full_width_index=True,
-            allow_inline_index_values=allow_inline_index_values,
-        ) or _vex_direct_jump_table(
-            vex,
-            allow_full_width_index=True,
-            allow_inline_index_values=allow_inline_index_values,
-            allow_guarded_loads=allow_guarded_loads,
+        table = (
+            _vex_relative_jump_table(
+                vex,
+                allow_full_width_index=True,
+                allow_inline_index_values=allow_inline_index_values,
+            )
+            or _vex_scaled_relative_jump_table(vex)
+            or _vex_direct_jump_table(
+                vex,
+                allow_full_width_index=True,
+                allow_inline_index_values=allow_inline_index_values,
+                allow_guarded_loads=allow_guarded_loads,
+            )
         )
 
     pic_base_addr = None
@@ -1531,9 +1718,9 @@ def _jump_table_target_addr(base_addr: int, table: StaticJumpTable, entry: int) 
     if not table.entries_are_relative:
         return entry
 
-    return (base_addr + table.target_displacement + entry) & (
-        (1 << table.base_bits) - 1
-    )
+    mask = (1 << table.base_bits) - 1
+    target = (base_addr + table.target_displacement + entry * table.target_scale) & mask
+    return (target | table.target_or_mask) & mask
 
 
 def _jump_table_addr(base_addr: int, table: StaticJumpTable) -> int:

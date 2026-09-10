@@ -4,9 +4,9 @@ Static jump-table recovery is deliberately VEX-driven and therefore portable
 across architectures when their lifted transfer has a recognized shape.  It
 supports direct and relative entries, one-, two-, four-, and eight-byte table
 entries, VEX endianness and signed-entry semantics, guard-derived index bounds,
-constant bases, and bases proven from predecessor register definitions.  The
-32-bit x86 PC-thunk helper is a narrow supplement for PIC code whose table base
-is not retained as a VEX constant.
+constant-mask index domains, constant bases, and bases proven from predecessor
+register definitions. The 32-bit x86 PC-thunk helper is a narrow supplement for
+PIC code whose table base is not retained as a VEX constant.
 """
 
 from __future__ import annotations
@@ -251,6 +251,57 @@ def _vex_finite_index_values(
     return values
 
 
+def _vex_masked_index_values(
+    expr,
+    definitions: dict[int, Any],
+) -> tuple[int, ...] | None:
+    """Return every value permitted by a constant VEX bit-mask index.
+
+    ``index & mask`` has a finite, architecture-neutral domain even when the
+    original register is unconstrained. Enumerating the mask's submasks keeps
+    non-contiguous masks exact rather than treating their numerical maximum as
+    a range. The shared table limit prevents this local proof from becoming an
+    unbounded symbolic evaluator.
+    """
+
+    expr = _resolve_vex_expr(expr, definitions)
+    while (
+        isinstance(expr, pyvex.expr.Unop)
+        and expr.op.startswith("Iop_")
+        and "to" in expr.op
+    ):
+        expr = _resolve_vex_expr(expr.args[0], definitions)
+    if not isinstance(expr, pyvex.expr.Binop) or not expr.op.startswith("Iop_And"):
+        return None
+
+    left, right = expr.args
+    left_value = _vex_const_value(left, definitions)
+    right_value = _vex_const_value(right, definitions)
+    if (left_value is None) == (right_value is None):
+        return None
+    mask, index_expr = (
+        (left_value, right) if left_value is not None else (right_value, left)
+    )
+    if mask is None:
+        return None
+    if _resolve_vex_expr(index_expr, definitions) is None:
+        return None
+
+    possible_values = 1 << mask.bit_count()
+    if possible_values > MAX_STATIC_JUMPTABLE_ENTRIES:
+        return None
+
+    values: list[int] = []
+    value = mask
+    while True:
+        values.append(value)
+        if value == 0:
+            break
+        value = (value - 1) & mask
+    values.sort()
+    return tuple(values)
+
+
 def _vex_table_index(
     expr,
     definitions: dict[int, Any],
@@ -258,9 +309,17 @@ def _vex_table_index(
     *,
     allow_full_width: bool,
     allow_inline_index_values: bool,
+    allow_masked_index_values: bool,
 ) -> tuple[tuple[int, int] | None, tuple[int, ...] | None]:
     """Describe a table index as either a register or a finite value domain."""
 
+    if allow_masked_index_values:
+        values = _vex_masked_index_values(
+            expr,
+            definitions,
+        )
+        if values is not None:
+            return None, values
     register = _vex_index_key(expr, definitions, vex, allow_full_width=allow_full_width)
     if register is not None:
         return register, None
@@ -626,6 +685,7 @@ def _vex_relative_jump_table(
     *,
     allow_full_width_index: bool = False,
     allow_inline_index_values: bool = False,
+    allow_masked_index_values: bool = False,
 ) -> StaticJumpTable | None:
     """
     Describe a bounded relative jump table encoded in one VEX indirect jump.
@@ -712,6 +772,7 @@ def _vex_relative_jump_table(
                 vex,
                 allow_full_width=allow_full_width_index,
                 allow_inline_index_values=allow_inline_index_values,
+                allow_masked_index_values=allow_masked_index_values,
             )
             if (
                 shift is None
@@ -757,6 +818,9 @@ def _vex_static_compact_table_load(
     vex,
     definitions: dict[int, Any],
     entry_expr,
+    *,
+    allow_full_width_index: bool = False,
+    allow_masked_index_values: bool = False,
 ) -> StaticJumpTable | None:
     """Describe an 8- or 16-bit table loaded from a static base plus an index.
 
@@ -779,30 +843,50 @@ def _vex_static_compact_table_load(
 
     static_base_addr = 0
     index_key = None
+    index_values = None
     for term in address_terms:
         value = _vex_const_value(term, definitions)
         if value is not None:
             static_base_addr += value
             continue
 
-        candidate_index = _vex_get_key(term, definitions, vex)
-        if candidate_index is None:
+        candidate_index, candidate_values = _vex_table_index(
+            term,
+            definitions,
+            vex,
+            allow_full_width=allow_full_width_index,
+            allow_inline_index_values=False,
+            allow_masked_index_values=allow_masked_index_values,
+        )
+        if candidate_index is None and candidate_values is None:
             term = _resolve_vex_expr(term, definitions)
             if not isinstance(term, pyvex.expr.Binop) or not term.op.startswith(
                 "Iop_Shl"
             ):
                 return None
             shift = _vex_const_value(term.args[1], definitions)
-            candidate_index = _vex_get_key(term.args[0], definitions, vex)
+            candidate_index, candidate_values = _vex_table_index(
+                term.args[0],
+                definitions,
+                vex,
+                allow_full_width=allow_full_width_index,
+                allow_inline_index_values=False,
+                allow_masked_index_values=allow_masked_index_values,
+            )
             if shift is None or 1 << shift != entry_size:
                 return None
         elif entry_size != 1:
             return None
-        if candidate_index is None or index_key is not None:
+        if (
+            (candidate_index is None and candidate_values is None)
+            or index_key is not None
+            or index_values is not None
+        ):
             return None
         index_key = candidate_index
+        index_values = candidate_values
 
-    if index_key is None:
+    if index_key is None and index_values is None:
         return None
     address_bits = load.addr.result_size(vex.tyenv)
     if address_bits <= 0:
@@ -812,16 +896,22 @@ def _vex_static_compact_table_load(
         base_register_offset=None,
         base_bits=address_bits,
         table_displacement=0,
-        index_register_offset=index_key[0],
-        index_bits=index_key[1],
+        index_register_offset=index_key[0] if index_key is not None else None,
+        index_bits=index_key[1] if index_key is not None else None,
         entry_size=entry_size,
         endness=load.end,
         signed_entries=signed_entries,
         static_base_addr=static_base_addr & ((1 << address_bits) - 1),
+        index_values=index_values,
     )
 
 
-def _vex_scaled_relative_jump_table(vex) -> StaticJumpTable | None:
+def _vex_scaled_relative_jump_table(
+    vex,
+    *,
+    allow_full_width_index: bool = False,
+    allow_masked_index_values: bool = False,
+) -> StaticJumpTable | None:
     """Describe a compact static table whose scaled entries update the PC.
 
     Accept only ``next = (base + (LoadN(base + index * N) << shift)) | mask``
@@ -876,7 +966,13 @@ def _vex_scaled_relative_jump_table(vex) -> StaticJumpTable | None:
     if shifted_entry is None:
         return None
     entry_expr, shift = shifted_entry
-    table = _vex_static_compact_table_load(vex, definitions, entry_expr)
+    table = _vex_static_compact_table_load(
+        vex,
+        definitions,
+        entry_expr,
+        allow_full_width_index=allow_full_width_index,
+        allow_masked_index_values=allow_masked_index_values,
+    )
     if table is None or table.static_base_addr != target_base:
         return None
 
@@ -894,6 +990,7 @@ def _vex_direct_jump_table(
     *,
     allow_full_width_index: bool = False,
     allow_inline_index_values: bool = False,
+    allow_masked_index_values: bool = False,
     allow_guarded_loads: bool = False,
     allow_static_base: bool = False,
 ) -> StaticJumpTable | None:
@@ -921,6 +1018,7 @@ def _vex_direct_jump_table(
             guard=None,
             allow_full_width_index=allow_full_width_index,
             allow_inline_index_values=allow_inline_index_values,
+            allow_masked_index_values=allow_masked_index_values,
             allow_static_base=allow_static_base,
         )
 
@@ -932,6 +1030,7 @@ def _vex_direct_jump_table(
         entry_expr,
         allow_full_width_index=allow_full_width_index,
         allow_inline_index_values=allow_inline_index_values,
+        allow_masked_index_values=allow_masked_index_values,
     )
 
 
@@ -942,6 +1041,7 @@ def _vex_guarded_load_pc_table(
     *,
     allow_full_width_index: bool,
     allow_inline_index_values: bool,
+    allow_masked_index_values: bool,
 ) -> StaticJumpTable | None:
     """Describe a guarded VEX ``LoadG`` value selected as the next PC.
 
@@ -981,6 +1081,7 @@ def _vex_guarded_load_pc_table(
             guard=condition,
             allow_full_width_index=allow_full_width_index,
             allow_inline_index_values=allow_inline_index_values,
+            allow_masked_index_values=allow_masked_index_values,
         )
     return None
 
@@ -995,6 +1096,7 @@ def _vex_direct_table_from_load(
     guard,
     allow_full_width_index: bool,
     allow_inline_index_values: bool,
+    allow_masked_index_values: bool,
     allow_static_base: bool = False,
 ) -> StaticJumpTable | None:
     """Describe an absolute-address table load from its VEX address expression."""
@@ -1032,6 +1134,7 @@ def _vex_direct_table_from_load(
             vex,
             allow_full_width=allow_full_width_index,
             allow_inline_index_values=allow_inline_index_values,
+            allow_masked_index_values=allow_masked_index_values,
         )
         if candidate_index is None and candidate_values is None and guard is not None:
             candidate_values = _vex_guarded_expression_values(
@@ -1177,6 +1280,7 @@ def _conditional_pc_load_table(
             guard=None,
             allow_full_width_index=True,
             allow_inline_index_values=True,
+            allow_masked_index_values=True,
             allow_static_base=True,
         )
     return None
@@ -1648,6 +1752,7 @@ def plan_static_jump_table(
     node: CFGNode,
     *,
     allow_inline_index_values: bool = False,
+    allow_masked_index_values: bool = False,
     allow_guarded_loads: bool = False,
     allow_static_bases: bool = False,
 ) -> tuple[StaticJumpTablePlan | None, str | None]:
@@ -1665,12 +1770,18 @@ def plan_static_jump_table(
 
     table = (
         _vex_relative_jump_table(
-            vex, allow_inline_index_values=allow_inline_index_values
+            vex,
+            allow_inline_index_values=allow_inline_index_values,
+            allow_masked_index_values=allow_masked_index_values,
         )
-        or _vex_scaled_relative_jump_table(vex)
+        or _vex_scaled_relative_jump_table(
+            vex,
+            allow_masked_index_values=allow_masked_index_values,
+        )
         or _vex_direct_jump_table(
             vex,
             allow_inline_index_values=allow_inline_index_values,
+            allow_masked_index_values=allow_masked_index_values,
             allow_guarded_loads=allow_guarded_loads,
             allow_static_base=allow_static_bases,
         )
@@ -1684,12 +1795,18 @@ def plan_static_jump_table(
                 vex,
                 allow_full_width_index=True,
                 allow_inline_index_values=allow_inline_index_values,
+                allow_masked_index_values=allow_masked_index_values,
             )
-            or _vex_scaled_relative_jump_table(vex)
+            or _vex_scaled_relative_jump_table(
+                vex,
+                allow_full_width_index=True,
+                allow_masked_index_values=allow_masked_index_values,
+            )
             or _vex_direct_jump_table(
                 vex,
                 allow_full_width_index=True,
                 allow_inline_index_values=allow_inline_index_values,
+                allow_masked_index_values=allow_masked_index_values,
                 allow_guarded_loads=allow_guarded_loads,
                 allow_static_base=allow_static_bases,
             )
@@ -1702,14 +1819,18 @@ def plan_static_jump_table(
         return None, "no_table_shape"
 
     entry_indices = table.index_values
+    entry_count = _guarded_jump_table_entry_count(graph, bounds, node, table)
     if entry_indices is None:
-        entry_count = _guarded_jump_table_entry_count(graph, bounds, node, table)
         if entry_count is None and pic_base_addr is not None:
             entry_count = _x86_pc_thunk_guarded_entry_count(
                 project, graph, bounds, node, table
             )
         if entry_count is not None:
             entry_indices = tuple(range(entry_count))
+    elif entry_count is not None:
+        # Independent finite facts compose by intersection. A bit mask limits
+        # the index value and a predecessor guard can narrow it further.
+        entry_indices = tuple(index for index in entry_indices if index < entry_count)
 
     base_addr = (
         table.static_base_addr if table.static_base_addr is not None else pic_base_addr
@@ -1738,7 +1859,7 @@ def plan_static_jump_table(
         )
         if entry_count is not None:
             entry_indices = tuple(range(entry_count))
-    if entry_indices is None:
+    if not entry_indices:
         return None, "unbounded_index"
 
     return StaticJumpTablePlan(table, base_addr, entry_indices), None

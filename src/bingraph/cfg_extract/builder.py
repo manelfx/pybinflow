@@ -49,6 +49,7 @@ from .syscalls import ResolvedSyscall, resolve_static_syscall, unknown_syscall_t
 
 
 _UNRESOLVABLE_CALL_ADDR = 0xFFFFFFFFFFFFFFD0
+_RECONNECTING_SWEEP_REASONS = frozenset({"no_vex", "no_table_shape"})
 
 
 def _thumb_mode(project: Project, addr: int) -> bool:
@@ -143,6 +144,7 @@ class _ExtractionSession:
         self.data_regions.claim_code(project, func_addr)
         self.leaf_nodes: dict[tuple[int, str], CFGNode] = {}
         self.static_targets: dict[int, tuple[int, ...]] = {}
+        self.unresolved_dispatcher_reasons: dict[int, str | None] = {}
         self.sweep_dispatcher_addr: int | None = None
         self.sweep_component_roots: frozenset[int] = frozenset()
         self.continued_linear_direct_transfers: set[int] = set()
@@ -408,6 +410,7 @@ class _ExtractionSession:
             graph, nodes = self._analysis_graph()
             discovered = False
             plans: dict[int, tuple[int, ...]] = {}
+            unresolved_reasons: dict[int, str | None] = {}
             conditional_sources: set[int] = set()
             for addr, node in nodes.items():
                 # Adding a target can split a later block from this snapshot.
@@ -430,6 +433,7 @@ class _ExtractionSession:
                         self.bounds,
                         node,
                         allow_inline_index_values=True,
+                        allow_masked_index_values=True,
                         allow_guarded_loads=True,
                         allow_static_bases=True,
                     )
@@ -441,6 +445,7 @@ class _ExtractionSession:
                             plan.entry_indices,
                         )
                 if targets is None:
+                    unresolved_reasons[addr] = reason
                     self.stats.static_jump_unresolved_dispatcher_attempts += 1
                     if reason is not None:
                         field = f"static_jump_{reason}"
@@ -478,6 +483,7 @@ class _ExtractionSession:
                 self._decode_all_blocks()
                 continue
             self.static_targets.update(plans)
+            self.unresolved_dispatcher_reasons = unresolved_reasons
             self.stats.conditional_pc_dispatches_resolved += len(conditional_sources)
             self.stats.conditional_pc_targets_recovered += sum(
                 len(plans[addr]) for addr in conditional_sources
@@ -607,7 +613,15 @@ class _ExtractionSession:
                     self.stats.unresolved_indirect_targets += 1
 
     def _recover_reconnecting_components(self) -> None:
-        """Attach leader-closed components behind one unresolved dispatcher."""
+        """Attach leader-closed components behind one shape-free dispatcher.
+
+        A failed static-table plan can still prove that an indirect branch has
+        a table-like shape, for example an address with an unbounded index.
+        Reconnecting arbitrary executable components behind that source would
+        turn an incomplete proof into speculative targets. Sweep recovery is
+        therefore reserved for dispatchers where VEX exposed no table shape at
+        all; a recognized but unresolved table keeps only its explicit leaf.
+        """
 
         dispatchers = [
             addr
@@ -620,6 +634,14 @@ class _ExtractionSession:
             )
         ]
         if len(dispatchers) != 1:
+            return
+
+        dispatcher_addr = dispatchers[0]
+        if (
+            self.unresolved_dispatcher_reasons.get(dispatcher_addr)
+            not in _RECONNECTING_SWEEP_REASONS
+        ):
+            self.stats.sweep_dispatchers_ineligible += 1
             return
 
         recovered_blocks = dict(self.blocks)
@@ -639,7 +661,6 @@ class _ExtractionSession:
         self.stats.sweep_decode_failures += audit.decode_failures
         self.stats.sweep_non_executable_bytes += audit.non_executable_bytes
         selected = select_reconnecting_components(sweep, recovered_blocks)
-        dispatcher_addr = dispatchers[0]
         if dispatcher_addr not in selected.blocks:
             # The sweep changed the source whose unknown targets would be
             # attached. Keep the original graph rather than mix a stale

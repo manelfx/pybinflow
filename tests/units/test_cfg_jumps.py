@@ -226,6 +226,47 @@ def test_direct_jump_table_keeps_absolute_entries() -> None:
     assert _jump_table_target_addr(0x1000, table, 0x2000) == 0x2000
 
 
+def test_direct_jump_table_recovers_a_finite_masked_index() -> None:
+    """Recover the exact domain of a constant-mask table index."""
+
+    # mov edx, ecx; shr edx, 12; and edx, 15; jmp [rdx * 8 + 0x4a3648]
+    vex = pyvex.lift(
+        bytes.fromhex("89cac1ea0c83e20fff24d548364a00"),
+        0x43DAC8,
+        archinfo.ArchAMD64(),
+    )
+
+    table = _vex_direct_jump_table(
+        vex,
+        allow_full_width_index=True,
+        allow_masked_index_values=True,
+        allow_static_base=True,
+    )
+
+    assert table is not None
+    assert table.index_register_offset is None
+    assert table.index_values == tuple(range(16))
+
+
+def test_direct_jump_table_keeps_sparse_mask_domains_exact() -> None:
+    """Do not expand a non-contiguous mask into its numerical range."""
+
+    # and edx, 5; jmp [rdx * 8 + 0x4a3648]
+    vex = pyvex.lift(
+        bytes.fromhex("83e205ff24d548364a00"), 0x1000, archinfo.ArchAMD64()
+    )
+
+    table = _vex_direct_jump_table(
+        vex,
+        allow_full_width_index=True,
+        allow_masked_index_values=True,
+        allow_static_base=True,
+    )
+
+    assert table is not None
+    assert table.index_values == (0, 1, 4, 5)
+
+
 def test_shared_static_table_plan_is_graph_strategy_neutral(monkeypatch) -> None:
     """Keep table recognition reusable by fixup and independent extraction."""
 

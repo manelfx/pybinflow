@@ -587,6 +587,37 @@ def test_extract_recovers_reconnecting_components_from_one_dispatcher() -> None:
     assert not tuple(cfg.graph.successors(unresolved))
 
 
+def test_extract_does_not_reconnect_an_unbounded_table_dispatcher() -> None:
+    """Keep unknown targets behind a recognized but unbounded jump table."""
+
+    project = project_module.load_project(Path("angr-binaries/tests/x86_64/static"))
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x40D230)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+    source = nodes[0x40D3DA]
+
+    successors = tuple(cfg.graph.successors(source))
+    assert len(successors) == 1
+    assert successors[0].simprocedure_name == "UnresolvableJumpTarget"
+    assert cfg.extract_stats.sweep_runs == 0
+    assert cfg.extract_stats.sweep_dispatchers_ineligible == 1
+
+
+def test_extract_resolves_constant_masked_jump_table_indices() -> None:
+    """Recover concrete targets when VEX masks an otherwise unbounded index."""
+
+    project = project_module.load_project(Path("angr-binaries/tests/x86_64/static"))
+    cfg = build_extracted_cfg(project, KnowledgeBase(project), 0x43DA00)
+    nodes = {node.addr: node for node in cfg.graph.nodes() if not node.is_simprocedure}
+
+    for source_addr in (0x43DAC8, 0x43DB00):
+        successors = tuple(cfg.graph.successors(nodes[source_addr]))
+        assert len(successors) == 10
+        assert all(not successor.is_simprocedure for successor in successors)
+
+    assert cfg.extract_stats.static_jump_plans_resolved >= 2
+    assert cfg.extract_stats.unresolved_indirect_targets == 0
+
+
 def test_executable_sweep_closes_direct_targets_before_reporting_components() -> None:
     """Audit components retain the normal extractor's exact-leader invariant."""
 
@@ -727,6 +758,7 @@ def test_extract_keeps_original_graph_when_sweep_loses_dispatcher(monkeypatch) -
     session.func_addr = 0x1000
     session.blocks = {0x1000: dispatcher}
     session.static_targets = {}
+    session.unresolved_dispatcher_reasons = {0x1000: "no_table_shape"}
     session.leaders = {0x1000}
     session.stats = ExtractedCFGStats()
     session.data_regions = SimpleNamespace(contains=lambda *_args: False)

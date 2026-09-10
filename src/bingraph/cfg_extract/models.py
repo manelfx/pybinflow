@@ -58,6 +58,7 @@ class ExtractedCFGStats:
     sweep_candidate_components: int = 0
     sweep_decode_failures: int = 0
     sweep_non_executable_bytes: int = 0
+    sweep_dispatchers_ineligible: int = 0
     sweep_reconnecting_components: int = 0
     sweep_reconnecting_blocks: int = 0
     sweep_component_roots_attached: int = 0

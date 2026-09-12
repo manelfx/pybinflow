@@ -445,10 +445,10 @@ def _mips_entry_global_pointer(project: Project, bounds: FunctionBounds) -> int 
     return None
 
 
-def _mips_gp_relative_call_slot(
+def _mips_gp_relative_indirect_slot(
     project: Project, bounds: FunctionBounds, vex
 ) -> tuple[int, str] | None:
-    """Resolve a MIPS PIC call through an exact ``Load($gp + offset)`` shape."""
+    """Resolve a MIPS PIC indirect transfer through ``Load($gp + offset)``."""
 
     global_pointer = _mips_entry_global_pointer(project, bounds)
     if global_pointer is None:
@@ -460,7 +460,7 @@ def _mips_gp_relative_call_slot(
         return None
 
     definitions = _temporary_definitions(vex)
-    target_expr = _call_target_load(project, vex)
+    target_expr = _indirect_target_load(project, vex)
     if target_expr is None:
         return None
     if not isinstance(target_expr.addr, pyvex.expr.RdTmp):
@@ -489,8 +489,8 @@ def _mips_gp_relative_call_slot(
     return ((global_pointer + constant.con.value) & mask, target_expr.end)
 
 
-def _call_target_load(project: Project, vex) -> pyvex.expr.Load | None:
-    """Return a direct VEX load supplying an indirect call target, if exact."""
+def _indirect_target_load(project: Project, vex) -> pyvex.expr.Load | None:
+    """Return a direct VEX load supplying an indirect transfer target."""
 
     if not isinstance(vex.next, pyvex.expr.RdTmp):
         return None
@@ -528,6 +528,85 @@ def _call_target_load(project: Project, vex) -> pyvex.expr.Load | None:
     return load if isinstance(load, pyvex.expr.Load) else None
 
 
+def _read_static_pointer_target(
+    project: Project,
+    slot_addr: int,
+    entry_size: int,
+    endness: str,
+) -> int | None:
+    """Read one statically addressed pointer with VEX-proven representation."""
+
+    if entry_size not in {1, 2, 4, 8}:
+        return None
+    try:
+        raw_target = project.loader.memory.load(slot_addr, entry_size)
+    except Exception:
+        return None
+
+    byteorder = "little" if endness == "Iend_LE" else "big"
+    return int.from_bytes(raw_target, byteorder=byteorder)
+
+
+def _is_known_synthetic_function_target(project: Project, addr: int) -> bool:
+    """Return whether CLE identifies a synthetic address as an exact function."""
+
+    try:
+        symbol = project.loader.find_symbol(addr)
+    except Exception:
+        return False
+    return bool(
+        symbol is not None
+        and getattr(symbol, "rebased_addr", None) == addr
+        and getattr(symbol, "is_function", False)
+    )
+
+
+def static_memory_indirect_jump_target(project: Project, vex) -> int | None:
+    """Resolve an exact static-memory indirect jump target, if present.
+
+    This recognizes only ``next = Load(Const(slot))``.  In particular, it does
+    not follow register-derived addresses or table indices, which remain the
+    responsibility of the bounded static jump-table planner.
+    """
+
+    if vex.jumpkind != "Ijk_Boring" or not isinstance(vex.next, pyvex.expr.RdTmp):
+        return None
+
+    definitions = _temporary_definitions(vex)
+    load = definitions.get(vex.next.tmp)
+    if not isinstance(load, pyvex.expr.Load) or not isinstance(
+        load.addr, pyvex.expr.Const
+    ):
+        return None
+
+    slot_addr = load.addr.con.value
+    entry_size = load.result_size(vex.tyenv) // 8
+    if not isinstance(slot_addr, int):
+        return None
+
+    return _read_static_pointer_target(project, slot_addr, entry_size, load.end)
+
+
+def _mips_gp_relative_indirect_jump_target(
+    project: Project, bounds: FunctionBounds, vex
+) -> int | None:
+    """Resolve an exact MIPS PIC ``jr $t9`` target through its GOT slot."""
+
+    if vex.jumpkind != "Ijk_Boring":
+        return None
+    slot = _mips_gp_relative_indirect_slot(project, bounds, vex)
+    if slot is None:
+        return None
+
+    slot_addr, endness = slot
+    return _read_static_pointer_target(
+        project,
+        slot_addr,
+        project.arch.bytes,
+        endness,
+    )
+
+
 def _static_memory_nonreturning_call_target(
     project: Project,
     bounds: FunctionBounds,
@@ -542,7 +621,7 @@ def _static_memory_nonreturning_call_target(
     avoids treating arbitrary memory-derived indirect calls as resolved.
     """
 
-    load = _call_target_load(project, vex)
+    load = _indirect_target_load(project, vex)
     if load is None:
         return None
 
@@ -552,19 +631,19 @@ def _static_memory_nonreturning_call_target(
         if isinstance(slot_addr, int):
             slot = (slot_addr, load.end)
     if slot is None:
-        slot = _mips_gp_relative_call_slot(project, bounds, vex)
+        slot = _mips_gp_relative_indirect_slot(project, bounds, vex)
     if slot is None:
         return None
 
-    slot_addr, endness = slot
-
-    try:
-        raw_target = project.loader.memory.load(slot_addr, project.arch.bytes)
-    except Exception:
+    target = _read_static_pointer_target(
+        project,
+        slot[0],
+        project.arch.bytes,
+        slot[1],
+    )
+    if target is None:
         return None
 
-    byteorder = "little" if endness == "Iend_LE" else "big"
-    target = int.from_bytes(raw_target, byteorder=byteorder)
     predicate = (
         target_is_known_nonreturning
         if resolve_declared_nonreturning
@@ -746,7 +825,7 @@ def lift_block_terminator(
     # Jump-table support consumes the basic decoding utilities in this module.
     # Delay the reverse dependency until terminator classification to avoid an
     # import cycle while still sharing its target-validity policy.
-    from .jumps import is_direct_target_valid
+    from .jumps import is_direct_target_valid, static_jump_target_rejection_reason
 
     block_end_addr = block_insns[-1].address + block_insns[-1].size
 
@@ -946,6 +1025,44 @@ def lift_block_terminator(
         and is_direct_target_valid(bounds, default_target)
     ):
         return TerminatorInfo(jumpkind="Ijk_Boring", direct_targets=(default_target,))
+
+    if semantic.is_jump():
+        jump_vex = vex
+        if project.arch.name.startswith("MIPS") and tail_addr != block_addr:
+            # MIPS PIC tail jumps load $t9 before ``jr $t9``. Use the whole
+            # bounded block so the exact local assignment remains available.
+            try:
+                jump_vex = _lift(block_addr, block_size)
+            except Exception:
+                pass
+        static_memory_target = static_memory_indirect_jump_target(project, jump_vex)
+        if static_memory_target is None:
+            static_memory_target = _mips_gp_relative_indirect_jump_target(
+                project,
+                bounds,
+                jump_vex,
+            )
+        rejection_reason = (
+            static_jump_target_rejection_reason(project, static_memory_target)
+            if static_memory_target is not None
+            else None
+        )
+        is_known_import = (
+            static_memory_target is not None
+            and rejection_reason == "synthetic"
+            and _is_known_synthetic_function_target(project, static_memory_target)
+        )
+        if static_memory_target is not None and (
+            rejection_reason is None or is_known_import
+        ):
+            if is_direct_target_valid(bounds, static_memory_target):
+                return TerminatorInfo(
+                    jumpkind="Ijk_Boring", direct_targets=(static_memory_target,)
+                )
+            # An executable target beyond the bounded function, or a named
+            # CLE import, is an exact tail exit rather than an unresolved
+            # computed dispatch.
+            return TerminatorInfo(jumpkind="Ijk_Terminal")
 
     direct_target = semantic.direct_target()
     if semantic.is_jump() and direct_target is not None:

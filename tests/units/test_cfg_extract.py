@@ -22,7 +22,7 @@ from bingraph.cfg_extract.sweep import (
 )
 from bingraph.cfg.models import BlockSpec, FunctionBounds, StaticJumpTable
 from bingraph.cfg.models import StaticJumpTablePlan
-from bingraph.cfg.decode import decode_bounded_block
+from bingraph.cfg.decode import decode_bounded_block, lift_block_terminator
 from bingraph.cfg_extract.models import ExtractedCFGStats, ExtractedCFGSummary
 from bingraph.core import project as project_module
 
@@ -339,6 +339,84 @@ def test_extract_suppresses_fakeret_for_a_static_nonreturning_call() -> None:
     assert block.fallthrough_addr is None
 
 
+def test_extract_models_static_memory_tail_jump_as_terminal_exit() -> None:
+    """Keep a GOT tail jump out of the unresolved-dispatcher path."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/x86_64/rust_hello_world")
+    )
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x424060
+    )
+
+    block = decode_bounded_block(project, session.bounds, 0x424110, set())
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Terminal"
+    assert block.direct_targets == ()
+
+    cfg = session.build()
+    source = next(node for node in cfg.graph.nodes() if node.addr == 0x424110)
+    assert not tuple(cfg.graph.successors(source))
+    assert cfg.extract_stats.unresolved_indirect_targets == 0
+
+    # The same exact static-load form remains an ordinary in-function edge.
+    tail_block = project.factory.block(
+        0x424110,
+        size=0x17,
+        strict_block_end=True,
+        cross_insn_opt=False,
+    )
+    executable_section = SimpleNamespace(is_executable=True)
+    in_function_project = SimpleNamespace(
+        arch=SimpleNamespace(name=project.arch.name),
+        factory=SimpleNamespace(block=lambda *_args, **_kwargs: tail_block),
+        loader=SimpleNamespace(
+            memory=SimpleNamespace(
+                load=lambda _addr, _size: (0x424127).to_bytes(8, byteorder="little")
+            ),
+            find_object_containing=lambda _addr: SimpleNamespace(
+                find_section_containing=lambda _target: executable_section
+            ),
+            extern_object=object(),
+        ),
+    )
+    in_function = lift_block_terminator(
+        in_function_project,
+        session.bounds,
+        [entry.insn for entry in tail_block.capstone.insns],
+    )
+
+    assert in_function is not None
+    assert in_function.jumpkind == "Ijk_Boring"
+    assert in_function.direct_targets == (0x424127,)
+
+    extern_object = object()
+    unknown_synthetic_project = SimpleNamespace(
+        arch=SimpleNamespace(name=project.arch.name),
+        factory=SimpleNamespace(block=lambda *_args, **_kwargs: tail_block),
+        loader=SimpleNamespace(
+            memory=SimpleNamespace(
+                load=lambda _addr, _size: (0x500000).to_bytes(8, byteorder="little")
+            ),
+            find_object_containing=lambda _addr: extern_object,
+            find_symbol=lambda _addr: SimpleNamespace(
+                rebased_addr=0x500000,
+                is_function=False,
+            ),
+            extern_object=extern_object,
+        ),
+    )
+    unknown_synthetic = lift_block_terminator(
+        unknown_synthetic_project,
+        session.bounds,
+        [entry.insn for entry in tail_block.capstone.insns],
+    )
+
+    assert unknown_synthetic.jumpkind == "Ijk_Boring"
+    assert unknown_synthetic.direct_targets == ()
+
+
 def test_extract_suppresses_fakeret_for_a_mips_pic_nonreturning_call() -> None:
     """Resolve MIPS ``$gp``-relative ``$t9`` calls to known no-return targets."""
 
@@ -353,6 +431,86 @@ def test_extract_suppresses_fakeret_for_a_mips_pic_nonreturning_call() -> None:
     assert block.jumpkind == "Ijk_Call"
     assert block.direct_targets == (0x5001AC,)
     assert block.fallthrough_addr is None
+
+
+def test_extract_models_mips_pic_tail_jump_as_terminal_exit() -> None:
+    """Keep a resolved MIPS ``jr $t9`` tail call out of dispatcher recovery."""
+
+    project = project_module.load_project(
+        Path("angr-binaries/tests/mipsel/btrfs-tools_btrfs-calc-size")
+    )
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x40D684
+    )
+
+    block = decode_bounded_block(project, session.bounds, 0x40D740, set())
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Terminal"
+    assert block.direct_targets == ()
+
+    cfg = session.build()
+    source = next(node for node in cfg.graph.nodes() if node.addr == 0x40D740)
+    assert not tuple(cfg.graph.successors(source))
+    assert cfg.extract_stats.unresolved_indirect_targets == 0
+
+    full_block = project.factory.block(
+        0x40D740,
+        size=0x14,
+        strict_block_end=True,
+        cross_insn_opt=False,
+    )
+    tail_block = project.factory.block(
+        0x40D74C,
+        size=0x8,
+        strict_block_end=True,
+        cross_insn_opt=False,
+    )
+    executable_section = SimpleNamespace(is_executable=True)
+    in_function_project = SimpleNamespace(
+        arch=project.arch,
+        factory=SimpleNamespace(
+            block=lambda addr, **_kwargs: (
+                project.factory.block(session.bounds.addr)
+                if addr == session.bounds.addr
+                else full_block
+                if addr == 0x40D740
+                else tail_block
+            )
+        ),
+        loader=SimpleNamespace(
+            memory=SimpleNamespace(
+                load=lambda _addr, _size: (0x40D6A0).to_bytes(4, byteorder="little")
+            ),
+            find_object_containing=lambda _addr: SimpleNamespace(
+                find_section_containing=lambda _target: executable_section
+            ),
+            extern_object=object(),
+        ),
+    )
+    in_function = lift_block_terminator(
+        in_function_project,
+        session.bounds,
+        [entry.insn for entry in full_block.capstone.insns],
+    )
+
+    assert in_function.jumpkind == "Ijk_Boring"
+    assert in_function.direct_targets == (0x40D6A0,)
+
+
+def test_extract_models_mips_pic_import_tail_jump_as_terminal_exit() -> None:
+    """Treat a MIPS GOT slot for an imported tail callee as a terminal exit."""
+
+    project = project_module.load_project(Path("angr-binaries/tests/mips/dir"))
+    session = builder_module._ExtractionSession(
+        project, KnowledgeBase(project), 0x40D80C
+    )
+
+    block = decode_bounded_block(project, session.bounds, 0x40D9B0, set())
+
+    assert block is not None
+    assert block.jumpkind == "Ijk_Terminal"
+    assert block.direct_targets == ()
 
 
 def test_extract_suppresses_fakeret_for_a_declared_nonreturning_symbol() -> None:
